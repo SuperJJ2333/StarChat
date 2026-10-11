@@ -1,8 +1,9 @@
 import 'dart:typed_data';
+import 'dart:async';
 import 'dart:convert';
 import 'emoji_preview_cache.dart';
 import 'media_cache.dart';
-import 'content_addressed_media.dart' show verifyMediaContent;
+import 'verified_media_content.dart';
 import 'media_consumer_scope.dart';
 import 'media_memory_budget.dart';
 
@@ -29,9 +30,11 @@ Future<Uint8List?> readCachedImageOriginal({
   if (!current()) return null;
   // Verify the actual read, including legacy objects whose hash is in the
   // content-addressed filename rather than the event metadata.
-  verifyMediaContent(
-      bytes, key.contentSha256 ?? file.uri.pathSegments.last.split('.').first);
-  return bytes;
+  final verified = await VerifiedMediaContent.verify(bytes,
+      scope: MediaCache.verificationScope(key.accountId),
+      expectedSha256:
+          key.contentSha256 ?? file.uri.pathSegments.last.split('.').first);
+  return current() ? verified.bytes : null;
 }
 
 /// A legacy preview key may contain the full original. Only a declared,
@@ -183,8 +186,11 @@ final class RoomImagePreviewCache {
         final seeded = _memory!.get(key);
         if (seeded != null) return seeded;
         if (bytes != null && bytes.isNotEmpty) {
-          final retained = _memory!.put(key, bytes);
-          _completedSessionMemory?.put(_sessionKey(eventId), retained);
+          final retained = await cache.putAsync(key, bytes);
+          if (_disposed || cache.generation != generation) return null;
+          await _completedSessionMemory?.putAsync(
+              _sessionKey(eventId), retained);
+          if (_disposed || cache.generation != generation) return null;
           diskHits++;
           return retained;
         }
@@ -205,8 +211,23 @@ final class RoomImagePreviewCache {
   void seed(String eventId, Uint8List bytes) {
     if (_disposed) return;
     final key = _key(eventId);
-    final retained = _memory!.put(key, bytes);
-    _completedSessionMemory?.put(_sessionKey(eventId), retained);
+    final memory = _memory!;
+    final generation = memory.generation;
+    // Tiny compatibility seeds stay synchronous and bounded. Large local
+    // previews paint immediately, but only verified current results can join
+    // the account session pool. This never persists a transient UI seed.
+    if (bytes.length <= 64 * 1024) {
+      final retained = memory.put(key, bytes);
+      _completedSessionMemory?.put(_sessionKey(eventId), retained);
+      return;
+    }
+    unawaited(memory.seedLocalPreview(key, bytes).then((verified) async {
+      if (verified != null && !_disposed && memory.generation == generation) {
+        await _completedSessionMemory?.putAsync(_sessionKey(eventId), verified);
+      }
+    }, onError: (Object _, StackTrace __) {
+      // The optional local preview can be evicted/reloaded after worker error.
+    }));
   }
 
   Future<Uint8List> load(String eventId, Future<Uint8List> Function() source) {
@@ -232,7 +253,11 @@ final class RoomImagePreviewCache {
       if (_disposed || memory.generation != generation) {
         throw StateError('Image cache cleared');
       }
-      _completedSessionMemory?.put(_sessionKey(eventId), bytes);
+      bytes = await memory.putAsync(key, bytes);
+      if (_disposed || memory.generation != generation) {
+        throw StateError('Image cache cleared');
+      }
+      await _completedSessionMemory?.putAsync(_sessionKey(eventId), bytes);
       return bytes;
     });
   }

@@ -1,0 +1,23 @@
+{
+  "apps/mobile_flutter/pubspec.yaml": "229e154aa59ee980e672229de2d33dc52c26e52d7cb026143c99f29dfb31eea8",
+  "apps/mobile_flutter/pubspec.lock": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "apps/mobile_flutter/lib/features/matrix/content_addressed_media.dart": "40c4a3773a08f6b68575ae817eebf25578b5a8f124ad980f64b931ec5da99a14",
+  "apps/mobile_flutter/lib/features/matrix/media_cache.dart": "d0770d4cb2caa66b25aa531aa7be90b5305b7d43e6d06dd12a3cc61c1775ff44",
+  "apps/mobile_flutter/lib/features/matrix/verified_media_content.dart": "7c5944a2906f732b38230ede6ac40cb9f14d976e6a69dbc1ddf618727318953e",
+  "apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart": "e3e74817aeed0e87075e1a1c32562cf51fa6ce93b259a8ae4db1229c7277544d",
+  "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart": "4d124c919d44013b860cbe89c41de796b42f09740080d703dbf508870ac65dfc",
+  "apps/mobile_flutter/lib/features/media/media_asset_gateway.dart": "2193b77dd3682fc043b442bb61ab4336438f1e09b9e3fe9016572802ef7e0738",
+  "apps/mobile_flutter/lib/features/matrix/media_memory_budget.dart": "b18dbdd3c2047a561d65ba565519d2ba6a33f48df380ea7a2a13c1263cc116aa",
+  "apps/mobile_flutter/lib/features/matrix/media_consumer_scope.dart": "071aec34ba7a180e9537a3731f9b4ec48368460a0b6fe245c23848a49cb4f1ec",
+  "apps/mobile_flutter/lib/features/matrix/media_load_scheduler.dart": "ec90954775918ad149d8ecd1f9a85375ce64631c11021f6a9253d8b40de66f37",
+  "apps/mobile_flutter/lib/features/matrix/media_index.dart": "2c3f60de4e0d2fca4ab627c81737f8c59c85d0021ec4ee7dd0e6e70801ca3eb2",
+  "apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart": "10e5a7e536185eaadfb213deaf7efa572171babd94c764ab8cdf8c53eceb5ab0",
+  "apps/mobile_flutter/test/features/matrix/media_content_dedup_test.dart": "4bea21e96f52a30a8a365994357929fbcc14ee253ef9054449295bcf36e0bd73",
+  "apps/mobile_flutter/test/features/matrix/media_memory_budget_test.dart": "f56e61762ac9a7b6e28dedfbe369f7f68af9ec5938ef424f19d5936f124796ea",
+  "apps/mobile_flutter/test/features/matrix/media_stream_integrity_test.dart": "48769a9419a99f15a73d373736b940fd3736d11e412bfd052b8acd149b3a441d",
+  "apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart": "8efb66a142a735e73c0c1f4ff7011cba94ff0a20d35c114db07ec88ffd8380cb",
+  "apps/mobile_flutter/test/features/matrix/room_image_preview_cache_test.dart": "e222142102df61670e4a55638a7b92252bd182a3d2df7868a02632030fefaca2",
+  "apps/mobile_flutter/test/features/matrix/content_addressed_media_test.dart": "0050b07993bb0154d2750c45bc7e51bd30e9398de2f248a13fdc43a5e3cf8b77",
+  "apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart": "bb5eebc23bdcb1e8b1a4a201e28e941f4ee3fe26ecccc62a7c9e543f996deb19",
+  "apps/mobile_flutter/test/performance/media_cache_metrics_test.dart": "687e363619db1fe5b9d05fb3bafa9dfe4a0059b160e17dba720e237f5b483ec2"
+}

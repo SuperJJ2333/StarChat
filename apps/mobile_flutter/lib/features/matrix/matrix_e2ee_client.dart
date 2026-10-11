@@ -9437,23 +9437,14 @@ final class MatrixSdkE2eeClient
       }
       if (thumbnail != null && thumbnail.size > image.size) thumbnail = null;
     }
-    await cacheOutgoingMedia(
-      accountId: room.client.userID ?? '',
-      roomId: room.id,
-      bytes: sizedFile.bytes,
-    );
-    if (thumbnail != null) {
-      await cacheOutgoingMedia(
-        accountId: room.client.userID ?? '',
-        roomId: room.id,
-        bytes: thumbnail.bytes,
-      );
-    }
     validateSendAccess();
     final prepared = await prepareContentAddressedMedia(
       file: sizedFile,
       thumbnail: thumbnail,
       extraContent: media.extraContent,
+      accountId: room.client.userID ?? '',
+      cacheContent: (bytes) => cacheOutgoingMedia(
+        accountId: room.client.userID ?? '', roomId: room.id, bytes: bytes),
     );
     performanceTrace?.mark(PerformanceStage.videoEncrypted);
     parentPerformanceTrace?.mark(PerformanceStage.videoEncrypted);

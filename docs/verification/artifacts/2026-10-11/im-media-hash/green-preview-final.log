@@ -1,0 +1,30 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+[chatflow/mediaindex] degraded: UnimplementedError
+00:01 +7: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +8: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +9: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +11: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +12: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +13: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +14: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +15: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +16: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:01 +17: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: 100 MiB cold load uses one worker digest through store and memory
+00:02 +18: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: large immediate preview does no synchronous digest
+00:02 +19: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: proof owns bytes and cannot be reused for a forged hash or new epoch
+00:02 +20: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: outgoing cache and encryption share one final-byte digest
+00:02 +21: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: store persists the worker snapshot even when producer mutates
+00:02 +22: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: clear at worker completion cannot repopulate memory or disk
+00:02 +23: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: cancel at worker completion cannot persist a late cold result
+00:02 +24: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: large transient previews are budgeted separately until verified
+00:02 +25: C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: late preview proof cannot overwrite a replacement or undo clear
+00:02 +26: All tests passed!

@@ -1,3 +1,4 @@
+import 'verified_media_content.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,7 +11,8 @@ import '../media/image_compression_policy.dart';
 import 'gif_image_policy.dart' show gifDimensions;
 import '../../core/app_config.dart';
 import '../../core/native_media_download.dart';
-import 'media_cache.dart' show MediaCacheKey, matrixMediaSourceIdentity;
+import 'media_cache.dart'
+    show MediaCache, MediaCacheKey, matrixMediaSourceIdentity;
 
 /// Verify disk content without allocating an entire video as one byte array.
 Future<void> verifyMediaContentStream(
@@ -129,7 +131,7 @@ void validateContentSha256(String hash) {
 void verifyMediaContent(Uint8List bytes, String? hash) {
   if (hash == null) return;
   validateContentSha256(hash);
-  if (crypto.sha256.convert(bytes).toString() != hash) {
+  if (digestMediaBytes(bytes) != hash) {
     throw const FormatException('Media content digest mismatch');
   }
 }
@@ -170,15 +172,22 @@ final class MediaEnvelope {
   const MediaEnvelope._(this.contentSha256, this.encrypted);
   final String contentSha256;
   final EncryptedFile encrypted;
-  static final _flights = <String, Future<MediaEnvelope>>{};
+  static final _flights = <(Object, String), Future<MediaEnvelope>>{};
 
-  static Future<MediaEnvelope> forBytes(Uint8List bytes) async {
-    final digest = await compute(crypto.sha256.convert, bytes);
-    final hash = digest.toString();
-    return _flights[hash] ??=
-        compute(_deriveInBackground, (bytes, digest.bytes, hash))
+  static Future<MediaEnvelope> forBytes(Uint8List bytes,
+      {String accountId = ''}) async {
+    final scope = MediaCache.verificationScope(accountId);
+    final content = await VerifiedMediaContent.verify(bytes, scope: scope);
+    final hash = content.digest;
+    final digest = [
+      for (var i = 0; i < hash.length; i += 2)
+        int.parse(hash.substring(i, i + 2), radix: 16)
+    ];
+    final key = (scope, hash);
+    return _flights[key] ??=
+        compute(_deriveInBackground, (content.bytes, digest, hash))
             .whenComplete(() {
-      _flights.remove(hash);
+      _flights.remove(key);
     });
   }
 
@@ -278,6 +287,8 @@ Future<
   MatrixImageFile? thumbnail,
   Map<String, dynamic>? extraContent,
   bool deterministic = AppConfig.deterministicMediaEncryption,
+  String accountId = '',
+  Future<Uint8List> Function(Uint8List)? cacheContent,
 }) async {
   final source = await MediaAssetGateway.inspect(file.bytes,
       mimeType: file.mimeType, filename: file.name);
@@ -285,7 +296,7 @@ Future<
       file is MatrixImageFile || source.mimeType.startsWith('image/');
   final preparedBytes =
       isImage ? await ImageCompressionPolicy.prepare(file.bytes) : file.bytes;
-  final original = identical(preparedBytes, file.bytes)
+  var original = identical(preparedBytes, file.bytes)
       ? source
       : await MediaAssetGateway.inspect(preparedBytes,
           mimeType: source.mimeType, filename: source.filename);
@@ -293,10 +304,27 @@ Future<
       file is MatrixImageFile && !identical(preparedBytes, file.bytes)
           ? await ImageCompressionPolicy.dimensions(preparedBytes)
           : null;
-  final thumbOriginal = thumbnail == null
+  var thumbOriginal = thumbnail == null
       ? null
       : await MediaAssetGateway.inspect(thumbnail.bytes,
           mimeType: thumbnail.mimeType, filename: thumbnail.name);
+  // Cache the final transformed snapshot and retain the returned owned bytes.
+  // The envelope can reuse its worker proof rather than hash the source again.
+  if (cacheContent != null) {
+    original = MediaAsset(
+        bytes: await cacheContent(original.bytes),
+        mimeType: original.mimeType,
+        filename: original.filename,
+        isGif: original.isGif);
+    final thumb = thumbOriginal;
+    if (thumb != null) {
+      thumbOriginal = MediaAsset(
+          bytes: await cacheContent(thumb.bytes),
+          mimeType: thumb.mimeType,
+          filename: thumb.filename,
+          isGif: thumb.isGif);
+    }
+  }
   final extra = Map<String, dynamic>.of(extraContent ?? {})
     ..remove('chatflow_media')
     ..remove('info');
@@ -311,9 +339,11 @@ Future<
       extraContent: extra.isEmpty ? null : extra
     );
   }
-  final envelope = await MediaEnvelope.forBytes(original.bytes);
-  final thumbEnvelope =
-      thumbnail == null ? null : await MediaEnvelope.forBytes(thumbnail.bytes);
+  final envelope =
+      await MediaEnvelope.forBytes(original.bytes, accountId: accountId);
+  final thumbEnvelope = thumbOriginal == null
+      ? null
+      : await MediaEnvelope.forBytes(thumbOriginal.bytes, accountId: accountId);
   extra['chatflow_media'] = {
     'v': 1,
     'content_sha256': envelope.contentSha256,

@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart
+00:00 +0: large immediate preview does no synchronous digest
+00:00 +0 -1: large immediate preview does no synchronous digest [E]
+  Expected: empty
+    Actual: [false]
+  seed must yield before digest work
+
+  package:matcher                                             expect
+  package:flutter_test/src/widget_tester.dart 473:18          expect
+  test\features\matrix\verified_media_content_test.dart 67:5  main.<fn>
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: large immediate preview does no synchronous digest

@@ -1,0 +1,15 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart
+test/features/matrix/verified_media_content_test.dart:150:44: Error: 'MediaLoadCanceled' isn't a type.
+    await expectLater(pending, throwsA(isA<MediaLoadCanceled>()));
+                                           ^^^^^^^^^^^^^^^^^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: test/features/matrix/verified_media_content_test.dart:150:44: Error: 'MediaLoadCanceled' isn't a type.
+      await expectLater(pending, throwsA(isA<MediaLoadCanceled>()));
+                                             ^^^^^^^^^^^^^^^^^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart

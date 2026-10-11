@@ -1,0 +1,5 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart
+00:00 +0: 100 MiB cold load uses one worker digest through store and memory
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +1: All tests passed!

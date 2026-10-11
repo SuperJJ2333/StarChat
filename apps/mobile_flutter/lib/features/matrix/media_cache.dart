@@ -1,3 +1,4 @@
+import 'verified_media_content.dart';
 import 'dart:async';
 import 'content_addressed_media.dart';
 import 'media_load_scheduler.dart';
@@ -119,6 +120,12 @@ final class MediaCache {
 
   static int accountGeneration(String accountId) =>
       _accountGenerations[accountId] ?? 0;
+
+  static Object verificationScope(Object account) => (
+        account,
+        _mediaGeneration,
+        account is String ? accountGeneration(account) : 0
+      );
 
   static Future<File> _clearEpochFile(String accountId) async {
     final docs = await getApplicationDocumentsDirectory();
@@ -548,9 +555,17 @@ final class MediaCache {
       throw StateError('Media cache account was cleared');
     }
     final generation = _mediaGeneration;
-    verifyMediaContent(bytes, contentSha256);
+    final accountEpoch = accountGeneration(accountId);
+    final scope = MediaConsumerScope.current;
+    final verified = await VerifiedMediaContent.verify(bytes,
+        scope: verificationScope(accountId), expectedSha256: contentSha256);
+    if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+    if (generation != _mediaGeneration ||
+        accountEpoch != accountGeneration(accountId)) {
+      throw StateError('Media cache session changed');
+    }
     final flightKey = '${_digest(jsonEncode([accountId, roomId, eventId]))}'
-        ':${sha256.convert(bytes)}';
+        ':${verified.digest}';
     final existing = _storeFlights[flightKey];
     if (existing != null) return existing;
     final flight = _root(accountId).then((root) {
@@ -561,7 +576,7 @@ final class MediaCache {
           expectedAccountGeneration != accountGeneration(accountId)) {
         throw StateError('Media cache account was cleared');
       }
-      return _store(root, accountId, roomId, eventId, bytes,
+      return _store(root, accountId, roomId, eventId, verified,
           variant: variant,
           familyId: familyId,
           mimeType: mimeType,
@@ -580,14 +595,15 @@ final class MediaCache {
   }
 
   static Future<File> _store(Directory root, String accountId, String roomId,
-      String eventId, Uint8List bytes,
+      String eventId, VerifiedMediaContent verified,
       {MediaVariantKind variant = MediaVariantKind.unknown,
       String? familyId,
       String? mimeType,
       int? width,
       int? height,
       int? durationMs}) async {
-    final digest = sha256.convert(bytes).toString();
+    final bytes = verified.bytes;
+    final digest = verified.digest;
     final name = '$digest${_videoContainerSuffix(bytes) ?? ''}';
     final objectKey = '${root.path}/objects/$name';
     final existing = _objectFlights[objectKey];
@@ -1068,9 +1084,11 @@ final class _CacheObject {
 /// 加权，不再出现"3 条 4K 视频"式的条数掩盖内存失控；超预算从最旧
 /// 条目开始回收。
 final class _VerifiedMediaBytes {
-  const _VerifiedMediaBytes(this.digest, this.namespace);
+  _VerifiedMediaBytes(this.digest, this.namespace)
+      : generation = _mediaGeneration;
   final String digest;
   final Object namespace;
+  final int generation;
 }
 
 final class MediaMemoryCache {
@@ -1126,6 +1144,54 @@ final class MediaMemoryCache {
     return owned;
   }
 
+  /// Async seeding preserves any existing source flight. A clear/dispose while
+  /// the worker verifies may return bytes but cannot repopulate this cache.
+  Future<Uint8List> putAsync(String eventId, Uint8List bytes) async {
+    if (_disposed) throw StateError('Media cache disposed');
+    final generation = _generation;
+    final scope = MediaConsumerScope.current;
+    final owned = await _ownVerifiedBytesAsync(eventId, bytes);
+    if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+    if (!_disposed && generation == _generation) _store(eventId, owned);
+    return owned;
+  }
+
+  /// Local picked/outgoing previews only, never an unauthenticated receive.
+  /// Preserve immediate painting without a large synchronous digest. Pending
+  /// snapshots have a unique cache-local identity: no content interning, disk
+  /// write, or cross-cache sharing until the worker returns a real proof.
+  Future<Uint8List?> seedLocalPreview(String key, Uint8List bytes) async {
+    if (_disposed) return null;
+    if (_contentKey.hasMatch(key)) {
+      throw ArgumentError('A local preview needs an opaque UI key');
+    }
+    final consumer = MediaConsumerScope.current;
+    if (consumer != null && !consumer.isActive) return null;
+    final scope = MediaCache.verificationScope(_namespace(key));
+    if (bytes.length <= 64 * 1024 ||
+        VerifiedMediaContent.lookup(bytes, scope) != null) {
+      return put(key, bytes);
+    }
+    final generation = _generation;
+    final snapshot = Uint8List.fromList(bytes).asUnmodifiableView();
+    _verified[snapshot] =
+        _VerifiedMediaBytes('preview:${const Uuid().v4()}', _budgetOwner);
+    _store(key, snapshot);
+    // An oversized/evicted preview has no reason to spend CPU verifying.
+    if (!identical(_entries[key], snapshot)) return null;
+    final verified = await VerifiedMediaContent.verify(snapshot, scope: scope);
+    if (_disposed ||
+        generation != _generation ||
+        scope != MediaCache.verificationScope(_namespace(key)) ||
+        (consumer != null && !consumer.isActive) ||
+        !identical(_entries[key], snapshot)) {
+      return null;
+    }
+    final owned = _ownVerifiedBytes(key, verified.bytes);
+    _store(key, owned);
+    return identical(_entries[key], owned) ? owned : null;
+  }
+
   static final _contentKey =
       RegExp(r'(?:content:|[/\\])([a-f0-9]{64})(?:\.mp4|\.mov)?$');
 
@@ -1135,14 +1201,20 @@ final class MediaMemoryCache {
     if (identical(_entries[key], bytes)) return bytes;
     final namespace = _namespace(key);
     final hash = _contentKey.firstMatch(key)?.group(1);
-    final known = _verified[bytes];
+    final proof = VerifiedMediaContent.lookup(
+        bytes, MediaCache.verificationScope(namespace),
+        expectedSha256: hash);
+    final cachedProof = _verified[bytes];
+    final known = proof != null
+        ? _VerifiedMediaBytes(proof.digest, namespace)
+        : cachedProof?.generation == _mediaGeneration
+            ? cachedProof
+            : null;
     final owned = known != null && known.namespace == namespace
         ? bytes
         : Uint8List.fromList(bytes).asUnmodifiableView();
-    final digest = known?.digest ??
-        (hash != null || budget != null
-            ? sha256.convert(owned).toString()
-            : null);
+    final digest = (known?.namespace == namespace ? known?.digest : null) ??
+        (hash != null || budget != null ? digestMediaBytes(owned) : null);
     if (hash != null && digest != hash) {
       throw const FormatException('Media content hash mismatch');
     }
@@ -1150,6 +1222,13 @@ final class MediaMemoryCache {
     final canonical = budget?.find(namespace, digest) ?? owned;
     _verified[canonical] = _VerifiedMediaBytes(digest, namespace);
     return canonical;
+  }
+
+  Future<Uint8List> _ownVerifiedBytesAsync(String key, Uint8List bytes) async {
+    final verified = await VerifiedMediaContent.verify(bytes,
+        scope: MediaCache.verificationScope(_namespace(key)),
+        expectedSha256: _contentKey.firstMatch(key)?.group(1));
+    return _ownVerifiedBytes(key, verified.bytes);
   }
 
   Object _namespace(String key) {
@@ -1217,7 +1296,8 @@ final class MediaMemoryCache {
     flight = OwnedMediaFlight<Uint8List>(() async {
       final bytes = await load();
       if (!flight.isActive) throw MediaLoadCanceled();
-      final owned = _ownVerifiedBytes(eventId, bytes);
+      final owned = await _ownVerifiedBytesAsync(eventId, bytes);
+      if (!flight.isActive) throw MediaLoadCanceled();
       if (generation == _generation && flight.isActive) _store(eventId, owned);
       return owned;
     });
@@ -1443,7 +1523,13 @@ Future<Uint8List> _loadMediaWithCache(
           }
         }
         if (!child.isActive) throw MediaLoadCanceled();
-        if (bytes != null) verifyMediaContent(bytes, key.contentSha256);
+        if (bytes != null) {
+          bytes = (await VerifiedMediaContent.verify(bytes,
+                  scope: MediaCache.verificationScope(key.accountId),
+                  expectedSha256: key.contentSha256))
+              .bytes;
+        }
+        if (!child.isActive) throw MediaLoadCanceled();
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
         }
@@ -1482,7 +1568,10 @@ Future<Uint8List> _loadMediaWithCache(
           var result = bytes ?? await file.readAsBytes();
           if (key.contentSha256 != null) {
             try {
-              verifyMediaContent(result, key.contentSha256);
+              result = (await VerifiedMediaContent.verify(result,
+                      scope: MediaCache.verificationScope(key.accountId),
+                      expectedSha256: key.contentSha256))
+                  .bytes;
             } on FormatException {
               // 廉价命中路径可能漏掉"同尺寸且未改变 mtime"的极端篡改；
               // 这里是最后一道内容校验：判定损坏 → 删除对象 + 失效索引 →
@@ -1496,8 +1585,14 @@ Future<Uint8List> _loadMediaWithCache(
                 PerformanceMetrics.instance
                     .increment(PerformanceCounter.mediaDownload);
               }
-              final fresh = await decrypt();
-              verifyMediaContent(fresh, key.contentSha256);
+              final fresh = (await VerifiedMediaContent.verify(await decrypt(),
+                      scope: MediaCache.verificationScope(key.accountId),
+                      expectedSha256: key.contentSha256))
+                  .bytes;
+              if (!child.isActive) throw MediaLoadCanceled();
+              if (generation != _mediaGeneration) {
+                throw StateError('Media cache session changed');
+              }
               await MediaCache.store(key.roomId, key.eventId, fresh,
                   accountId: key.accountId,
                   contentSha256: key.contentSha256,
@@ -1505,6 +1600,10 @@ Future<Uint8List> _loadMediaWithCache(
                   familyId: key.familyId);
               result = fresh;
             }
+          }
+          if (!child.isActive) throw MediaLoadCanceled();
+          if (generation != _mediaGeneration) {
+            throw StateError('Media cache session changed');
           }
           return result;
         });
@@ -1536,7 +1635,10 @@ Future<Uint8List> _loadMediaWithCache(
 
 Future<void> _linkMediaReference(
     MediaCacheKey key, Uint8List bytes, int generation) async {
-  final hash = key.contentSha256 ?? sha256.convert(bytes).toString();
+  final verified = await VerifiedMediaContent.verify(bytes,
+      scope: MediaCache.verificationScope(key.accountId),
+      expectedSha256: key.contentSha256);
+  final hash = verified.digest;
   final name = '$hash${MediaCache._videoContainerSuffix(bytes) ?? ''}';
   for (final reference in [
     (key.roomId, key.eventId),
@@ -1560,15 +1662,23 @@ Future<Uint8List> cacheOutgoingMedia({
   required String roomId,
   required Uint8List bytes,
   PerformanceTrace? trace,
-}) {
-  final hash = sha256.convert(bytes).toString();
+}) async {
+  final generation = _mediaGeneration;
+  final scope = MediaConsumerScope.current;
+  final verified = await VerifiedMediaContent.verify(bytes,
+      scope: MediaCache.verificationScope(accountId));
+  if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+  if (generation != _mediaGeneration) {
+    throw StateError('Media cache session changed');
+  }
+  final hash = verified.digest;
   return _loadMediaWithCacheObserved(
       MediaCacheKey(
           accountId: accountId,
           roomId: roomId,
           eventId: 'outgoing:$hash',
           contentSha256: hash),
-      () async => bytes,
+      () async => verified.bytes,
       trace: trace,
       localSeed: true);
 }
