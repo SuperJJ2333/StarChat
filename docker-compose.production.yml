@@ -42,6 +42,9 @@ services:
 
   gateway:
     image: "${NGINX_IMAGE:?NGINX_IMAGE is required}"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "10" }
     restart: unless-stopped
     depends_on:
       business-api:

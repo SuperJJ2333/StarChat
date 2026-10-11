@@ -18,6 +18,9 @@ services:
 
   synapse:
     image: "${SYNAPSE_IMAGE:?SYNAPSE_IMAGE is required}"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "10" }
     build:
       context: ./third_party/synapse
     restart: unless-stopped
@@ -54,6 +57,9 @@ services:
 
   synapse-sync-worker:
     image: "${SYNAPSE_IMAGE:?SYNAPSE_IMAGE is required}"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "10" }
     build:
       context: ./third_party/synapse
     restart: unless-stopped
