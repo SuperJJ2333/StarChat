@@ -1,0 +1,27 @@
+# Independent R10 correction review
+
+Product input: `0eea33198227c6653916d36cb4b20722f18b9966`, implemented by `/root/review_media_android`. Reviewer `/root/fix_scheduler_r6` implemented the earlier sampler but did not author this correction. Review used exact Git blobs saved under `snapshot/`, with `snapshot-hashes.json`. No owner/root production files were edited. No production sampling was repeated.
+
+## SPEC — PASS for the product correction
+
+The misleading idle/empty-response metric is removed. Schema2 exposes long_sync_30s_zero_db_fetch_candidates and explicitly limits it to observed route/status/duration/query/database-fetch evidence. The retained source excerpt binds Synapse's dbevts formatting to usage.evt_db_fetch_count, whose documented meaning is database events fetched. The new label does not claim that cached events or other response fields were absent. The corrected historical sample preserves all numeric aggregates and original time strings; its original file remains untouched.
+
+The deadline correction removes the buffered reader thread and its potentially blocking close/join. POSIX reads are nonblocking; Windows uses a sole reader, PeekNamedPipe availability, and reads no more than available bytes. EOF does not bypass the owned child's completion deadline. Truncation returns bounded bytes; timeout/cleanup errors remain fixed enums. Only the direct Popen handle is killed, while inherited-pipe descendants survive and finish naturally. The separately exposed reap allowance is two seconds; the ordinary configured read deadline is not presented as excluding this cleanup allowance.
+
+## QUALITY / SECURITY — PASS for the product correction
+
+Independent tests on frozen source: Windows Python3.12.10 **18 PASS, exit0, 8.205s**; Linux Python3.12.11 **17 PASS, 1 Windows-only ABI skip, exit0, 8.059s**. This comprises the author's 12 tests plus six reviewer tests covering: parent already exited but descendant retaining stdout; byte cap with inherited writer; EOF while direct process still runs; fixed-enum read failure; mocked cleanup timeout with exactly one direct kill and explicit missing summary; Windows64 HANDLE width and Win32 BOOL ctypes return type. Tests assert bytes return values and retention bounds. Windows32 is not claimed.
+
+Windows declares HANDLE as pointer-sized and DWORD counters explicitly, avoiding the ctypes default-int truncation risk. No new reader thread persists after the deadline. The pipe uses bufsize=0 and no concurrent reader, so closing the owned raw read handle does not wait for a buffered reader lock. Cleanup timeouts return cleanup_timeout with no synthetic zero-success summary. The fixed route/status sets, line and request denominator conservation, raw token/CID/URL/body sentinel exclusion and inspect/stats allowlists all pass the original tests.
+
+Linux ran in image `sha256:3036ec25dfb5fcc5120942465788c1e1f2bb3671e28b04d7b3a1db4400ac84f4`, --network none, source mount read-only and only the synthetic fixture subdirectory writable. Containers used --rm. An initial invocation needed --entrypoint python because this cached image defaults to /start.py; its first launch did not run tests. The reviewer's initial byte-cap fixture embedded 50k characters in a Windows command and could not start normally; reducing the synthetic command to10k (still far above the64-byte cap) resolved this fixture issue. Its failed log is preserved separately and not counted as product evidence.
+
+## Evidence issue and separately authored follow-up
+
+A real P2 was found in the evidence verifier: original_sample_sha256 represented the Windows CRLF bytes, but the committed historical sample is LF. Running verify_corrected_sample.py against exact frozen Git bytes failed with exit1. The hashes are 76061586f9e73f7cf54fa6a821ebbdc38931f1632ba88fb254b4655b85f1a549 (CRLF) versus 98acf054abbd95efad542a6315bb19c7a1a318faf425145168aa1999be6bc9ee (Git LF). This does not alter the product-code conclusion but prevents portable artifact validation.
+
+Root explicitly assigned this reviewer a two-file evidence-only fix, independently reviewed by root: commit `9ee608a550b6ca745ef17925ae04abb08310dafe`, based directly on0eea3319 in `im-runtime-sampling/StarChat`, branch codex/im-runtime-evidence. Corrected metadata distinguishes original_workspace_bytes_sha256 and original_git_blob_bytes_sha256 plus line-ending provenance. The helper accepts only those exact two byte identities, proves they differ only by CRLF/LF, and retains all aggregate equality/denominator checks. No original sample or product file changed.
+
+Independent author-side validation of that evidence patch: exact Git LF bytes exit0; Windows CRLF bytes exit0; a changed schema value is rejected exit1; corrected metadata aside, every historical field equals0eea3319. Result JSON is in `im-runtime-sampling/StarChat/docs/verification/artifacts/2026-10-11/im-runtime-bounds-evidence-check/verification.json`. This paragraph is implementation validation, not a claim of independent approval of the reviewer's own evidence patch. Root owns that separate review.
+
+No other product blocker found. This remains a finite diagnostic; it does not certify device delivery, idle sync, user recovery counts, full R10 SLOs, application builds or a deployment.

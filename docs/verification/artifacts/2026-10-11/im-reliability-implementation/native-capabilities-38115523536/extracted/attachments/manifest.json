@@ -1,0 +1,17 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "A2AB978A-BFBE-4853-B753-C3B1BF585C07",
+        "deviceName" : "IM storage synthetic gate",
+        "exportedFileName" : "2B99EEB7-FBC6-4D94-8336-9173893A2D2F.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "public.plain-text_0_167B6DA8-20C1-4A73-811F-1FE8E75275FD.txt",
+        "timestamp" : 1791696446.159
+      }
+    ],
+    "testIdentifier" : "IOSMediaStoragePolicyTests/testReportsSyntheticFilesystemCapabilities()",
+    "testIdentifierURL" : "test://com.apple.xcode/Runner/RunnerTests/IOSMediaStoragePolicyTests/testReportsSyntheticFilesystemCapabilities"
+  }
+]

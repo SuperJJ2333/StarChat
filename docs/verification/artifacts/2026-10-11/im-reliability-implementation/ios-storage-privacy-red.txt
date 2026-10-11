@@ -1,0 +1,16 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____ test_app_storage_reasons_are_declared_and_added_to_runner_resources _____
+
+    def test_app_storage_reasons_are_declared_and_added_to_runner_resources():
+        manifest = IOS / "Runner/PrivacyInfo.xcprivacy"
+>       assert manifest.is_file(), "Runner storage APIs require an app privacy manifest"
+E       AssertionError: Runner storage APIs require an app privacy manifest
+E       assert False
+E        +  where False = is_file()
+E        +    where is_file = WindowsPath('C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/ios/Runner/PrivacyInfo.xcprivacy').is_file
+
+tests\mobile\test_ios_storage_privacy.py:13: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/mobile/test_ios_storage_privacy.py::test_app_storage_reasons_are_declared_and_added_to_runner_resources
+1 failed in 0.31s

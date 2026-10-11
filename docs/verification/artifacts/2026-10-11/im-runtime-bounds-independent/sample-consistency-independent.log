@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-lease-repro\StarChat\docs\verification\artifacts\2026-10-11\im-runtime-bounds-independent\snapshot\docs\verification\artifacts\2026-10-11\im-runtime-bounds\verify_corrected_sample.py", line 14, in <module>
+    corrected["correction"]["original_sample_sha256"].lower()
+AssertionError

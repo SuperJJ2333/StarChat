@@ -82,3 +82,15 @@ R10采样窗口04:30:44–04:35:44UTC，business 576行=366HTTP完成+210未匹�
 R9隔离真实Worker/consumer合成时钟复现：单慢301秒或49×7秒使预领尾部被其他consumer接管后仍被旧worker执行；另单active301秒过期是独立缺陷。已批准R9a仅worker逐条临执行claim，保留topic/退避/维护/幂等；R9b续租/fencing另审，不改变金融handler、schema或重放历史DEAD。对单个handler的调用重复不能据此推断业务重复记账。
 
 Android最终XML复核修正计数：41c86084全套95项为94PASS/1条件skip（历史DeltaApplier签名APK夹具未提供），无失败/错误，存储12全部执行。此前“89PASS”也是含该skip总数，准确为88PASS/1skip。已在原生报告同步纠正，原始日志保留。
+
+## 13:52+08 集成与剩余门禁
+
+R8缓存失败校准修正896e8e77已集成为f87f72cc，root独立规格→质量审查通过，集成13项PASS。初始/坏索引完整校准仍O(N)，稳定运行增量写入不全目录扫描；配额只管理自身可淘汰文件，不能当整个沙盒磁盘上限。
+
+R10产品0eea3319独立Windows18PASS/Linux17PASS+1Windows专属ABI skip，SPEC→QUALITY通过，集成为a18bb18d；真实继承stdout及EOF但进程存活边界均执行。证据修正9ee608a区分Windows CRLF和Git LF两种历史SHA，root逐行复核且在集成树执行一致性校验exit0，集成为7e325b4f；原样本、窗口、数值和分母均未修改。原“idle”指标撤回已在当前报告纠正。
+
+R9a独立源码审查通过，70dee9dd/9e036261集成为f8579cf7/5584d294。精确旧worker镜像上仅覆盖worker.py形成候选18a88c4d，隔离容器7PASS/1已知active租约strict XFAIL/1显式PG skip；源码真实PG及相邻248PASS/1XFAIL证据复用。候选/回退API与worker协议guard通过。此时尚未切换，部署脚本的有界超时/只读SQL及不确定状态不盲目回退正在独立复审。
+
+持久附件850710bd独立审查为CHANGES REQUIRED：准备全局串行阻挡后续intent、较早重试被已有晚timer阻挡、替换实例取消误删活跃copy、旧flight迟到结束未自动恢复。4个真实RED均已交owner最小修正；尚未合入候选，不用原作者35项通过掩盖新增失败。
+
+iOS第二轮能力附件证实当前模拟器file protection读回nil，备份排除和容量读回正常；生产保护条件保持，明确区分模拟器不支持与实际手机验收。详情和原始artifact身份见[原生报告](../../verification/2026-10-11-native-media-storage.md)。Android完整原生94PASS/1条件skip可复用同源码输入；双端共享候选、Android固定重建与iOS完整插件unsigned包尚待。

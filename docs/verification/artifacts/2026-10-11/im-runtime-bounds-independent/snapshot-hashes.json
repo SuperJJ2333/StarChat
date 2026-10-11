@@ -1,0 +1,14 @@
+{
+  "commit": "0eea33198227c6653916d36cb4b20722f18b9966",
+  "files": {
+    "scripts/collect_im_runtime_sample.py": "1c31ab2ae87605789b5a6b4d5650bbc7fa0eb5ba237b6e6253624f6d66fa9f7c",
+    "scripts/tests/test_collect_im_runtime_sample.py": "4450f56db7fa9e05eba5a26cdd88d544cbd591e3ccf14ba252620fa910b29a6e",
+    "docs/verification/artifacts/2026-10-11/im-runtime-bounds/verify_corrected_sample.py": "794d6c3aa2a29a760446bb054dcf0303dc0690ed73ee6f77580c74cce4e948f7",
+    "docs/verification/artifacts/2026-10-11/im-runtime-bounds/runtime-sample-corrected.json": "6088e8254ec7f9993dbd99d1066566a2cc060bfe418a703ad3614291bd77c620",
+    "docs/verification/artifacts/2026-10-11/im-runtime-sampling/runtime-sample.json": "98acf054abbd95efad542a6315bb19c7a1a318faf425145168aa1999be6bc9ee",
+    "author_evidence/review-fixes-red.log": "1443b73d2bbcb6da3492ad3b63f28b4475e3e564cad667da29cf3c3e13bd768d",
+    "author_evidence/windows-green.log": "3fbc17880c78a984d746cc759f47a7e5b5cba25d3df06e29c95038967c9fbe4d",
+    "author_evidence/linux-green.log": "5ae25452a98ce04babd6a4d5b8aab863d933410808e47b9e0fd4b07cab45eeb9",
+    "author_evidence/synapse-counter-source.log": "125b20f5b239f75e82d6a6c972ccfff561a739fef5e85f45edf771b2f7fcbff1"
+  }
+}

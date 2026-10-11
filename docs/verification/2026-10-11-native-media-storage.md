@@ -25,3 +25,9 @@ Flutter集成测试仅analyze通过，尚未在手机/模拟器执行。新增iO
 iOS run38112151641（bdbaab66）编译及运行成功但3项XCTest失败，不是PASS。run38113138721仅提取该次xcresult：后两例重复目录创建Code516，首例Failure.unavailable。原始artifact SHA65778296a8fa6eca633adaca1e29b0e7024e3982ea79278852dea352eb0e6046；诊断artifact SHAb0c0c12cbba2b5a249bb73236b144c940c169d87fc4c7255d76ebd38b5d1fb9e。c8dba609保留已有目录并复核策略，新增重复调用和能力诊断，内部错误区分保护/备份/容量，channel对外仍统一脱敏错误。run38113845125继续验证；没有降低iOS保护门禁或把模拟器缺能力直接视为生产通过。
 
 41c86084最终Android完整JVM执行：Gradle exit0，13类95项中**94 PASS / 1条件skip / 0失败**。skip为历史DeltaApplier真实签名APK互通夹具未提供，不是存储测试；存储12项全执行通过。前文“89PASS”是未扣除同一历史skip的总用例数，修正为88PASS/1skip。原始第一次全量命令误排除不存在的packJniLibs任务导致配置失败，改为仅排除Flutter编译后完成；两日志分别full.txt及full-corrected.txt保留。最终XML统计和hash见android-native-41c86084-results.json；不以Gradle success推断所有条件用例执行。
+
+另外核查到Runner无app级PrivacyInfo.xcprivacy。新增d17689f2：低空间准入对应DiskSpace/E174.1，app私有文件metadata对应FileTimestamp/C617.1，既有原生通话/下载内部偏好对应UserDefaults/CA92.1，并接入Runner资源。理由依据[Apple required-reason定义](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype)和[TN3183](https://developer.apple.com/documentation/technotes/tn3183-adding-required-reason-api-entries-to-your-privacy-manifest)。未声明整个产品不收集数据或代替App Store隐私标签/SDK审计；磁盘信息仅用于本机准入，不上传。静态门禁真实缺manifest RED→20项相邻PASS；新增XCTest要求实际Runner bundle内有对应声明，等待下一原生CI，未提前标通过。
+
+## 13:50+08 能力定位
+
+第二轮run38113845125（c8dba609）已结束，4项策略成功路径XCTest因`protectionUnavailable`失败；能力诊断本身完成。诊断run38115523536只解析既有xcresult并提取附件，没有再次构建。artifact11693053043 SHA256 `dda772a2af0c25c23714521a8fe22400a6a0769ac1cd17d8c8442356c09cf95c`；原始附件读回`protection=nil, excluded=Optional(true), importantCapacity=Optional(35125567488), capacity=Optional(35125567488), systemFree=Optional(35125567488)`。这是该iOS26模拟器未提供文件保护读回的证据，不是iPhone数据保护失败的证据。生产严格校验保持，依赖真实保护能力的成功路径不能标PASS；独立owner正在区分模拟器显式能力缺口和仍可执行的路径/失败拒绝门禁。重复目录源码修正尚不能靠本轮提前失败的测试声称已通过。

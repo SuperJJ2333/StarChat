@@ -1,0 +1,21 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_storage_policy_test.dart: real cache store invokes fixed policy once and preserves files on native failure
+[chatflow/mediaindex] degraded: UnimplementedError
+00:01 +4: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:01 +5: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: one physical object is counted once across refs and survives restart without a walk
+00:01 +6: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: corrupt database and interrupted mutation rebuild only owned cache objects
+error SqfliteFfiException(sqlite_error: 26, , SqliteException(26): while selecting from statement, file is not a database, file is not a database (code 26)
+  Causing statement: PRAGMA user_version}) sql PRAGMA user_version {details: {database: {path: C:\Users\Administrator\.codex\worktrees\im-reliability\StarChat\docs\verification\artifacts\2026-10-11\im-media-cache-index\quota-3363445b\chat-media\quota-v1.sqlite, id: 2, readOnly: false, singleInstance: true}}} during open, closing...
+00:01 +7: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: background calibration merges a simultaneous clear and write without resurrection
+00:01 +8: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: calibration repairs a rename and external length drift without double counting
+00:01 +9: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: calibration never follows an objects directory link into pending originals
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: failed recalibration revokes existing eviction eligibility until recovery
+00:02 +11: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: an unreadable calibration preserves files and can recover later
+00:02 +12: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: concurrent stores respect account and device totals and keep pinned/off-domain files
+00:02 +13: All tests passed!
