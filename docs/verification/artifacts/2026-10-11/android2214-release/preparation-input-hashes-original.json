@@ -1,0 +1,19 @@
+{
+  "frozen_at_utc": "2026-10-11T08:08:41.284455+00:00",
+  "preparation_files": {
+    "package_release.py": "841f748f91881749c214833e80728b3f110758b691a634faa337ce18d34aaa12",
+    "execute_release.py": "1285d349d6bedcfb3144034db7e445c1ea790ab17e59730e3f7970760bb30d51",
+    "test_package_gate.py": "0317213fe44e6277c18923862d3f34ad4d108d73ce62289ec744a4736ecc6136",
+    "test_execution_gate.py": "3de9e7c3f5fc79f1326722d4a673914c27265ffc64386d1c1bf925f2a3b8412a",
+    "test_release_contract.py": "71caf059eb8ded84284065070e2974fd35b296ae7bf66e8a0c4060eafbb7902b",
+    "payload/delivery_2214.py": "5049eac67fe362f55c20cc7b163516f4f599e4ee56216c0470792ff29e13232f",
+    "payload/release_2214.py": "7e608e8aafb5da2701df457adcddea1d79e455aba0057c5b83e3e1bdcd154520",
+    "payload/settings_2214.py": "0477915e559ab5f9e83a1cf67d1325e487d25a5436ebdca54056e16e19d587d4",
+    "payload/test_settings_postgres_2214.py": "392c44b81491bd687893b3018c544455b03102ec21b5e2333a32b5ac04d1b597",
+    "payload/verify_production_2214.py": "bfaed9cd45c2ecfcd29d04dc42cc64a29cf345d2187bec2af01d13c7342d3443"
+  },
+  "gate_log_sha256": "c0cd3d2bb9c5345a0e662e97f655ec414758d5a3d6640ac298a2b5feab4c1751",
+  "postgres_evidence_sha256": "a616ceeb7bbdd77aa7441f823a01ecb3d21e0c016630801b44664bfc347bd2e2",
+  "actual_apk": "NOT AVAILABLE — no final identity assigned",
+  "transport_execution": "NONE; local temporary receiver/extractor only"
+}

@@ -1,0 +1,16 @@
+test_both_captured_snapshot_copies_preserve_original_live_bytes (test_static_rollback.StaticRollback.test_both_captured_snapshot_copies_preserve_original_live_bytes) ... ok
+test_failed_second_write_never_restores_corrupted_backup (test_static_rollback.StaticRollback.test_failed_second_write_never_restores_corrupted_backup) ... FAIL
+test_failed_second_write_preserves_foreign_target (test_static_rollback.StaticRollback.test_failed_second_write_preserves_foreign_target) ... ok
+
+======================================================================
+FAIL: test_failed_second_write_never_restores_corrupted_backup (test_static_rollback.StaticRollback.test_failed_second_write_never_restores_corrupted_backup)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_static_rollback.py", line 39, in test_failed_second_write_never_restores_corrupted_backup
+    self.assertEqual((self.root/'page').read_bytes(),b'old-page')
+AssertionError: b'CORRUPTED_BACKUP' != b'old-page'
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.112s
+
+FAILED (failures=1)

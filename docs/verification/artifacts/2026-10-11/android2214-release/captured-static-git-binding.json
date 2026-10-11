@@ -1,0 +1,89 @@
+{
+  "scope": "index blobs and working bytes verified against unchanged captured live static-baseline; payload copies become identical runtime members",
+  "files": {
+    "baseline/hk-snapshot/download.html": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245,
+      "git_blob": "8bc38f952b22c7529ad223d59e9c44d5f7614e46",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/download.html": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245,
+      "git_blob": "8bc38f952b22c7529ad223d59e9c44d5f7614e46",
+      "runtime_member": "hk-snapshot/download.html"
+    },
+    "baseline/hk-snapshot/downloads/android-release.json": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372,
+      "git_blob": "70c68eedaf05dd0d76662d2ef977a19fba430f44",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/downloads/android-release.json": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372,
+      "git_blob": "70c68eedaf05dd0d76662d2ef977a19fba430f44",
+      "runtime_member": "hk-snapshot/downloads/android-release.json"
+    },
+    "baseline/hk-snapshot/src/admin-home.js": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709,
+      "git_blob": "51320525bce8208c661145eb50dde3c8be38a8d3",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/admin-home.js": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709,
+      "git_blob": "51320525bce8208c661145eb50dde3c8be38a8d3",
+      "runtime_member": "hk-snapshot/src/admin-home.js"
+    },
+    "baseline/hk-snapshot/downloads/ios/manifest.plist": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793,
+      "git_blob": "355ccd855ccb997b7931f87fc6d564812ca061a3",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/downloads/ios/manifest.plist": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793,
+      "git_blob": "355ccd855ccb997b7931f87fc6d564812ca061a3",
+      "runtime_member": "hk-snapshot/downloads/ios/manifest.plist"
+    },
+    "baseline/hk-snapshot/src/download-redirect.js": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998,
+      "git_blob": "9d9c3f445039b5bb3ea07b064127672e7a573339",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/download-redirect.js": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998,
+      "git_blob": "9d9c3f445039b5bb3ea07b064127672e7a573339",
+      "runtime_member": "hk-snapshot/src/download-redirect.js"
+    },
+    "baseline/hk-snapshot/src/download-network.js": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507,
+      "git_blob": "19f5510ff4313fd4f96b1d40605cde979ccb2239",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/download-network.js": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507,
+      "git_blob": "19f5510ff4313fd4f96b1d40605cde979ccb2239",
+      "runtime_member": "hk-snapshot/src/download-network.js"
+    },
+    "baseline/hk-snapshot/src/download-network-selector.js": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433,
+      "git_blob": "d88b39d2636f3961082c5601937cd5154c1c5d33",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/download-network-selector.js": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433,
+      "git_blob": "d88b39d2636f3961082c5601937cd5154c1c5d33",
+      "runtime_member": "hk-snapshot/src/download-network-selector.js"
+    }
+  }
+}

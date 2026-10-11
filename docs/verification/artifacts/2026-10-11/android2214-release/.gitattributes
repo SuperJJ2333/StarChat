@@ -1,6 +1,6 @@
 # Live static bytes participate in SHA/CAS; never rewrite their line endings.
-baseline/hk-snapshot/** -text
-payload/hk-snapshot/** -text
+baseline/hk-snapshot/** -text -diff
+payload/hk-snapshot/** -text -diff
 *.py text eol=lf
 baseline/*.py text eol=lf
 payload/*.py text eol=lf

@@ -1,0 +1,142 @@
+{
+  "baseline/hk-snapshot/download.html": {
+    "live": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245
+    },
+    "worktree_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+    "git_export_sha256": "a0590dd331e4e4fa6809333c0bb01b297cf5ca8f70ffe7927dbcd6d3cbd2b7ea",
+    "git_bytes": 9202,
+    "worktree_bytes": 9245
+  },
+  "payload/hk-snapshot/download.html": {
+    "live": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245
+    },
+    "worktree_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+    "git_export_sha256": "a0590dd331e4e4fa6809333c0bb01b297cf5ca8f70ffe7927dbcd6d3cbd2b7ea",
+    "git_bytes": 9202,
+    "worktree_bytes": 9245
+  },
+  "baseline/hk-snapshot/downloads/android-release.json": {
+    "live": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372
+    },
+    "worktree_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+    "git_export_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+    "git_bytes": 372,
+    "worktree_bytes": 372
+  },
+  "payload/hk-snapshot/downloads/android-release.json": {
+    "live": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372
+    },
+    "worktree_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+    "git_export_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+    "git_bytes": 372,
+    "worktree_bytes": 372
+  },
+  "baseline/hk-snapshot/src/admin-home.js": {
+    "live": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709
+    },
+    "worktree_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+    "git_export_sha256": "9b33d96f01ee09398deae7f2f4b635ca0b644f311397bf1e0a4489e58a9cf5de",
+    "git_bytes": 25391,
+    "worktree_bytes": 25709
+  },
+  "payload/hk-snapshot/src/admin-home.js": {
+    "live": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709
+    },
+    "worktree_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+    "git_export_sha256": "9b33d96f01ee09398deae7f2f4b635ca0b644f311397bf1e0a4489e58a9cf5de",
+    "git_bytes": 25391,
+    "worktree_bytes": 25709
+  },
+  "baseline/hk-snapshot/downloads/ios/manifest.plist": {
+    "live": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793
+    },
+    "worktree_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "git_export_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "git_bytes": 793,
+    "worktree_bytes": 793
+  },
+  "payload/hk-snapshot/downloads/ios/manifest.plist": {
+    "live": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793
+    },
+    "worktree_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "git_export_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "git_bytes": 793,
+    "worktree_bytes": 793
+  },
+  "baseline/hk-snapshot/src/download-redirect.js": {
+    "live": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998
+    },
+    "worktree_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+    "git_export_sha256": "2dd91eb31b8c308d2ae9d4f45ee54bea9d91d7ff8b598362f782adb7458dfeef",
+    "git_bytes": 1981,
+    "worktree_bytes": 1998
+  },
+  "payload/hk-snapshot/src/download-redirect.js": {
+    "live": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998
+    },
+    "worktree_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+    "git_export_sha256": "2dd91eb31b8c308d2ae9d4f45ee54bea9d91d7ff8b598362f782adb7458dfeef",
+    "git_bytes": 1981,
+    "worktree_bytes": 1998
+  },
+  "baseline/hk-snapshot/src/download-network.js": {
+    "live": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507
+    },
+    "worktree_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "git_export_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "git_bytes": 5507,
+    "worktree_bytes": 5507
+  },
+  "payload/hk-snapshot/src/download-network.js": {
+    "live": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507
+    },
+    "worktree_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "git_export_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "git_bytes": 5507,
+    "worktree_bytes": 5507
+  },
+  "baseline/hk-snapshot/src/download-network-selector.js": {
+    "live": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433
+    },
+    "worktree_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "git_export_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "git_bytes": 7433,
+    "worktree_bytes": 7433
+  },
+  "payload/hk-snapshot/src/download-network-selector.js": {
+    "live": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433
+    },
+    "worktree_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "git_export_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "git_bytes": 7433,
+    "worktree_bytes": 7433
+  }
+}

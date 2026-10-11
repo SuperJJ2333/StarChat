@@ -1,19 +1,132 @@
 {
-  "frozen_at_utc": "2026-10-11T08:08:41.284455+00:00",
+  "frozen_at_utc": "2026-10-11T08:20:44.615915+00:00",
+  "identity_rule": "Python source uses canonical LF matching Git index and fresh checkout; captured static files are opaque original bytes (-text -diff); original working/evidence hashes retained in preparation-input-hashes-original.json",
   "preparation_files": {
     "package_release.py": "841f748f91881749c214833e80728b3f110758b691a634faa337ce18d34aaa12",
     "execute_release.py": "1285d349d6bedcfb3144034db7e445c1ea790ab17e59730e3f7970760bb30d51",
     "test_package_gate.py": "0317213fe44e6277c18923862d3f34ad4d108d73ce62289ec744a4736ecc6136",
     "test_execution_gate.py": "3de9e7c3f5fc79f1326722d4a673914c27265ffc64386d1c1bf925f2a3b8412a",
     "test_release_contract.py": "71caf059eb8ded84284065070e2974fd35b296ae7bf66e8a0c4060eafbb7902b",
-    "payload/delivery_2214.py": "5049eac67fe362f55c20cc7b163516f4f599e4ee56216c0470792ff29e13232f",
-    "payload/release_2214.py": "7e608e8aafb5da2701df457adcddea1d79e455aba0057c5b83e3e1bdcd154520",
-    "payload/settings_2214.py": "0477915e559ab5f9e83a1cf67d1325e487d25a5436ebdca54056e16e19d587d4",
-    "payload/test_settings_postgres_2214.py": "392c44b81491bd687893b3018c544455b03102ec21b5e2333a32b5ac04d1b597",
-    "payload/verify_production_2214.py": "bfaed9cd45c2ecfcd29d04dc42cc64a29cf345d2187bec2af01d13c7342d3443"
+    "payload/delivery_2214.py": "0697a59e026c40d2ca42bf48870314f4444d1f0b86064ee5804d5dc4d89266cf",
+    "payload/release_2214.py": "24275770c0948d25b30e4633c0d5301f0897393d8095af32290a8783aaeca0bf",
+    "payload/settings_2214.py": "2ce834bb06ef59ce3a30e54894859f2a5f2ebb21dafa1ee4c13c260fd9741734",
+    "payload/test_settings_postgres_2214.py": "6db36c515389fc26471dbb78ac0a7080a0ad7143419c9c8bbf43e3670031c075",
+    "payload/verify_production_2214.py": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14",
+    "test_static_rollback.py": "271b1ab6ebd302d695f59d025d7b1ff32a45e68b2a24520b7cf5b8841c15ede8"
   },
-  "gate_log_sha256": "c0cd3d2bb9c5345a0e662e97f655ec414758d5a3d6640ac298a2b5feab4c1751",
-  "postgres_evidence_sha256": "a616ceeb7bbdd77aa7441f823a01ecb3d21e0c016630801b44664bfc347bd2e2",
+  "captured_static_files": {
+    "baseline/hk-snapshot/download.html": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245,
+      "git_blob": "8bc38f952b22c7529ad223d59e9c44d5f7614e46",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/download.html": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245,
+      "git_blob": "8bc38f952b22c7529ad223d59e9c44d5f7614e46",
+      "runtime_member": "hk-snapshot/download.html"
+    },
+    "baseline/hk-snapshot/downloads/android-release.json": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372,
+      "git_blob": "70c68eedaf05dd0d76662d2ef977a19fba430f44",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/downloads/android-release.json": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372,
+      "git_blob": "70c68eedaf05dd0d76662d2ef977a19fba430f44",
+      "runtime_member": "hk-snapshot/downloads/android-release.json"
+    },
+    "baseline/hk-snapshot/src/admin-home.js": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709,
+      "git_blob": "51320525bce8208c661145eb50dde3c8be38a8d3",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/admin-home.js": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709,
+      "git_blob": "51320525bce8208c661145eb50dde3c8be38a8d3",
+      "runtime_member": "hk-snapshot/src/admin-home.js"
+    },
+    "baseline/hk-snapshot/downloads/ios/manifest.plist": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793,
+      "git_blob": "355ccd855ccb997b7931f87fc6d564812ca061a3",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/downloads/ios/manifest.plist": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793,
+      "git_blob": "355ccd855ccb997b7931f87fc6d564812ca061a3",
+      "runtime_member": "hk-snapshot/downloads/ios/manifest.plist"
+    },
+    "baseline/hk-snapshot/src/download-redirect.js": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998,
+      "git_blob": "9d9c3f445039b5bb3ea07b064127672e7a573339",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/download-redirect.js": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998,
+      "git_blob": "9d9c3f445039b5bb3ea07b064127672e7a573339",
+      "runtime_member": "hk-snapshot/src/download-redirect.js"
+    },
+    "baseline/hk-snapshot/src/download-network.js": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507,
+      "git_blob": "19f5510ff4313fd4f96b1d40605cde979ccb2239",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/download-network.js": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507,
+      "git_blob": "19f5510ff4313fd4f96b1d40605cde979ccb2239",
+      "runtime_member": "hk-snapshot/src/download-network.js"
+    },
+    "baseline/hk-snapshot/src/download-network-selector.js": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433,
+      "git_blob": "d88b39d2636f3961082c5601937cd5154c1c5d33",
+      "runtime_member": null
+    },
+    "payload/hk-snapshot/src/download-network-selector.js": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433,
+      "git_blob": "d88b39d2636f3961082c5601937cd5154c1c5d33",
+      "runtime_member": "hk-snapshot/src/download-network-selector.js"
+    }
+  },
+  "evidence": {
+    "preparation-green.log": {
+      "git_sha256": "dc376900dc2be5c61dbc75b187283e7cb7bdeea05cb737a780272e85e4ae5f5e",
+      "captured_working_sha256": "c0cd3d2bb9c5345a0e662e97f655ec414758d5a3d6640ac298a2b5feab4c1751",
+      "note": "Log text is canonical LF in Git; original captured line endings may be CRLF"
+    },
+    "postgres.log": {
+      "git_sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966",
+      "captured_working_sha256": "a616ceeb7bbdd77aa7441f823a01ecb3d21e0c016630801b44664bfc347bd2e2",
+      "note": "Log text is canonical LF in Git; original captured line endings may be CRLF"
+    },
+    "review-repair-working-green.log": {
+      "git_sha256": "718b492e1decbe8eba48de966789a13bfef738a18c660b1bac923eec1cae4f27",
+      "captured_working_sha256": "9a81cfd7458649c8fe7e9481304c7bae7979483779b2ff8d99d3292a2cbff99a",
+      "note": "Log text is canonical LF in Git; original captured line endings may be CRLF"
+    },
+    "rollback-review-red.log": {
+      "git_sha256": "1aba25cf163895ea9036d9b648ef76ec641814b0be8b4558c239113aeccd1007",
+      "captured_working_sha256": "e4ce68f9207901588ffc64d8c135c3ed9ffbd4cc7743a3244d52de002e7d8ad0",
+      "note": "Log text is canonical LF in Git; original captured line endings may be CRLF"
+    },
+    "git-export-review-red.log": {
+      "git_sha256": "e8b07f4d115bf67847fb30e0e2a3338d219af065d9b00c61dd44a665e715806d",
+      "captured_working_sha256": "74fb5609f43b119cb6935103b4759b542fa599e962ff3b4a854e0fe5a87fe18a",
+      "note": "Log text is canonical LF in Git; original captured line endings may be CRLF"
+    }
+  },
   "actual_apk": "NOT AVAILABLE — no final identity assigned",
-  "transport_execution": "NONE; local temporary receiver/extractor only"
+  "transport_execution": "NONE; local synthetic receiver/extractor only"
 }

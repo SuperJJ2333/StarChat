@@ -200,10 +200,13 @@ def apply_static(plan, root, stage, backup, *, lock=host_lock):
         data = {name: safe_file(stage, name).read_bytes() for name in plan['static']}
         if any(sha(value) != plan['static'][name]['after'] for name, value in data.items()):
             raise ValueError('staged payload SHA mismatch')
+        old = {name: safe_file(root, name).read_bytes() for name in plan['static']}
+        if any(sha(value) != plan['static'][name]['before'] for name, value in old.items()):
+            raise ValueError('original bytes differ from exact before state')
         backup = fresh_backup(backup, root)
         for name in plan['static']:
             target = backup / name; target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(safe_file(root, name).read_bytes())
+            target.write_bytes(old[name])
         (backup / 'plan.json').write_bytes(json_bytes(plan))
         written = []
         try:
@@ -215,7 +218,9 @@ def apply_static(plan, root, stage, backup, *, lock=host_lock):
         except Exception:
             for name in reversed(written):
                 if digest(safe_file(root, name)) == plan['static'][name]['after']:
-                    atomic(safe_file(root, name), (backup / name).read_bytes())
+                    # Use the same verified original buffer; a damaged backup
+                    # cannot become public content during exception recovery.
+                    atomic(safe_file(root, name), old[name])
             raise
         return 'published'
 
