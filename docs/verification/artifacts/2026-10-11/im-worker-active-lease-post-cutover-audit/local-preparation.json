@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "python_ast": "PASS",
+  "synthetic_log_counts": "PASS",
+  "sensitive_marker_not_emitted": true,
+  "remote_executed": false,
+  "containers_started": 0,
+  "script_sha256": "8c4fb0112b1394598ae05e44a6dfe78999e30f0a94d97f1ac4ac39ece487aa15",
+  "powershell_ast": "PASS",
+  "verification_scope": "Local AST and pure synthetic log classifier only; no remote/container/SQL/HTTP invocation"
+}
