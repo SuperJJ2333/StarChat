@@ -142,3 +142,13 @@ Android发布准备4341d844被独立审查拒绝：静态捕获CRLF被Git归一�
 root另外对本地2213成品SHA08a74481进行14个ARM64 ELF静态检查，libcrypto四个PT_LOAD仍4KiB，NDK readelf独立确认；候选仍选flutter_openssl_crypto0.5.0/预编译OpenSSL1.1.1q-beta-1。新增P1兼容性风险与受控源码重建/双页大小已知向量修复门禁见[原生页大小记录](../../verification/2026-10-11-android-native-page-alignment.md)。未据此宣称已有16KiB设备故障，亦未更换加密库；不属于已完成修复或API28存储验收。最终2214也须记录实际ELF结果，ZIP对齐不可替代。
 
 08:26:10.958Z只读版本复核：两端仍0.4.44+2213，下载目录无2214文件，version-preflight-4.json保存。下一步：两个独立增量审查收束、root冻结新共享输入，完整Flutter/静态/边界门禁与最终固定签名ARM64重建；同源iOS完整插件候选重建。外部签名/真机/OEM及长期容量缺口继续保留。
+
+## 17:04+08 最终回归的单项失败与同源 iOS 成品
+
+缓存最终76678477及独立941fefe已集成c6003afe/5988deb4，取消准备中的A不再误伤有效B，104影响组与独立9项通过。Android发布准备717488/91a5及独立d57a/29be也已集成；14个静态捕获原始字节与live baseline逐项相符，准备审查通过但尚无实际2214发布包。永久guard安装后35容器保持健康状态的有限后验已记录。
+
+冻结5988deb4、manifest5e5778f1（2101文件）于08:34:27Z运行final-r2：Flutter自然结束5957 PASS/9 SKIP/1 FAIL（08:42:51Z，exit1）；analyze零问题、boundaries401 PASS/1条件SKIP、三项policy PASS。完整原始失败与日志身份见shared-final-r2-summary.json，不能称全量通过。唯一失败是搜索媒体网格HTTP计数1→2；隔离trace确认初始两bubble共享HTTP1，但固定pump结束后过早离开，所有消费者取消时缓存尚未发布，后搜索正确重新下载。作者f59cf233只增加初始双bubble真实解码的有界等待及导航前HTTP1断言，搜索后原HTTP1断言保持；29影响测试通过，运行时代码与5988完全一致，独立复验进行中。
+
+iOS run38125303494的完整arm64 device job SUCCESS，29生产插件/46框架；IPA34964622bytes、SHA0fad8d42bcab9439ff35951e44b7f0df6b284660200b23b576f6d12ce72a4d3b，下载ZIP及IPA SHA/CRC本地核验通过。原生模拟器job仍运行，不把device build当作native acceptance。该包源5988；后续test-only修改若运行时/原生/依赖/workflow闭包完全一致可按影响分析复用，无需重新编译同一运行时代码。尚未企业回签、真机覆盖或发布。
+
+下一步：独立审查test-only修正后集成并冻结最终输入，完整共享Flutter回归；复用未改变的门禁须逐项绑定输入。刷新线上双端2213版本后执行最终ARM64常规重建/固定75b31签名，真实成品经独立评审再按阶段发布。R9b-2长handler续租及OpenSSL16KiB受控实验在隔离树推进，尚未生产部署或集成二进制。官方OEM审核/最终iOS签名/真机及长期SLO仍缺资料。
