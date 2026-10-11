@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "checked_utc": "2026-10-11T11:01:16.953319+00:00",
+  "checks": {
+    "final-r3-git-evidence-identities.json": {
+      "status": "PASS",
+      "at_commit": "4232ad1ed00e62009a570fd5f6f9ababb677ffe5",
+      "files": 81
+    },
+    "publication-git-evidence-identities-r3.json": {
+      "status": "PASS",
+      "at_commit": "212f19af02cb84570918c20f80c8b9fbdb99aa12",
+      "files": 33
+    },
+    "mobile_source_closure": {
+      "status": "PASS",
+      "files": 2101,
+      "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8"
+    },
+    "release_report_local_links": {
+      "status": "PASS",
+      "links": 12
+    },
+    "tracked_worktree": {
+      "status": "CLEAN",
+      "excluded": "Intentionally ignored APK/IPA/build trees and pre-existing verification material are retained."
+    },
+    "owned_tunnel": {
+      "status": "EXITED",
+      "port": 19071,
+      "pid": 169996
+    }
+  },
+  "scope": "Local committed identity, unchanged mobile inputs and document consistency. No repeated source build, physical-device acceptance or whole-repository test claim."
+}

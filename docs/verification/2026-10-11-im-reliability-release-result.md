@@ -34,7 +34,7 @@ worker有界活跃续租于10:39:52–10:40:17 UTC上线，镜像abda33f8、容�
 
 [原生页大小风险及受控修复门禁](2026-10-11-android-native-page-alignment.md)与[实际包独立审查](artifacts/2026-10-11/android2214-final-independent-review/quality-security.md)保留16KB P1。更换加密实现须相应ADR/领域/安全审查、已知向量、旧数据兼容及4KiB/16KiB实跑，不能直接塞入实验库。
 
-原独立10行窗口有1条warning；后续窗口扩大后固定枚举读回WAITING两条及BALANCE_UNSTABLE/RECONCILIATION_PENDING各一条（statusOK），计数不可跨窗口比较。证据见[脱敏枚举](artifacts/2026-10-11/im-reliability-release/worker-warning-static-enums-r3.json)。本次没有改变财务模块/配置或消除相关业务状态，也不证明它们此前已出现；不读取资金明细、不为验收调阈值或重放事件。
+原独立10行窗口有1条warning；后续窗口扩大后固定枚举读回WAITING两条及BALANCE_UNSTABLE/RECONCILIATION_PENDING各一条（statusOK只表示该来源运行状态，不能代表资金监控或对账健康），计数不可跨窗口比较。证据见[脱敏枚举](artifacts/2026-10-11/im-reliability-release/worker-warning-static-enums-r3.json)。本次没有改变财务模块/配置或消除相关业务状态，也不证明它们此前已出现；不读取资金明细、不为验收调阈值或重放事件。
 
 ## 后续优先级与缺失资料
 
@@ -49,3 +49,5 @@ worker有界活跃续租于10:39:52–10:40:17 UTC上线，镜像abda33f8、容�
 - [共享最终摘要](artifacts/2026-10-11/im-reliability-release/shared-final-r3-summary.json)、[成品双审](artifacts/2026-10-11/android2214-final-independent-review/release-review.json)。
 - [实际分发审计](artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/audit.json)、[两文件回填](artifacts/2026-10-11/im-reliability-release/source-backfill-result-r3.json)、[工作站公网](artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/receipt.json)。
 - [worker实际切换](artifacts/2026-10-11/im-reliability-release/worker-active-lease-deployment-r3.json)、[独立后验](artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/REPORT.md)。
+
+- [发布后独立文案/回执复核](artifacts/2026-10-11/android2214-final-independent-review/post-publication-review.md)、[最终本地一致性](artifacts/2026-10-11/im-reliability-release/final-consistency-r3.json)。

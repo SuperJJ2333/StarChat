@@ -198,3 +198,9 @@ worker10:39前重新核16个远端冻结输入、旧bfde/db300 healthy/0 restart
 独立原始10行/1warning结构快照及后续4行结构格式未识别均原样保留。root进一步仅允许从源码AST固定字符串中读回JSON的level/event/component/reason_code/status，未输出原始message、金额、地址、token或异常参数。扩大的后续窗口为maintenance_state/manual_maintenance/WAITING两条、source_health/funding_source/BALANCE_UNSTABLE与RECONCILIATION_PENDING各一条（statusOK）；枚举receipt为worker-warning-static-enums-r3.json。两窗口不同，不相减或推算发生率。
 
 这些是资金监控等待/稳定性/对账状态，不能写成无告警或已业务正常；本轮不更改财务策略/账务/阈值/审批，不读取资金明细或重放历史DEAD。候选仅覆盖五个已评审worker/Consumer源文件，金融维护模块及运行配置保持；这也不证明同一状态在此前时间窗口已经发生。后续需单独领域运营复核，保留P1观察项。IM续租的源码/镜像/settled发布及结构后验通过范围保持；有限样本租约失败/error/traceback计数零不代表全周期无错。独立文案复核发现构建时长算术笔误，已由6分40改5分40，起止和原receipt未改动。
+
+## 最终交付收束
+
+发布后独立文案/回执审查0a53e740已整合为7d474fd9，九域、真实9阶段、双端三审计、4公网、两文件回填、worker结构及资金监控枚举表述通过。后端独立结构报告/不同窗口未知分类分别以b775b2b2/20f7b368整合；后续定位证据另存，不覆盖原始观察。final-consistency-r3.json验证114份历史Git证据在各自捕获commit字节精确、2101个mobile输入仍与最终冻结一致、报告链接可达、当时tracked工作树干净与自有tunnel已退出。最后仅增加本段/交付索引/一致性回执，未改变产品输入或复跑等价已完成门禁。
+
+本轮可执行修复/Android分发/worker续租发布已收束；下一步按独立依赖执行：P0最终iOS企业签名和旧身份/真机保数据覆盖；P1 Android crypto16K受控ADR修复、最终ARM64/iPhone与ROM/Doze/弱网/内存/功耗设备矩阵、获批OEM通道、资金监控业务状态专门复核与7–14天端到端SLO/容量/恢复演练；P2冷索引/媒体编码成本/全沙盒空间/旧材料可恢复归档和模块演进。没有把这些待办标成已完成。用户可从[九域修复与发布报告](../../verification/2026-10-11-im-reliability-release-result.md)继续，具体成品SHA/回退/验证证据均在其中。
