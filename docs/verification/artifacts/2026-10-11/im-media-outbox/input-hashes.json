@@ -1,0 +1,298 @@
+{
+  "generated_at_utc": "2026-10-11T05:30:32.8964474Z",
+  "baseline_commit": "4662f576d4c717f0a605e118ffe4c54da1226e5c",
+  "dependency_original_commit": "82a8eca515b81a8747d2a45ea6992a3b0af8a8d8",
+  "dependency_local_commit": "03b22fc082e61b65a937fe1c868d6d140d59518b",
+  "os": "Microsoft Windows NT 10.0.19045.0",
+  "flutter": "3.44.9 6b182d2c75",
+  "dart": "3.12.2",
+  "source_files": [
+    {
+      "path": "apps/mobile_flutter/integration_test/media_outbox_persistence_native_test.dart",
+      "sha256": "165b517b1b6094f5033646b84d74699eda2e962b6f0677ff57ad4a26ba81d6ca"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/app_home.dart",
+      "sha256": "2314168d362c2dd269cbd7bceb378ce10a41a5da004cfc51bf71284ee2fa6835"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_recovery_service.dart",
+      "sha256": "ab0a16e665f5421a186f920b000ea70ad1d536ea709787613cde9cec4e75b271"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart",
+      "sha256": "432459e8362e908ee401eefe6cace782b277d1cb5444bdee60f8829de8d20b7e"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "sha256": "04197f8ee22f4043ec9a324a8a31cf4ce939748d4076d5aa86c1985ad936a757"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_outbox_pending_view.dart",
+      "sha256": "0bd9ae06cf23d098dc45b6ad97a368391a3712621f1021d821591f9aa7367067"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_outbox_sender.dart",
+      "sha256": "c9dcf7fed6303e4ad939402c3d4099b916439d0a452bb9b6b5aa7517f26bba82"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "sha256": "6f07ea4afa640c60dd581645607c77e60d816043d21ae7001104595c010f0ddf"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart",
+      "sha256": "4a32fec1133fa4fbe46a8a5660bec82ed28dad32199946f90540c93347cd30c5"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart",
+      "sha256": "a2af15addacf1fe2b51a5ae763db2de22026f6f364f4a0880e12413db8df869a"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart",
+      "sha256": "a77098f0e7f2bac1a315a03c42936cc08517a7eb9d986bfc1173b61dbe6ed06b"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart",
+      "sha256": "a9968498afe3a4f592eb192e3f8e43593270428bb1bda6046a3d35820611d4af"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/pending_media_directory_test.dart",
+      "sha256": "ff3d1b3eed9c7530aa4eb9b624c5a925599e869c7aae82253a0e42f22bd1686e"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart",
+      "sha256": "abc093da867523378410356525ade5e070ff5e799e77bb29bf5ade47cd3f3e03"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart",
+      "sha256": "f59ee6cedf425a5e590c2fc23f423f06dc1d2b019b025866a780de48a59187cf"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart",
+      "sha256": "07035125c65dc3b9aa5f6216e37ce4af7eb902a6d9017bb9bb21e5bd81f4e68b"
+    }
+  ],
+  "related_inputs": [
+    {
+      "path": "apps/mobile_flutter/pubspec.yaml",
+      "sha256": "229e154aa59ee980e672229de2d33dc52c26e52d7cb026143c99f29dfb31eea8"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_transfer_budget.dart",
+      "sha256": "645414c326ab06769f6032f0bcbbb2df52d1ee08f8c0b8cf53a61fc7b4146c51"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_message_service.dart",
+      "sha256": "edd968ef0285bd0e068a0a1ff689ce3c414aee56fcdc01713cc655e6aa400872"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/server_retry_policy.dart",
+      "sha256": "72f35d0ec816b3416ac7cee838a28df81ffdcaece80d6a6849ccaac50d65324a"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/room.dart",
+      "sha256": "77ce2134149f367adb353f94a31b708f09e178189ef8ccda8db459e65306692f"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/client.dart",
+      "sha256": "595732dd120e73e6a88df65645f66b7d9e566eacb916e47c0283642f172f6ec7"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/utils/matrix_file.dart",
+      "sha256": "375a20a5264bab89def4018efd3908fef7b2e09499f70054d04bc49b73ed4a03"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/utils/crypto/encrypted_file.dart",
+      "sha256": "a048e789347b8e3f0c78f3ba433798fab697252b2ed3299d28024943c24a30de"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart",
+      "sha256": "1ae7894fe120fb4f526aa5d7883e74aa38abcfc96e1ea817d3054317234e77b4"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/canonical_send_guard_test.dart",
+      "sha256": "a5a3bbe4ba2ae50074e2a5b4d189626463bc8573ec5979fd2e8b386fef64b09e"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_transfer_budget_test.dart",
+      "sha256": "e1e9acc04a09513cf90ead8116e7204033be693be1093a458dc838895b7b6582"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_transfer_admission_test.dart",
+      "sha256": "7544886bd06e1566785bb1922a1b0af78c72f19e445e3ce60606f44cde51cd81"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_upload_preflight_test.dart",
+      "sha256": "04615ae264796c01f8972dd0fbac0759b6f337bfc5c79bc07a5e321a02f2441b"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart",
+      "sha256": "cb5f83b387e08ec0cea9919984b6f976c2036d8db2ac660a7e24f0abc325403a"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/adjacent-final.txt",
+      "sha256": "30b7a686c498efd00c80b1759630a9c4f75999c346dda48be719c246f4977943",
+      "created_utc": "2026-10-11T05:15:55.2773825Z",
+      "last_write_utc": "2026-10-11T05:16:09.9273743Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/analyze-after-scan-lock.txt",
+      "sha256": "6f6f135c7e2fd594efd1a73a21476b3b45ef37649ff2eeecf29026b70de8e658",
+      "created_utc": "2026-10-11T05:22:26.8405657Z",
+      "last_write_utc": "2026-10-11T05:22:37.7670140Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/contract.md",
+      "sha256": "69cc968a193a85b4debe838809aa00cc564af20c58a3e853c40c1796fb3e20d6",
+      "created_utc": "2026-10-11T04:10:05.4733815Z",
+      "last_write_utc": "2026-10-11T05:28:54.5030585Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/coordinator-red.txt",
+      "sha256": "df25e3bc5a70121af036488f48761c1291aaab8be554d8d1efcccc3397c00726",
+      "created_utc": "2026-10-11T04:53:42.9027544Z",
+      "last_write_utc": "2026-10-11T04:53:48.5830784Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/copy-cancel-red.txt",
+      "sha256": "989c8a2456804a7324d363bc1184af1925be7537e22e2d28964184501de94551",
+      "created_utc": "2026-10-11T04:19:15.5240793Z",
+      "last_write_utc": "2026-10-11T04:19:52.6117348Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/deferred-export-green.txt",
+      "sha256": "85b5160355e82b6aee89591640d8662d8fadf1cbbc7fbd2fdfccbe4a16c4ace0",
+      "created_utc": "2026-10-11T05:04:03.8204279Z",
+      "last_write_utc": "2026-10-11T05:04:08.7742727Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/deferred-export-red-verified.txt",
+      "sha256": "1116a65814f826a4ffe8eefcb7db412c830b4b7d79e0554dc4b1f3b85cbba604",
+      "created_utc": "2026-10-11T05:03:30.2170317Z",
+      "last_write_utc": "2026-10-11T05:03:34.4963339Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/focused-after-scan-lock.txt",
+      "sha256": "0dd41ea2b5b4a1e77702c3b1174c4deb3ac6afae9e41942bfbca3859808d22c2",
+      "created_utc": "2026-10-11T05:22:26.7990102Z",
+      "last_write_utc": "2026-10-11T05:23:23.8386516Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/hard-429-red.txt",
+      "sha256": "01d98eb30ce6c309dbca792c96281bd636e0ef4e2ed1b309475c2268921484e3",
+      "created_utc": "2026-10-11T04:32:21.1270338Z",
+      "last_write_utc": "2026-10-11T04:32:26.4926534Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/pending-cap-behavior-red.txt",
+      "sha256": "96df17fcdf5cd67eaa523d3205035a6b78191d31bf150bf96aa2e03d7734bb3e",
+      "created_utc": "2026-10-11T05:13:05.3863622Z",
+      "last_write_utc": "2026-10-11T05:13:08.9770216Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/pending-cap-green.txt",
+      "sha256": "43282ecd7b85d7ed42c7b3a215a0bee113dddc60ca7b8823a7c8fa9dcb75c387",
+      "created_utc": "2026-10-11T05:14:07.1076356Z",
+      "last_write_utc": "2026-10-11T05:14:12.4566049Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/pending-view-red.txt",
+      "sha256": "3ed292178f9721dbff16bb3fec262bf5290e0ac588d97c843708d301e7016943",
+      "created_utc": "2026-10-11T04:29:44.4694142Z",
+      "last_write_utc": "2026-10-11T04:29:48.6111238Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/prepared-semantics-red.txt",
+      "sha256": "d926696d52859cb63cec5128d42e5126ba048361fb7d414d5946b28f2259bd57",
+      "created_utc": "2026-10-11T04:50:34.1099956Z",
+      "last_write_utc": "2026-10-11T04:50:38.9879188Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/production-sender-sdk-green.txt",
+      "sha256": "658bb95abb5171e609fcb0ef2692ec2267a9c2fc22c033e098fcbe48f7edc138",
+      "created_utc": "2026-10-11T05:01:06.8582814Z",
+      "last_write_utc": "2026-10-11T05:01:12.1568563Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/recovery-red.txt",
+      "sha256": "14c57a5511088144f0996a2eff68a1bee4628a039ebd3f0ccddc3e629c22a793",
+      "created_utc": "2026-10-11T04:14:40.0427523Z",
+      "last_write_utc": "2026-10-11T04:14:49.4050617Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/recovery-scan-lock-green.txt",
+      "sha256": "f3d36d1d584aaaa983518999a8471df96d255ce2c85e0b4b118761ca557bdde0",
+      "created_utc": "2026-10-11T05:19:23.6537903Z",
+      "last_write_utc": "2026-10-11T05:19:29.8985825Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/recovery-scan-lock-red.txt",
+      "sha256": "9506e1cef41db92983690aec46bc75d20c4acffa73c007be782f1a060869c7c6",
+      "created_utc": "2026-10-11T05:18:37.8714677Z",
+      "last_write_utc": "2026-10-11T05:18:52.5724547Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/room-fairness-red.txt",
+      "sha256": "299d5d7961a3b87483f28d4eabb0a9a0e7f7efafabfe40c5e35867e7986486da",
+      "created_utc": "2026-10-11T04:48:22.3261353Z",
+      "last_write_utc": "2026-10-11T04:48:30.4130288Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/store-red.txt",
+      "sha256": "8240c217326abeca5293c5cc0f8b1a5e1727d4490c24b4112721b6a6a6d814fe",
+      "created_utc": "2026-10-11T04:11:19.4066349Z",
+      "last_write_utc": "2026-10-11T04:11:35.0505624Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/symlink-green.txt",
+      "sha256": "6634b9da30ebba59aa11d3446f01eeb864902b65e9c4209d85fcb8e7921ea805",
+      "created_utc": "2026-10-11T05:09:04.4491036Z",
+      "last_write_utc": "2026-10-11T05:09:09.5933684Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/symlink-red.txt",
+      "sha256": "16b2186cc3d17b7c201ea7ed59e29709b0df2c254d49f53989df362134b4c61e",
+      "created_utc": "2026-10-11T05:08:35.7024352Z",
+      "last_write_utc": "2026-10-11T05:08:44.3878026Z"
+    }
+  ],
+  "gates": [
+    {
+      "name": "focused-final-after-scan-lock",
+      "exit_code": 0,
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "includes_synthetic_sqlite_file_reopens": 700,
+      "native_device": false
+    },
+    {
+      "name": "targeted-analyze-after-scan-lock",
+      "exit_code": 0,
+      "files": 16,
+      "issues": 0
+    },
+    {
+      "name": "adjacent-final",
+      "exit_code": 0,
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0,
+      "reuse": "Matrix/RoomPage/media-budget/SDK input unchanged after this run; later edits only recovery and its tests"
+    },
+    {
+      "name": "native-protected-storage-fixture",
+      "status": "not run on Windows; requires root integrated Android/iOS candidate"
+    },
+    {
+      "name": "complete-project-and-release",
+      "status": "root owns shared full Flutter/analyze/verify.ps1 gates; not claimed by this scoped candidate"
+    }
+  ]
+}

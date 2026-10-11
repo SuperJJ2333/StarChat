@@ -1,0 +1,61 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart
+test/core/outbox/media_outbox_store_test.dart:16:64: Error: Undefined name 'Uint8List'.
+    await db.persistBytes(txid: 'file', roomId: '!r:t', bytes: Uint8List.fromList([1,2]),
+                                                               ^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:17:54: Error: No named parameter with the name 'prepared'.
+      mimeType: 'image/jpeg', filename: 'image.jpg', prepared: true, asFile: true,
+                                                     ^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:22:17: Error: The getter 'prepared' isn't defined for the type 'MediaOutboxTask'.
+ - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'prepared'.
+    expect(task.prepared, isTrue);
+                ^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:23:17: Error: The getter 'asFile' isn't defined for the type 'MediaOutboxTask'.
+ - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'asFile'.
+    expect(task.asFile, isTrue);
+                ^^^^^^
+test/core/outbox/media_outbox_store_test.dart:24:18: Error: The getter 'width' isn't defined for the type 'MediaOutboxTask'.
+ - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'width'.
+    expect((task.width, task.height), (400, 300));
+                 ^^^^^
+test/core/outbox/media_outbox_store_test.dart:24:30: Error: The getter 'height' isn't defined for the type 'MediaOutboxTask'.
+ - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'height'.
+    expect((task.width, task.height), (400, 300));
+                             ^^^^^^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: test/core/outbox/media_outbox_store_test.dart:16:64: Error: Undefined name 'Uint8List'.
+      await db.persistBytes(txid: 'file', roomId: '!r:t', bytes: Uint8List.fromList([1,2]),
+                                                                 ^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:17:54: Error: No named parameter with the name 'prepared'.
+        mimeType: 'image/jpeg', filename: 'image.jpg', prepared: true, asFile: true,
+                                                       ^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:22:17: Error: The getter 'prepared' isn't defined for the type 'MediaOutboxTask'.
+   - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+  Try correcting the name to the name of an existing getter, or defining a getter or field named 'prepared'.
+      expect(task.prepared, isTrue);
+                  ^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:23:17: Error: The getter 'asFile' isn't defined for the type 'MediaOutboxTask'.
+   - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+  Try correcting the name to the name of an existing getter, or defining a getter or field named 'asFile'.
+      expect(task.asFile, isTrue);
+                  ^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:24:18: Error: The getter 'width' isn't defined for the type 'MediaOutboxTask'.
+   - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+  Try correcting the name to the name of an existing getter, or defining a getter or field named 'width'.
+      expect((task.width, task.height), (400, 300));
+                   ^^^^^
+  test/core/outbox/media_outbox_store_test.dart:24:30: Error: The getter 'height' isn't defined for the type 'MediaOutboxTask'.
+   - 'MediaOutboxTask' is from 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart' ('lib/core/outbox/media_outbox_store.dart').
+  Try correcting the name to the name of an existing getter, or defining a getter or field named 'height'.
+      expect((task.width, task.height), (400, 300));
+                               ^^^^^^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart

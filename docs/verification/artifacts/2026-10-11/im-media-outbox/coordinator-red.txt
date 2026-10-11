@@ -1,0 +1,19 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart
+test/features/matrix/media_outbox_coordinator_test.dart:35:12: Error: The method 'bindDurableMediaOutbox' isn't defined for the type 'MatrixSdkE2eeClient'.
+ - 'MatrixSdkE2eeClient' is from 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart' ('lib/features/matrix/matrix_e2ee_client.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'bindDurableMediaOutbox'.
+    matrix.bindDurableMediaOutbox(service);
+           ^^^^^^^^^^^^^^^^^^^^^^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart: test/features/matrix/media_outbox_coordinator_test.dart:35:12: Error: The method 'bindDurableMediaOutbox' isn't defined for the type 'MatrixSdkE2eeClient'.
+   - 'MatrixSdkE2eeClient' is from 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart' ('lib/features/matrix/matrix_e2ee_client.dart').
+  Try correcting the name to the name of an existing method, or defining a method named 'bindDurableMediaOutbox'.
+      matrix.bindDurableMediaOutbox(service);
+             ^^^^^^^^^^^^^^^^^^^^^^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart

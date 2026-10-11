@@ -1,0 +1,75 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart
+test/core/outbox/media_outbox_store_test.dart:4:8: Error: Error when reading 'lib/core/outbox/media_outbox_store.dart': 系统找不到指定的文件。
+import 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart';
+       ^
+test/core/outbox/media_outbox_store_test.dart:10:8: Error: 'SqliteMediaOutboxStore' isn't a type.
+  late SqliteMediaOutboxStore store;
+       ^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:11:17: Error: Method not found: 'MediaOutboxOwner'.
+  const owner = MediaOutboxOwner(
+                ^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:19:13: Error: Method not found: 'SqliteMediaOutboxStore'.
+    store = SqliteMediaOutboxStore(
+            ^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:31:24: Error: Undefined name 'MediaOutboxStage'.
+    expect(task.stage, MediaOutboxStage.queued);
+                       ^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:48:21: Error: 'MediaOutboxException' isn't a type.
+        throwsA(isA<MediaOutboxException>()));
+                    ^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:54:13: Error: Method not found: 'SqliteMediaOutboxStore'.
+    store = SqliteMediaOutboxStore(owner: owner, directory: () async => root,
+            ^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:58:21: Error: 'MediaOutboxException' isn't a type.
+        throwsA(isA<MediaOutboxException>()));
+                    ^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:68:63: Error: 'MediaOutboxException' isn't a type.
+    await expectLater(store.verifiedSource(task), throwsA(isA<MediaOutboxException>()));
+                                                              ^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:70:22: Error: Couldn't find constructor 'MediaOutboxOwner'.
+        owner: const MediaOutboxOwner(accountId: '@a:test',
+                     ^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_store_test.dart:69:19: Error: Method not found: 'SqliteMediaOutboxStore'.
+    final other = SqliteMediaOutboxStore(
+                  ^^^^^^^^^^^^^^^^^^^^^^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: test/core/outbox/media_outbox_store_test.dart:4:8: Error: Error when reading 'lib/core/outbox/media_outbox_store.dart': 系统找不到指定的文件。
+  import 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart';
+         ^
+  test/core/outbox/media_outbox_store_test.dart:10:8: Error: 'SqliteMediaOutboxStore' isn't a type.
+    late SqliteMediaOutboxStore store;
+         ^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:11:17: Error: Method not found: 'MediaOutboxOwner'.
+    const owner = MediaOutboxOwner(
+                  ^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:19:13: Error: Method not found: 'SqliteMediaOutboxStore'.
+      store = SqliteMediaOutboxStore(
+              ^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:31:24: Error: Undefined name 'MediaOutboxStage'.
+      expect(task.stage, MediaOutboxStage.queued);
+                         ^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:48:21: Error: 'MediaOutboxException' isn't a type.
+          throwsA(isA<MediaOutboxException>()));
+                      ^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:54:13: Error: Method not found: 'SqliteMediaOutboxStore'.
+      store = SqliteMediaOutboxStore(owner: owner, directory: () async => root,
+              ^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:58:21: Error: 'MediaOutboxException' isn't a type.
+          throwsA(isA<MediaOutboxException>()));
+                      ^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:68:63: Error: 'MediaOutboxException' isn't a type.
+      await expectLater(store.verifiedSource(task), throwsA(isA<MediaOutboxException>()));
+                                                                ^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:70:22: Error: Couldn't find constructor 'MediaOutboxOwner'.
+          owner: const MediaOutboxOwner(accountId: '@a:test',
+                       ^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_store_test.dart:69:19: Error: Method not found: 'SqliteMediaOutboxStore'.
+      final other = SqliteMediaOutboxStore(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart

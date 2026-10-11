@@ -87,6 +87,9 @@ import 'matrix_recovery_service.dart';
 import 'matrix_recovery_vault.dart';
 import 'recent_history_coordinator.dart';
 import '../../core/session_store.dart';
+import '../../core/outbox/media_outbox_store.dart';
+import '../../core/outbox/media_outbox_recovery_service.dart';
+import 'video_poster_extractor.dart';
 import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
@@ -2485,6 +2488,46 @@ final class MatrixRoomLease
         thumbnailBytes: thumbnailBytes,
         thumbnailWidth: thumbnailWidth,
         thumbnailHeight: thumbnailHeight);
+  }
+
+  /// Reads an account-owned durable original only after reserving the complete
+  /// preparation/encryption/HTTP peak. The lease still gates the real SDK send.
+  Future<String> sendStoredMedia(File source,
+          {required String mimeType,
+          required String filename,
+          required String txid,
+          bool asFile = false,
+          int? durationMs,
+          int? width,
+          int? height}) =>
+      owner._sendStoredMediaFromLease(this, source,
+          mimeType: mimeType,
+          filename: filename,
+          txid: txid,
+          asFile: asFile,
+          durationMs: durationMs,
+          width: width,
+          height: height);
+
+  Future<MatrixOutgoingWorkJob> enqueuePreparedMediaFrom(
+      {required String jobId,
+      required String sourceId,
+      required Future<Uint8List> Function() load,
+      required int maximumBytes,
+      required String mimeType,
+      required String filename,
+      required String body,
+      required List<String> targetRoomIds}) {
+    if (canceled) throw const MediaOutboxException('owner-unavailable');
+    return owner.enqueuePreparedMediaFrom(
+        jobId: jobId,
+        sourceId: sourceId,
+        load: load,
+        maximumBytes: maximumBytes,
+        mimeType: mimeType,
+        filename: filename,
+        body: body,
+        targetRoomIds: targetRoomIds);
   }
 
   @override
@@ -5988,6 +6031,33 @@ final class _ConversationMemberProjection {
 /// Frozen plaintext forwarding snapshot. The owner copies these scalar fields
 /// before admission so later selection or SDK Event map mutations cannot alter
 /// the queued payload.
+final class _DurableOutgoingIntent {
+  _DurableOutgoingIntent(this.service);
+  final MediaOutboxRecoveryService service;
+  final tasks = <MediaOutboxTask>[];
+  final _releases = <String, VoidCallback>{};
+  void hold(String txid) => _releases[txid] = service.holdForeground(txid);
+  void releaseOne(String txid) => _releases.remove(txid)?.call();
+  void release() {
+    for (final txid in _releases.keys.toList()) {
+      releaseOne(txid);
+    }
+  }
+
+  Future<void> reject() async {
+    try {
+      if (service.active) {
+        for (final task in tasks) {
+          await service.store.setStage(task.txid, MediaOutboxStage.failed,
+              from: {MediaOutboxStage.queued}, failure: 'admission-rejected');
+        }
+      }
+    } finally {
+      release();
+    }
+  }
+}
+
 sealed class MatrixOutgoingForwardMessage {
   const MatrixOutgoingForwardMessage();
   String get id;
@@ -6635,6 +6705,40 @@ final class MatrixSdkE2eeClient
   }
   Client? _client;
   final SecureSessionStore? secureSessionStore;
+  MediaOutboxRecoveryService? _durableMediaOutbox;
+  Object? _durableMediaIdentity;
+  bool _durableMediaRequired = false;
+
+  /// AppHome supplies the existing account/database owner after startup
+  /// reconciliation. Managed production clients fail closed before this bind.
+  void bindDurableMediaOutbox(MediaOutboxRecoveryService service) {
+    if (!service.active ||
+        service.store.owner.accountId != userId ||
+        service.store.owner.homeserver != homeserver.toString()) {
+      throw const MediaOutboxException('owner-unavailable');
+    }
+    _durableMediaRequired = true;
+    _durableMediaIdentity = sendPreparationIdentity;
+    _durableMediaOutbox = service;
+  }
+
+  MediaOutboxRecoveryService? _durableMediaFor(_OutgoingSession session) {
+    _ensureOutgoingSessionCurrent(session);
+    final service = _durableMediaOutbox;
+    if (service != null &&
+        service.active &&
+        _durableMediaIdentity == sendPreparationIdentity &&
+        service.store.owner.accountId == session.accountId &&
+        service.store.owner.homeserver == homeserver.toString()) {
+      return service;
+    }
+    if (_durableMediaRequired || secureSessionStore != null) {
+      throw const MediaOutboxException('owner-unavailable');
+    }
+    // Unmanaged SDK fixtures keep their explicit in-memory coordinator path.
+    return null;
+  }
+
   final Future<void> Function(
           Client,
           RecoveryOperationOwner,
@@ -7268,6 +7372,10 @@ final class MatrixSdkE2eeClient
     }
     final ids = <String>{};
     final jobs = <MatrixOutgoingWorkJob>[];
+    final durable = messages.any((m) => m is MatrixOutgoingForwardMedia)
+        ? _durableMediaFor(session)
+        : null;
+    final durableIntents = <_DurableOutgoingIntent>[];
     try {
       for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
         final message = messages[sourceIndex];
@@ -7287,6 +7395,19 @@ final class MatrixSdkE2eeClient
         final createdAt = DateTime.now();
         final text = message is MatrixOutgoingForwardText ? message : null;
         final media = message is MatrixOutgoingForwardMedia ? message : null;
+        if (media != null && durable != null) {
+          final intent = await _persistForwardIntent(
+              batchId, sourceIndex, media, targets, session, durable);
+          durableIntents.add(intent);
+          jobs.add(_buildDurableMediaJob(
+              jobId: '$batchId-$sourceIndex',
+              sourceId: media.id,
+              body: media.body,
+              intent: intent,
+              session: session,
+              kind: media.presentationKind));
+          continue;
+        }
         final body = switch (message) {
           MatrixOutgoingForwardText(:final body) => body,
           MatrixOutgoingForwardMedia(:final body) => body,
@@ -7360,13 +7481,96 @@ final class MatrixSdkE2eeClient
         ));
       }
     } catch (_) {
+      for (final intent in durableIntents) {
+        await intent.reject();
+      }
       _closeOutgoingDiagnosticContexts(jobs);
       rethrow;
     }
-    return _observeOutgoingAdmission(jobs, () {
-      _ensureOutgoingSessionCurrent(session);
-      return session.coordinator.enqueueBatch(jobs, windowed: true);
-    });
+    try {
+      return await _observeOutgoingAdmission(jobs, () {
+        _ensureOutgoingSessionCurrent(session);
+        return session.coordinator.enqueueBatch(jobs, windowed: true);
+      });
+    } catch (_) {
+      for (final intent in durableIntents) {
+        await intent.reject();
+      }
+      rethrow;
+    }
+  }
+
+  Future<_DurableOutgoingIntent> _persistForwardIntent(
+      String batchId,
+      int sourceIndex,
+      MatrixOutgoingForwardMedia media,
+      List<String> targets,
+      _OutgoingSession session,
+      MediaOutboxRecoveryService durable) async {
+    final intent = _DurableOutgoingIntent(durable);
+    final snapshot = _DeferredOutgoingForwardMediaSnapshot(media);
+    try {
+      File? owned;
+      final duration = _intValue(media._info?['duration']);
+      final width = _intValue(media._info?['w']);
+      final height = _intValue(media._info?['h']);
+      final visual = mediaNeedsDecode(media.mimeType, const []);
+      final downloadLimit = media.declaredContentBytes ??
+          sharedMediaTransferBudget.maximumUploadBytes(
+              decodedBytes: visual ? mediaDecodeWorkingBytes : 0,
+              thumbnailBytes: visual ? mediaThumbnailReserveBytes : 0);
+      for (var i = 0; i < targets.length; i++) {
+        _ensureOutgoingSessionCurrent(session);
+        final txid = 'outgoing-$batchId-$sourceIndex-$i';
+        intent.hold(txid);
+        final task = owned == null
+            ? await sharedMediaTransferBudget
+                .run(mediaUploadPlan(downloadLimit, mimeType: media.mimeType),
+                    () async {
+                try {
+                  return await durable.persistPreparedBytes(
+                      txid: txid,
+                      roomId: targets[i],
+                      load: () async {
+                        await _prepareForwardMedia(
+                            session: session,
+                            snapshot: snapshot,
+                            maximumBytes: downloadLimit);
+                        return snapshot.bytes();
+                      },
+                      mimeType: media.mimeType,
+                      filename: media.filename,
+                      prepared: true,
+                      asFile: media.isFileAttachment,
+                      durationMs: duration,
+                      width: width,
+                      height: height);
+                } finally {
+                  await snapshot.release();
+                }
+              })
+            : await durable.persistFile(
+                txid: txid,
+                roomId: targets[i],
+                source: owned,
+                mimeType: media.mimeType,
+                filename: media.filename,
+                prepared: true,
+                asFile: media.isFileAttachment,
+                durationMs: duration,
+                width: width,
+                height: height);
+        intent.tasks.add(task);
+        owned ??= await durable.store.verifiedSource(task);
+        await snapshot.release();
+      }
+      return intent;
+    } catch (_) {
+      await intent.reject();
+      rethrow;
+    } finally {
+      await snapshot.release();
+    }
   }
 
   /// Admits one prepared camera/file media source for multiple targets. The
@@ -7382,6 +7586,80 @@ final class MatrixSdkE2eeClient
         targetRoomIds: targetRoomIds,
         session: _captureOutgoingSession(),
       );
+
+  /// Edited exports record intent before invoking the encoder. Only a flushed
+  /// private source and small descriptors can enter the account queue.
+  Future<MatrixOutgoingWorkJob> enqueuePreparedMediaFrom(
+      {required String jobId,
+      required String sourceId,
+      required Future<Uint8List> Function() load,
+      required int maximumBytes,
+      required String mimeType,
+      required String filename,
+      required String body,
+      required List<String> targetRoomIds}) async {
+    if (jobId.isEmpty || sourceId.isEmpty || maximumBytes <= 0) {
+      throw ArgumentError('Prepared source requires an id and positive limit');
+    }
+    final session = _captureOutgoingSession();
+    final existing = session.coordinator.job(jobId);
+    if (existing != null) return existing;
+    final targets =
+        _freezeVideoTargets(await _prepareNewTargets(targetRoomIds, session));
+    if (targets.isEmpty) {
+      throw ArgumentError('Prepared source requires targets');
+    }
+    final durable = _durableMediaFor(session);
+    if (durable == null) throw const MediaOutboxException('owner-unavailable');
+    final intent = _DurableOutgoingIntent(durable);
+    try {
+      File? owned;
+      for (var i = 0; i < targets.length; i++) {
+        _ensureOutgoingSessionCurrent(session);
+        final txid = 'outgoing-$jobId-0-$i';
+        intent.hold(txid);
+        final task = owned == null
+            ? await sharedMediaTransferBudget.run(
+                mediaUploadPlan(maximumBytes, mimeType: mimeType),
+                () => durable.persistPreparedBytes(
+                    txid: txid,
+                    roomId: targets[i],
+                    load: () async {
+                      final bytes = await load();
+                      if (bytes.length > maximumBytes) {
+                        throw MediaTransferLimitException(maximumBytes);
+                      }
+                      return bytes;
+                    },
+                    mimeType: mimeType,
+                    filename: filename,
+                    prepared: true))
+            : await durable.persistFile(
+                txid: txid,
+                roomId: targets[i],
+                source: owned,
+                mimeType: mimeType,
+                filename: filename,
+                prepared: true);
+        intent.tasks.add(task);
+        owned ??= await durable.store.verifiedSource(task);
+      }
+      final job = _buildDurableMediaJob(
+          jobId: jobId,
+          sourceId: sourceId,
+          body: body,
+          intent: intent,
+          session: session,
+          kind: mimeType.startsWith('video/')
+              ? MatrixOutgoingPresentationKind.video
+              : MatrixOutgoingPresentationKind.image);
+      _ensureOutgoingSessionCurrent(session);
+      return await session.coordinator.enqueue(job);
+    } catch (_) {
+      await intent.reject();
+      rethrow;
+    }
+  }
 
   Future<MatrixOutgoingWorkJob> _enqueuePreparedMedia({
     required String jobId,
@@ -7399,6 +7677,53 @@ final class MatrixSdkE2eeClient
         targets.toSet().length != targets.length) {
       throw ArgumentError(
           'Media forwarding targets must be non-empty and unique');
+    }
+    final durable = _durableMediaFor(session);
+    if (durable != null) {
+      final bytes = media._bytes;
+      if (media._admitted || bytes == null) {
+        throw StateError('Media already admitted');
+      }
+      final intent = _DurableOutgoingIntent(durable);
+      try {
+        await sharedMediaTransferBudget.run(
+            mediaUploadPlan(bytes.length,
+                mimeType: media.mimeType, header: bytes), () async {
+          for (var i = 0; i < targets.length; i++) {
+            _ensureOutgoingSessionCurrent(session);
+            final txid = 'outgoing-$jobId-0-$i';
+            intent.hold(txid);
+            intent.tasks.add(await durable.persistBytes(
+                txid: txid,
+                roomId: targets[i],
+                bytes: bytes,
+                mimeType: media.mimeType,
+                filename: media.filename,
+                prepared: true,
+                durationMs: _intValue(
+                    (media.extraContent['info'] as Map?)?['duration']),
+                width: _intValue((media.extraContent['info'] as Map?)?['w']),
+                height: _intValue((media.extraContent['info'] as Map?)?['h'])));
+          }
+        });
+        final job = _buildDurableMediaJob(
+            jobId: jobId,
+            sourceId: media.id,
+            body: media.body,
+            intent: intent,
+            session: session,
+            kind: media.mimeType.startsWith('video/')
+                ? MatrixOutgoingPresentationKind.video
+                : MatrixOutgoingPresentationKind.image);
+        _ensureOutgoingSessionCurrent(session);
+        final admitted = await session.coordinator.enqueue(job);
+        media._markAdmitted();
+        media._bytes = null;
+        return admitted;
+      } catch (_) {
+        await intent.reject();
+        rethrow;
+      }
     }
     final snapshot = _DeferredOutgoingMediaSnapshot(media);
     final performanceContext = _performanceRecorder.createCorrelationContext();
@@ -7526,6 +7851,27 @@ final class MatrixSdkE2eeClient
     }
     final targets =
         _freezeVideoTargets(await _prepareNewTargets(targetRoomIds, session));
+    final durable = _durableMediaFor(session);
+    if (durable != null) {
+      final intent =
+          await _persistVideoIntent(jobId, video, targets, session, durable);
+      try {
+        final job = _buildDurableMediaJob(
+            jobId: jobId,
+            sourceId: video.id,
+            body: video.body,
+            intent: intent,
+            session: session,
+            kind: MatrixOutgoingPresentationKind.video,
+            video: video);
+        _ensureOutgoingSessionCurrent(session);
+        return await session.coordinator
+            .enqueue(job, onAccepted: video._markAdmitted);
+      } catch (_) {
+        await intent.reject();
+        rethrow;
+      }
+    }
     await video._waitForSourceMetadata();
     _ensureOutgoingSessionCurrent(session);
     final job = _buildVideoJob(
@@ -7565,6 +7911,37 @@ final class MatrixSdkE2eeClient
             await _prepareNewTargets(request.targetRoomIds, session)),
       ));
     }
+    final durable = _durableMediaFor(session);
+    if (durable != null) {
+      final intents = <_DurableOutgoingIntent>[];
+      final jobs = <MatrixOutgoingWorkJob>[];
+      try {
+        for (final request in frozen) {
+          final intent = await _persistVideoIntent(request.jobId, request.video,
+              request.targetRoomIds, session, durable);
+          intents.add(intent);
+          jobs.add(_buildDurableMediaJob(
+              jobId: request.jobId,
+              sourceId: request.video.id,
+              body: request.video.body,
+              intent: intent,
+              session: session,
+              kind: MatrixOutgoingPresentationKind.video,
+              video: request.video));
+        }
+        _ensureOutgoingSessionCurrent(session);
+        return await session.coordinator.enqueueBatch(jobs, onAccepted: () {
+          for (final request in frozen) {
+            request.video._markAdmitted();
+          }
+        });
+      } catch (_) {
+        for (final intent in intents) {
+          await intent.reject();
+        }
+        rethrow;
+      }
+    }
     await Future.wait([
       for (final request in frozen) request.video._waitForSourceMetadata(),
     ]);
@@ -7583,6 +7960,101 @@ final class MatrixSdkE2eeClient
         request.video._markAdmitted();
       }
     });
+  }
+
+  Future<_DurableOutgoingIntent> _persistVideoIntent(
+      String jobId,
+      MatrixOutgoingVideoFile video,
+      List<String> targets,
+      _OutgoingSession session,
+      MediaOutboxRecoveryService durable) async {
+    final intent = _DurableOutgoingIntent(durable);
+    try {
+      File? owned;
+      for (var i = 0; i < targets.length; i++) {
+        _ensureOutgoingSessionCurrent(session);
+        final txid = 'outgoing-$jobId-0-$i';
+        intent.hold(txid);
+        final task = owned == null
+            ? await durable.persistResolvedFile(
+                txid: txid,
+                roomId: targets[i],
+                resolve: video._sourceForPreparation,
+                mimeType: 'video/mp4',
+                filename: video.filename)
+            : await durable.persistFile(
+                txid: txid,
+                roomId: targets[i],
+                source: owned,
+                mimeType: 'video/mp4',
+                filename: video.filename);
+        intent.tasks.add(task);
+        owned ??= await durable.store.verifiedSource(task);
+      }
+      return intent;
+    } catch (_) {
+      await intent.reject();
+      rethrow;
+    }
+  }
+
+  MatrixOutgoingWorkJob _buildDurableMediaJob(
+      {required String jobId,
+      required String sourceId,
+      required String body,
+      required _DurableOutgoingIntent intent,
+      required _OutgoingSession session,
+      required MatrixOutgoingPresentationKind kind,
+      MatrixOutgoingVideoFile? video}) {
+    final context = video?.performanceTrace?.correlationContext ??
+        _performanceRecorder.createCorrelationContext();
+    final created = DateTime.now();
+    late final MatrixOutgoingWorkJob job;
+    job = MatrixOutgoingWorkJob(
+        id: jobId,
+        createdAt: created,
+        source: MatrixOutgoingWorkSource(
+            id: 'durable:$jobId',
+            retainedBytes: intent.tasks.length * 1024,
+            release: () async {
+              try {
+                for (final item in job.items) {
+                  if (item.state == MatrixOutgoingWorkState.canceled &&
+                      intent.service.active &&
+                      session.coordinator.isActive) {
+                    await intent.service.cancel(item.txid);
+                  }
+                }
+                await video?._release();
+              } finally {
+                intent.release();
+                context.close();
+              }
+            }),
+        items: [
+          for (var i = 0; i < intent.tasks.length; i++)
+            MatrixOutgoingWorkItem(
+                id: '$sourceId:$i',
+                targetRoomId: intent.tasks[i].roomId,
+                txid: intent.tasks[i].txid,
+                performanceContext: context,
+                presentation: MatrixOutgoingWorkPresentation(
+                    kind: kind,
+                    text: body,
+                    mimeType: intent.tasks[i].mimeType,
+                    filename: intent.tasks[i].filename,
+                    createdAt: created),
+                onAttemptSettled: (_) =>
+                    intent.releaseOne(intent.tasks[i].txid),
+                send: (attempt) async {
+                  _ensureOutgoingSession(session, attempt);
+                  final result = await intent.service
+                      .dispatch(intent.tasks[i], userRetry: true);
+                  _ensureOutgoingSession(session, attempt);
+                  return result;
+                })
+        ]);
+    return job;
   }
 
   List<String> _freezeVideoTargets(List<String> targetRoomIds) {
@@ -7787,9 +8259,11 @@ final class MatrixSdkE2eeClient
   Future<void> _prepareForwardMedia({
     required _OutgoingSession session,
     required _DeferredOutgoingForwardMediaSnapshot snapshot,
-    required MatrixOutgoingWorkAttempt attempt,
+    MatrixOutgoingWorkAttempt? attempt,
+    int? maximumBytes,
   }) async {
-    _ensureOutgoingSession(session, attempt);
+    attempt?.ensureActive();
+    _ensureOutgoingSessionCurrent(session);
     final source = session.client.getRoomById(snapshot.media.sourceRoomId);
     if (source == null ||
         !source.encrypted ||
@@ -7825,10 +8299,10 @@ final class MatrixSdkE2eeClient
       ),
       () => downloadMediaContentBounded(
         event,
-        maxDownloadBytes: media.downloadLimitBytes,
+        maxDownloadBytes: maximumBytes ?? media.downloadLimitBytes,
       ),
     );
-    if (bytes.length > snapshot.media.downloadLimitBytes) {
+    if (bytes.length > (maximumBytes ?? snapshot.media.downloadLimitBytes)) {
       throw const MatrixOutgoingFileTooLargeException();
     }
     Uint8List? thumbnail;
@@ -7856,7 +8330,8 @@ final class MatrixSdkE2eeClient
         thumbnail = null;
       }
     }
-    _ensureOutgoingSession(session, attempt);
+    attempt?.ensureActive();
+    _ensureOutgoingSessionCurrent(session);
     snapshot
       .._bytes = bytes
       .._thumbnail = thumbnail;
@@ -9316,6 +9791,72 @@ final class MatrixSdkE2eeClient
             thumbnailBytes: thumbnailBytes,
             thumbnailWidth: thumbnailWidth,
             thumbnailHeight: thumbnailHeight);
+      });
+
+  Future<String> _sendStoredMediaFromLease(MatrixRoomLease lease, File source,
+          {required String mimeType,
+          required String filename,
+          required String txid,
+          bool asFile = false,
+          int? durationMs,
+          int? width,
+          int? height}) =>
+      _withClient((active) async {
+        final room = lease._activeRoom;
+        void validate() {
+          if (lease.canceled ||
+              !identical(room.client, active) ||
+              !identical(_client, active) ||
+              _accessRevoked) {
+            throw const MediaOutboxException('owner-unavailable');
+          }
+        }
+
+        validate();
+        await _requireRoomSend(room);
+        validate();
+        final size = await source.length();
+        final header = await source
+            .openRead(0, size.clamp(0, 12))
+            .expand((chunk) => chunk)
+            .toList();
+        validate();
+        final limit = await maximumUploadBytes();
+        validate();
+        if (limit != null && size > limit) {
+          throw const MatrixOutgoingFileTooLargeException();
+        }
+        return sharedMediaTransferBudget
+            .run(mediaUploadPlan(size, mimeType: mimeType, header: header),
+                () async {
+          validate();
+          final bytes = await readMediaFileBounded(source, size);
+          Uint8List? poster;
+          if (!asFile && mimeType.startsWith('video/')) {
+            try {
+              final extracted = await extractVideoPoster(source.path);
+              if ((extracted?.length ?? 0) <= mediaThumbnailReserveBytes) {
+                poster = extracted;
+              }
+            } catch (_) {/* Optional regenerated preview, original retained. */}
+          }
+          validate();
+          final id = await _sendMedia(room, bytes, mimeType,
+              validateLease: validate,
+              txid: txid,
+              filename: filename,
+              asFile: asFile,
+              thumbnailBytes: poster,
+              extraContent: {
+                'info': {
+                  if (durationMs != null) 'duration': durationMs,
+                  if (width != null) 'w': width,
+                  if (height != null) 'h': height,
+                }
+              });
+          validate();
+          return id;
+        });
       });
 
   Future<String> _sendEncryptedMediaFromLease(

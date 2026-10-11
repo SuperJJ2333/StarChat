@@ -38,6 +38,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
 import '../../core/outbox/outbox_message.dart';
+import '../../core/outbox/media_outbox_store.dart';
+import '../../core/outbox/media_outbox_recovery_service.dart';
+import 'media_outbox_pending_view.dart';
+import 'media_transfer_budget.dart';
 import '../../core/outbox/outbox_room_sender_registry.dart';
 import '../../core/outbox/persistent_outbox_manager.dart';
 import '../../core/permissions/blocked_contacts.dart';
@@ -71,7 +75,6 @@ import 'reply_message_resolution.dart';
 import '../../features/emoji/emoji_shortcode.dart';
 import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
-import 'media_thumbnail.dart';
 import 'gif_image_policy.dart';
 import 'chat_image_preview.dart';
 import '../../ui/chat/message_scroll_locator.dart';
@@ -2145,19 +2148,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await timeline.sendText('[图片消息]',
           kind: RoomMessageKind.image,
           mimeType: 'image/jpeg',
-          send: (txid) => _enqueueMedia(() async {
-                await MediaMessageService.ensureWithinSendLimit(File(captured));
-                final bytes = await File(captured).readAsBytes();
-                roomImagePreviewCache.seed(txid, bytes);
-                final thumbnail = await buildChatImageThumbnail(bytes);
-                return _cacheSentImage(
-                    bytes,
-                    matrix.sendEncryptedMedia(targetRoomId, bytes, 'image/jpeg',
-                        txid: txid,
-                        thumbnailBytes: thumbnail?.bytes,
-                        thumbnailWidth: thumbnail?.width,
-                        thumbnailHeight: thumbnail?.height));
-              }));
+          send: (txid) => _sendDurableFile(txid, File(captured),
+              targetRoomId: targetRoomId,
+              mimeType: 'image/jpeg',
+              filename: '拍摄.jpg'));
     } on SystemCameraException catch (error) {
       if (mounted &&
           !_disposing &&
@@ -2247,11 +2241,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             ? RoomMessageKind.image
             : RoomMessageKind.file,
         mimeType: mime,
-        send: (txid) => _enqueueMedia(
-          () => service.sendSelectedFile(targetRoomId, file, txid: txid),
-        ),
+        send: (txid) => _sendDurableFile(txid, File(file.path),
+            targetRoomId: targetRoomId, mimeType: mime, filename: file.name),
       );
     } on GroupVideoTooLargeException catch (error) {
+      videoTrace?.finish(result: PerformanceResult.rejected);
+      if (mounted) _showMediaMessage(error.toString());
+    } on MediaTransferLimitException catch (error) {
       videoTrace?.finish(result: PerformanceResult.rejected);
       if (mounted) _showMediaMessage(error.toString());
     } catch (_) {
@@ -2713,75 +2709,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           photo.isVideo ? '[视频消息]' : '[图片消息]',
           kind: photo.isVideo ? RoomMessageKind.video : RoomMessageKind.image,
           mimeType: photo.mimeType,
-          send: (transactionId) {
-            if (!photo.isVideo &&
-                photo.mimeType != 'image/gif' &&
-                photo.thumbnail.isNotEmpty) {
-              roomImagePreviewCache.seed(transactionId, photo.thumbnail);
-            }
-            return _enqueueMedia(() async {
-              final prepared = await prepareGalleryMedia(
-                photo,
-                original: result.original,
-                isGroup: isGroup,
-              );
-              final bytes = prepared.bytes;
-              final mimeType = prepared.mimeType;
-              if (!photo.isVideo) {
-                roomImagePreviewCache.seed(
-                  transactionId,
-                  isGifBytes(bytes)
-                      ? bytes
-                      : photo.thumbnail.isNotEmpty
-                          ? photo.thumbnail
-                          : bytes,
-                );
-              }
-              // 视频附带时长（毫秒），接收端显示角标。
-              final extra = photo.duration == null
-                  ? null
-                  : {
-                      'info': {'duration': photo.duration!.inMilliseconds},
-                    };
-              // 附带本地生成的压缩演绎版（E2EE 同样保护）：
-              // 图片为 ≤800px/≤100KB 缩略图，视频为封面海报帧；
-              // 生成失败不阻断发送，接收端自动回退全量加载（兼容旧行为）。
-              ({Uint8List bytes, int? width, int? height})? rendition;
-              if (photo.isVideo) {
-                final poster = await photo.posterBytes?.call();
-                if (poster != null && poster.isNotEmpty) {
-                  final dims = await decodeImageDimensions(poster);
-                  rendition = (
-                    bytes: poster,
-                    width: dims?.$1,
-                    height: dims?.$2,
-                  );
-                }
-              } else {
-                final thumbnail = await buildChatImageThumbnail(bytes);
-                if (thumbnail != null) {
-                  rendition = (
-                    bytes: thumbnail.bytes,
-                    width: thumbnail.width,
-                    height: thumbnail.height,
-                  );
-                }
-              }
-              return _cacheSentImage(
-                roomImagePreviewCache.get(transactionId),
-                matrix.sendEncryptedMedia(
-                  roomInfo.id,
-                  bytes,
-                  mimeType,
-                  extraContent: extra,
-                  txid: transactionId,
-                  thumbnailBytes: rendition?.bytes,
-                  thumbnailWidth: rendition?.width,
-                  thumbnailHeight: rendition?.height,
-                ),
-              );
-            });
-          },
+          send: (transactionId) =>
+              _sendDurableGallery(transactionId, photo, targetRoomId),
         ),
       );
     }
@@ -2829,6 +2758,77 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _outgoingMediaQueue = Future<void>.value();
+  Future<String> _sendDurableGallery(
+      String txid, GalleryPhoto photo, String targetRoomId) async {
+    final service = _requireMediaOutbox();
+    final release = service.holdForeground(txid);
+    try {
+      final task = await sharedMediaTransferBudget.run(
+          mediaUploadPlan(maxGalleryImageBytes,
+              mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType),
+          () => service.persistPreparedBytes(
+              txid: txid,
+              roomId: targetRoomId,
+              mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType,
+              filename: photo.isVideo ? 'video.mp4' : 'image',
+              prepared: photo.isVideo,
+              load: () async {
+                if (photo.isVideo) return photo.compressedBytes();
+                if ((await photo.originalSizeBytes?.call() ?? 0) >
+                    maxGalleryImageBytes) {
+                  throw const MediaTooLargeException(maxGalleryImageBytes);
+                }
+                final bytes = await photo.originalBytes();
+                if (bytes.isEmpty || bytes.length > maxGalleryImageBytes) {
+                  throw const MediaTooLargeException(maxGalleryImageBytes);
+                }
+                return bytes;
+              }));
+      // The large resolver result is no longer retained by this queue closure.
+      return await _enqueueMedia(() => service.dispatch(task, userRetry: true));
+    } on MediaOutboxException catch (error) {
+      if (mounted && !_disposing) _showMediaMessage(error.userMessage);
+      rethrow;
+    } finally {
+      release();
+    }
+  }
+
+  MediaOutboxRecoveryService _requireMediaOutbox() {
+    final service = MediaOutboxRecoveryService.shared;
+    if (service == null ||
+        !service.active ||
+        widget.roomLease.canceled ||
+        service.store.owner.accountId != roomInfo.currentUserId) {
+      throw const MediaOutboxException('owner-unavailable');
+    }
+    return service;
+  }
+
+  Future<String> _sendDurableFile(String txid, File original,
+      {required String targetRoomId,
+      required String mimeType,
+      required String filename,
+      Duration? duration}) async {
+    final service = _requireMediaOutbox();
+    final release = service.holdForeground(txid);
+    try {
+      final task = await service.persistFile(
+          txid: txid,
+          roomId: targetRoomId,
+          source: original,
+          mimeType: mimeType,
+          filename: filename,
+          durationMs: duration?.inMilliseconds);
+      return await _enqueueMedia(() => service.dispatch(task, userRetry: true));
+    } on MediaOutboxException catch (error) {
+      if (mounted && !_disposing) _showMediaMessage(error.userMessage);
+      rethrow;
+    } finally {
+      release();
+    }
+  }
+
   Future<String> _enqueueMedia(Future<String> Function() send) {
     final task = _outgoingMediaQueue.then((_) async {
       try {
@@ -2838,6 +2838,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         rethrow;
       } on VideoCompressionException catch (error) {
         if (mounted && !_disposing) _showMediaMessage(error.toString());
+        rethrow;
+      } on MediaTransferLimitException catch (error) {
+        if (mounted && !_disposing) _showMediaMessage(error.toString());
+        rethrow;
+      } on MediaOutboxException catch (error) {
+        if (mounted && !_disposing) _showMediaMessage(error.userMessage);
         rethrow;
       }
     });
@@ -3149,12 +3155,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       kind: RoomMessageKind.voice,
       mimeType: 'audio/aac',
       voiceDuration: elapsed,
-      send: (txid) => _enqueueMedia(() async {
-        final eventId = await service.sendVoicePreview(roomInfo.id, path,
-            duration: elapsed, txid: txid);
+      send: (txid) async {
+        final eventId = await _sendDurableFile(txid, File(path),
+            targetRoomId: roomInfo.id,
+            mimeType: 'audio/aac',
+            filename: '语音.aac',
+            duration: elapsed);
         await service.deleteVoiceFile(path);
         return eventId;
-      }),
+      },
     );
   }
 
@@ -4212,16 +4221,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ],
               recentRoomIds: recent.load(),
               onForward: (ids) async {
-                final bytes = await export();
-                final job = await matrix.enqueuePreparedMedia(
+                final job = await matrix.enqueuePreparedMediaFrom(
                   jobId: transaction,
-                  media: MatrixOutgoingPreparedMedia(
-                    id: transaction,
-                    bytes: bytes,
-                    mimeType: 'image/png',
-                    filename: '编辑图片.png',
-                    body: '[编辑图片]',
-                  ),
+                  sourceId: transaction,
+                  load: export,
+                  maximumBytes: maxGalleryImageBytes,
+                  mimeType: 'image/png',
+                  filename: '编辑图片.png',
+                  body: '[编辑图片]',
                   targetRoomIds: ids,
                 );
                 _trackForwardJobs(matrix, [job]);
@@ -6181,6 +6188,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     valueListenable: _timelineRevision,
                     builder: (_, __, ___) => _buildTimeline(),
                   ),
+                ),
+                ValueListenableBuilder<MediaOutboxRecoveryService?>(
+                  valueListenable: MediaOutboxRecoveryService.current,
+                  builder: (context, service, _) => service == null ||
+                          service.store.owner.accountId !=
+                              roomInfo.currentUserId
+                      ? const SizedBox.shrink()
+                      : MediaOutboxPendingView(
+                          service: service, roomId: roomInfo.id),
                 ),
                 if (mediaMessage != null)
                   AnimatedOpacity(

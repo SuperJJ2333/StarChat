@@ -1,0 +1,21 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart
+test/features/matrix/media_outbox_pending_view_test.dart:6:8: Error: Error when reading 'lib/features/matrix/media_outbox_pending_view.dart': 系统找不到指定的文件。
+import 'package:liuhetong_mobile/features/matrix/media_outbox_pending_view.dart';
+       ^
+test/features/matrix/media_outbox_pending_view_test.dart:25:14: Error: Method not found: 'MediaOutboxPendingView'.
+      child: MediaOutboxPendingView(service: service, roomId: '!r:test'))));
+             ^^^^^^^^^^^^^^^^^^^^^^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart: test/features/matrix/media_outbox_pending_view_test.dart:6:8: Error: Error when reading 'lib/features/matrix/media_outbox_pending_view.dart': 系统找不到指定的文件。
+  import 'package:liuhetong_mobile/features/matrix/media_outbox_pending_view.dart';
+         ^
+  test/features/matrix/media_outbox_pending_view_test.dart:25:14: Error: Method not found: 'MediaOutboxPendingView'.
+        child: MediaOutboxPendingView(service: service, roomId: '!r:test'))));
+               ^^^^^^^^^^^^^^^^^^^^^^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart

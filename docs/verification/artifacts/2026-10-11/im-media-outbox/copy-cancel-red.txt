@@ -1,0 +1,22 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart
+00:00 +0: cancel during source copy never resurrects queued or deletes active write
+00:00 +0 -1: cancel during source copy never resurrects queued or deletes active write [E]
+  PathAccessException: Cannot delete file, path = 'C:\Users\Administrator\AppData\Local\Temp\media-recovery-test-44650883\511907b6e5ff71f808290b9586a9c8680fa349f1b1112d67e7a9116413f11077\sources\5b5abacf8bc25f5c0646a234539e3c075d3848b5048cdb5b6ea57430d43400b6.bin.part' (OS Error: 另一个程序正在使用此文件，进程无法访问。, errno = 32)
+  dart:io                                                                         FileSystemEntity.delete
+  package:liuhetong_mobile/core/outbox/media_outbox_store.dart 377:43             SqliteMediaOutboxStore.releaseTerminalSource
+  ===== asynchronous gap ===========================
+  dart:async                                                                      _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/core/outbox/media_outbox_store.dart 374:18             SqliteMediaOutboxStore.releaseTerminalSource
+  package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart 213:19  MediaOutboxRecoveryService.cancel
+  ===== asynchronous gap ===========================
+  dart:async                                                                      _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart 205:5   MediaOutboxRecoveryService.cancel
+  test\core\outbox\media_outbox_recovery_service_test.dart 140:19                 main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                      _CustomZone.registerUnaryCallback
+  test\core\outbox\media_outbox_recovery_service_test.dart 122:5                  main.<fn>
+  
+  TimeoutException after 0:00:30.000000: Test timed out after 30 seconds. See https://pub.dev/packages/test#timeouts
+  dart:isolate  _RawReceivePort._handleMessage
+  

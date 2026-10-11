@@ -1,0 +1,4 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart
+00:00 +0: pending byte cap charges originals until explicit cancel releases them
+00:00 +1: All tests passed!

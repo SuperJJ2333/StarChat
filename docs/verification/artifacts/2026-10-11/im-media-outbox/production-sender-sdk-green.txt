@@ -1,0 +1,76 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart
+00:00 +0: production sender real SDK ACK-loss retry preserves image as file and txid
+[chatflow/mediaindex] degraded: UnimplementedError
+[Matrix] [33mProblem while sending message - SocketException: synthetic ACK loss
+#0      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart:111:11)
+#1      new MockClient.<anonymous closure> (package:http/src/mock_client.dart:54:36)
+<asynchronous suspension>
+#2      MockClient.send (package:http/src/mock_client.dart:82:12)
+<asynchronous suspension>
+#3      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1061:7)
+<asynchronous suspension>
+#4      TimeoutHttpClient.send (package:matrix/src/utils/http_timeout.dart:53:22)
+<asynchronous suspension>
+#5      Api.sendMessage (package:matrix/matrix_api_lite/generated/api.dart:4282:22)
+<asynchronous suspension>
+#6      Room._sendContent (package:matrix/src/room.dart:940:12)
+<asynchronous suspension>
+#7      Room.sendEvent (package:matrix/src/room.dart:1090:17)
+<asynchronous suspension>
+#8      Room.sendFileEvent (package:matrix/src/room.dart:893:21)
+<asynchronous suspension>
+#9      MatrixSdkE2eeClient._sendMedia.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9769:19)
+<asynchronous suspension>
+#10     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#11     MatrixSdkE2eeClient._sendStoredMediaFromLease.<anonymous closure>.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9601:22)
+<asynchronous suspension>
+#12     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#13     MatrixSdkE2eeClient._withClient (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9028:14)
+<asynchronous suspension>
+#14     sendPersistedMedia (package:liuhetong_mobile/features/matrix/media_outbox_sender.dart:20:14)
+<asynchronous suspension>
+#15     MediaOutboxRecoveryService._dispatch (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:224:23)
+<asynchronous suspension>
+#16     _MediaRoomSlots._run (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:418:31)
+<asynchronous suspension>
+[0m
+00:00 +1: production sender real SDK ACK-loss retry preserves prepared video and txid
+[Matrix] [33mProblem while sending message - SocketException: synthetic ACK loss
+#0      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart:111:11)
+#1      new MockClient.<anonymous closure> (package:http/src/mock_client.dart:54:36)
+<asynchronous suspension>
+#2      MockClient.send (package:http/src/mock_client.dart:82:12)
+<asynchronous suspension>
+#3      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1061:7)
+<asynchronous suspension>
+#4      TimeoutHttpClient.send (package:matrix/src/utils/http_timeout.dart:53:22)
+<asynchronous suspension>
+#5      Api.sendMessage (package:matrix/matrix_api_lite/generated/api.dart:4282:22)
+<asynchronous suspension>
+#6      Room._sendContent (package:matrix/src/room.dart:940:12)
+<asynchronous suspension>
+#7      Room.sendEvent (package:matrix/src/room.dart:1090:17)
+<asynchronous suspension>
+#8      Room.sendFileEvent (package:matrix/src/room.dart:893:21)
+<asynchronous suspension>
+#9      MatrixSdkE2eeClient._sendMedia.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9769:19)
+<asynchronous suspension>
+#10     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#11     MatrixSdkE2eeClient._sendStoredMediaFromLease.<anonymous closure>.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9601:22)
+<asynchronous suspension>
+#12     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#13     MatrixSdkE2eeClient._withClient (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9028:14)
+<asynchronous suspension>
+#14     sendPersistedMedia (package:liuhetong_mobile/features/matrix/media_outbox_sender.dart:20:14)
+<asynchronous suspension>
+#15     MediaOutboxRecoveryService._dispatch (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:224:23)
+<asynchronous suspension>
+#16     _MediaRoomSlots._run (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:418:31)
+<asynchronous suspension>
+[0m
+00:00 +2: All tests passed!

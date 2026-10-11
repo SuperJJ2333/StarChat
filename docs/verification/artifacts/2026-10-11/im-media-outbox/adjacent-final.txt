@@ -1,0 +1,82 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=false
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=false
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/canonical_send_guard_test.dart: new forward freezes recovered target before admission; retry never resolves again
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +9: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +10: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +11: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +12: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +13: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +14: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +15: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +16: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +17: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: generic GIF retains file type and encrypted identity on forward queued=true
+00:00 +18: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/canonical_send_guard_test.dart: room search defers new heads but revokes withdrawn plaintext
+00:00 +19: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: ten 20MiB media descriptors queue without reserving all payloads
+00:00 +20: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: ten 20MiB media descriptors queue without reserving all payloads
+00:00 +21: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: ten 20MiB media descriptors queue without reserving all payloads
+00:00 +22: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: ten 20MiB media descriptors queue without reserving all payloads
+00:00 +23: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: ten 20MiB media descriptors queue without reserving all payloads
+00:01 +24: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:01 +25: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:01 +26: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:01 +27: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +28: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +29: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +30: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +31: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +32: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +33: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +34: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +35: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +36: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +37: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:02 +38: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:03 +38: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart: SDK media gateway exposes the cached Matrix server upload limit
+{"trace_id":"bzCRi9D3CrFp0GvxMUQ6jPR_","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"bzCRi9D3CrFp0GvxMUQ6jPR_","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"bzCRi9D3CrFp0GvxMUQ6jPR_","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +39: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:03 +39: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart: real room lease exposes the same early media limit capability
+{"trace_id":"R3F41h87dcgX2qJag2UZYsbU","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"R3F41h87dcgX2qJag2UZYsbU","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"R3F41h87dcgX2qJag2UZYsbU","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +40: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:03 +40: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart: lease revocation fences a late successful limit response
+{"trace_id":"g3olMiS-pPoLFotZYj8YxIVQ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"g3olMiS-pPoLFotZYj8YxIVQ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"g3olMiS-pPoLFotZYj8YxIVQ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +41: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:03 +41: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart: session revocation fences a late SDK response before reading source
+{"trace_id":"ym93ZbOeNXzmAeuht8UuZkQq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"ym93ZbOeNXzmAeuht8UuZkQq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"ym93ZbOeNXzmAeuht8UuZkQq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +42: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward fanout drains through a bounded pending window
+00:04 +43: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: owner forwards two frozen existing media sources to two targets
+00:04 +44: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: prepared media cannot start upload after lease revocation
+00:04 +45: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: prepared media cannot start upload after account revocation
+00:05 +46: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: prepared media cannot start upload after destination revocation
+00:05 +47: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forwarding cannot upload after source lease is revoked during download
+00:06 +48: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: group forwarded oversized video rejects before download
+00:06 +49: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: group forwarded oversized video rejects after validating actual bytes
+00:06 +50: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward preserves group exact 20MiB boundary
+00:07 +51: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forward preserves private video above limit
+00:07 +52: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: video uses encrypted room attachment pipeline with info=true
+00:07 +53: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: video uses encrypted room attachment pipeline with info=false
+00:07 +54: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: legacy encrypted thumbnail reserves payload only during preparation
+00:07 +55: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: oversized hot thumbnail is dropped while its source media forwards
+00:08 +56: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: forwarded audio keeps pending voice kind and duration then sends m.audio
+00:08 +57: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: revoking the source lease during held download does not cancel admitted work
+00:08 +58: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: a frozen source cannot be admitted by another account in the same room
+00:08 +59: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: retry sends only failed target with its original txid and cached source
+00:08 +60: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: malformed info is treated as unknown-size legacy media
+00:08 +61: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart: unencrypted destination fails before decrypting video
+00:08 +62: All tests passed!

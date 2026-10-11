@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart
+00:00 +0: two room slots preserve room order without a slow room blocking others
+00:01 +0 -1: two room slots preserve room order without a slow room blocking others [E]
+  Expected: ['fixed', 'b']
+    Actual: ['fixed']
+     Which: at location [1] is ['fixed'] which shorter than expected
+  
+  package:matcher                                                expect
+  package:flutter_test/src/widget_tester.dart 473:18             expect
+  test\core\outbox\media_outbox_recovery_service_test.dart 96:5  main.<fn>
+  
+00:01 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: two room slots preserve room order without a slow room blocking others

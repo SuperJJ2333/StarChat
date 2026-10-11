@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart
+00:00 +0: a preexisting pending symlink cannot overwrite outside the owned directory
+00:00 +0 -1: a preexisting pending symlink cannot overwrite outside the owned directory [E]
+  Expected: [9, 9]
+    Actual: [1, 2, 3]
+     Which: at location [0] is <1> instead of <9>
+  
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test\core\outbox\media_outbox_store_test.dart 28:7  main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: a preexisting pending symlink cannot overwrite outside the owned directory

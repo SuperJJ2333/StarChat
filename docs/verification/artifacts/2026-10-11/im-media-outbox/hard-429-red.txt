@@ -1,0 +1,30 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart
+00:00 +0: manual retry cannot shorten a server deadline beyond automatic retry budget
+00:00 +0 -1: manual retry cannot shorten a server deadline beyond automatic retry budget [E]
+  Expected: throws <Instance of 'MediaOutboxException'> with `reason`: 'retry-not-due'
+    Actual: <Instance of 'Future<String>'>
+     Which: threw <Instance of '_Throttle'>
+            stack test\core\outbox\media_outbox_recovery_service_test.dart 130:38                 main.<fn>.<fn>
+                  package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart 185:35  MediaOutboxRecoveryService._dispatch
+                  ===== asynchronous gap ===========================
+                  package:matcher                                                                 expectLater
+                  package:flutter_test/src/widget_tester.dart 507:8                               expectLater
+                  test\core\outbox\media_outbox_recovery_service_test.dart 132:11                 main.<fn>
+                  ===== asynchronous gap ===========================
+                  dart:async                                                                      _CustomZone.registerUnaryCallback
+                  test\core\outbox\media_outbox_recovery_service_test.dart 131:5                  main.<fn>
+                  
+            which is not an instance of 'MediaOutboxException'
+  
+  package:matcher                                                  expectLater
+  package:flutter_test/src/widget_tester.dart 507:8                expectLater
+  test\core\outbox\media_outbox_recovery_service_test.dart 132:11  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                       _CustomZone.registerUnaryCallback
+  test\core\outbox\media_outbox_recovery_service_test.dart 131:5   main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: manual retry cannot shorten a server deadline beyond automatic retry budget

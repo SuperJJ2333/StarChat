@@ -1,0 +1,5 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart
+00:00 +0: prepared coordinator holds only durable metadata before a pending sender
+00:00 +1: edited image intent exists before export and admission holds no payload
+00:00 +2: All tests passed!

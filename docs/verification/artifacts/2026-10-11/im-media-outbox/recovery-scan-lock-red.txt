@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart
+00:00 +0: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:03 +0 -1: a hanging room does not prevent later timer retry or a fresh recovery scan [E]
+  Expected: true
+    Actual: <false>
+  fresh C must start while A is pending
+  
+  package:matcher                                                expect
+  package:flutter_test/src/widget_tester.dart 473:18             expect
+  test\core\outbox\media_outbox_recovery_service_test.dart 73:5  main.<fn>
+  
+00:04 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan

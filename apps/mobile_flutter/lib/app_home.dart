@@ -21,6 +21,8 @@ import 'core/app_connection_status.dart';
 import 'core/network_state_manager.dart';
 import 'core/performance_trace.dart';
 import 'core/outbox/message_send_scheduler.dart';
+import 'core/outbox/media_outbox_store.dart';
+import 'core/outbox/media_outbox_recovery_service.dart';
 import 'core/outbox/outbox_recovery_service.dart';
 import 'core/outbox/outbox_room_sender_registry.dart';
 import 'core/outbox/outbox_store.dart';
@@ -61,6 +63,8 @@ import 'features/moments/moments_unread_controller.dart';
 import 'features/moments/moments_media_prefetch.dart';
 import 'features/matrix/incoming_media_prefetch.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
+import 'features/matrix/media_transfer_budget.dart';
+import 'features/matrix/media_outbox_sender.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/direct_chat_entry.dart';
@@ -1632,6 +1636,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// - 启动即恢复未送达行：房间号已知的立刻尝试（房间没打开时原样保留，
   ///   等下次进入会话），房间号未知的等 pending conversation 绑定。
   void _bindOutbox(NetworkStateManager network) {
+    unawaited(_bindMediaOutbox(network));
     final accountId = widget.matrix.userId ?? '';
     var outbox = PersistentOutboxManager.shared;
     if (outbox == null || outbox.accountId != accountId) {
@@ -1756,7 +1761,73 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
+  MediaOutboxRecoveryService? _mediaOutbox;
+  VoidCallback? _removeMediaNetworkListener;
+  int _mediaBindingEpoch = 0;
+
+  Future<void> _bindMediaOutbox(NetworkStateManager network) async {
+    final matrix = widget.matrix;
+    final account = matrix.userId;
+    final identity = matrix.sendPreparationIdentity;
+    final generation = _startup.generation;
+    final bindingEpoch = ++_mediaBindingEpoch;
+    bool current() =>
+        mounted &&
+        !_disposed &&
+        _currentStartup(generation) &&
+        bindingEpoch == _mediaBindingEpoch &&
+        identical(widget.matrix, matrix) &&
+        matrix.userId == account &&
+        matrix.sendPreparationIdentity == identity;
+    try {
+      final binding = await matrix.secureSessionStore?.matrixBinding();
+      if (!current() ||
+          binding == null ||
+          binding.matrixUserId != account ||
+          binding.homeserver != matrix.homeserver.toString()) {
+        return;
+      }
+      final store =
+          SqliteMediaOutboxStore(owner: MediaOutboxOwner.fromBinding(binding));
+      final service = MediaOutboxRecoveryService(
+          store: store,
+          isCurrentOwner: current,
+          failureReason: (error) => error is MediaTransferLimitException
+              ? 'memory-limit:${error.maximumPayloadBytes}'
+              : null,
+          authorize: (task) async =>
+              current() && await matrix.authorizeSendToRoom(task.roomId),
+          send: (task, source) =>
+              sendPersistedMedia(matrix, task, source, current: current));
+      _mediaOutbox = service;
+      matrix.bindDurableMediaOutbox(service);
+      MediaOutboxRecoveryService.shared = service;
+      void retry() {
+        if (current() && network.current != NetworkState.offline) {
+          unawaited(service.recover().catchError((Object _) {}));
+        }
+      }
+
+      network.state.addListener(retry);
+      _removeMediaNetworkListener = () => network.state.removeListener(retry);
+      retry();
+    } catch (_) {
+      // No unsafe storage fallback. A send entry surfaces the typed failure;
+      // existing durable rows remain untouched until the native store is ready.
+    }
+  }
+
   void _disposeOutbox() {
+    _mediaBindingEpoch++;
+    _removeMediaNetworkListener?.call();
+    _removeMediaNetworkListener = null;
+    final media = _mediaOutbox;
+    _mediaOutbox = null;
+    media?.dispose();
+    if (media != null) unawaited(media.close().catchError((Object _) {}));
+    if (identical(MediaOutboxRecoveryService.shared, media)) {
+      MediaOutboxRecoveryService.shared = null;
+    }
     _outboxScheduler?.dispose();
     _outboxScheduler = null;
     _outboxRecovery = null;
@@ -2134,8 +2205,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
     final account = widget.matrix.sendPreparationIdentity;
     final apiEpoch = widget.api.sessionEpoch;
-    bool ownerCurrent() => mounted && !_disposed &&
-        account == widget.matrix.sendPreparationIdentity && apiEpoch == widget.api.sessionEpoch;
+    bool ownerCurrent() =>
+        mounted &&
+        !_disposed &&
+        account == widget.matrix.sendPreparationIdentity &&
+        apiEpoch == widget.api.sessionEpoch;
     if (callUi.hasActiveCall) {
       callUi.restoreCall();
       return;
@@ -2159,16 +2233,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final matrixUserId = authoritative.matrixUserId.trim();
       CallIdentity? resolvedIdentity;
       try {
-        resolvedIdentity = await callBackend.identityResolver?.call(matrixUserId);
+        resolvedIdentity =
+            await callBackend.identityResolver?.call(matrixUserId);
       } catch (_) {
         // Identity lookup must not block a verified outgoing call.
       }
       if (!ownerCurrent()) return;
-      final identity = resolvedIdentity?.matrixUserId == matrixUserId ? resolvedIdentity! : CallIdentity(
-          matrixUserId: matrixUserId,
-          displayName: authoritative.displayName,
-          fallbackSeed: authoritative.username,
-          avatarUrl: authoritative.avatarUrl);
+      final identity = resolvedIdentity?.matrixUserId == matrixUserId
+          ? resolvedIdentity!
+          : CallIdentity(
+              matrixUserId: matrixUserId,
+              displayName: authoritative.displayName,
+              fallbackSeed: authoritative.username,
+              avatarUrl: authoritative.avatarUrl);
       if (!ownerCurrent()) return;
       if (callUi.hasActiveCall) {
         callUi.restoreCall();

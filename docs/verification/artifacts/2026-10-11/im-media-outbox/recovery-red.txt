@@ -1,0 +1,87 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart
+test/core/outbox/media_outbox_recovery_service_test.dart:5:8: Error: Error when reading 'lib/core/outbox/media_outbox_recovery_service.dart': 系统找不到指定的文件。
+import 'package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart';
+       ^
+test/core/outbox/media_outbox_recovery_service_test.dart:27:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+    final service = MediaOutboxRecoveryService(store: store,
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_recovery_service_test.dart:44:17: Error: '_' is already declared in this scope.
+      send: (_, _) { entered.complete(); return pending.future; });
+                ^
+test/core/outbox/media_outbox_recovery_service_test.dart:44:14: Context: Previous declaration of '_'.
+      send: (_, _) { entered.complete(); return pending.future; });
+             ^
+test/core/outbox/media_outbox_recovery_service_test.dart:42:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+    final service = MediaOutboxRecoveryService(store: store,
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_recovery_service_test.dart:61:17: Error: '_' is already declared in this scope.
+      send: (_, _) { entered.complete(); return pending.future; });
+                ^
+test/core/outbox/media_outbox_recovery_service_test.dart:61:14: Context: Previous declaration of '_'.
+      send: (_, _) { entered.complete(); return pending.future; });
+             ^
+test/core/outbox/media_outbox_recovery_service_test.dart:59:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+    final service = MediaOutboxRecoveryService(store: store,
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_recovery_service_test.dart:76:17: Error: '_' is already declared in this scope.
+      send: (_, _) async { calls++; return r'$event'; });
+                ^
+test/core/outbox/media_outbox_recovery_service_test.dart:76:14: Context: Previous declaration of '_'.
+      send: (_, _) async { calls++; return r'$event'; });
+             ^
+test/core/outbox/media_outbox_recovery_service_test.dart:74:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+    final service = MediaOutboxRecoveryService(store: store,
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+test/core/outbox/media_outbox_recovery_service_test.dart:34:30: Error: The argument type 'List<dynamic>' can't be assigned to the parameter type 'Iterable<Future<dynamic>>'.
+ - 'List' is from 'dart:core'.
+ - 'Iterable' is from 'dart:core'.
+ - 'Future' is from 'dart:async'.
+    expect(await Future.wait(results), everyElement(r'$event'));
+                             ^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: test/core/outbox/media_outbox_recovery_service_test.dart:5:8: Error: Error when reading 'lib/core/outbox/media_outbox_recovery_service.dart': 系统找不到指定的文件。
+  import 'package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart';
+         ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:27:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+      final service = MediaOutboxRecoveryService(store: store,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_recovery_service_test.dart:44:17: Error: '_' is already declared in this scope.
+        send: (_, _) { entered.complete(); return pending.future; });
+                  ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:44:14: Context: Previous declaration of '_'.
+        send: (_, _) { entered.complete(); return pending.future; });
+               ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:42:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+      final service = MediaOutboxRecoveryService(store: store,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_recovery_service_test.dart:61:17: Error: '_' is already declared in this scope.
+        send: (_, _) { entered.complete(); return pending.future; });
+                  ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:61:14: Context: Previous declaration of '_'.
+        send: (_, _) { entered.complete(); return pending.future; });
+               ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:59:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+      final service = MediaOutboxRecoveryService(store: store,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_recovery_service_test.dart:76:17: Error: '_' is already declared in this scope.
+        send: (_, _) async { calls++; return r'$event'; });
+                  ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:76:14: Context: Previous declaration of '_'.
+        send: (_, _) async { calls++; return r'$event'; });
+               ^
+  test/core/outbox/media_outbox_recovery_service_test.dart:74:21: Error: Method not found: 'MediaOutboxRecoveryService'.
+      final service = MediaOutboxRecoveryService(store: store,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  test/core/outbox/media_outbox_recovery_service_test.dart:34:30: Error: The argument type 'List<dynamic>' can't be assigned to the parameter type 'Iterable<Future<dynamic>>'.
+   - 'List' is from 'dart:core'.
+   - 'Iterable' is from 'dart:core'.
+   - 'Future' is from 'dart:async'.
+      expect(await Future.wait(results), everyElement(r'$event'));
+                               ^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart

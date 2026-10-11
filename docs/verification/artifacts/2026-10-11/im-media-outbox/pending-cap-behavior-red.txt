@@ -1,0 +1,19 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart
+00:00 +0: pending byte cap charges originals until explicit cancel releases them
+00:00 +0 -1: pending byte cap charges originals until explicit cancel releases them [E]
+  Expected: throws <Instance of 'MediaOutboxException'> with `reason`: 'pending-capacity'
+    Actual: <Instance of 'Future<MediaOutboxTask>'>
+     Which: emitted <Instance of 'MediaOutboxTask'>
+  
+  package:matcher                                      expectLater
+  package:flutter_test/src/widget_tester.dart 507:8    expectLater
+  test\core\outbox\media_outbox_store_test.dart 22:13  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                           _CustomZone.registerUnaryCallback
+  test\core\outbox\media_outbox_store_test.dart 13:18  main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: pending byte cap charges originals until explicit cancel releases them
