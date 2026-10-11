@@ -143,6 +143,7 @@ final class MatrixPusherService {
   String _lastFailureKind = '';
   DateTime? _lastRemoteVerifiedAt;
   DateTime? _nextRetryAt;
+  DateTime? _serverRetryUntil;
   bool _remoteKnown = false;
   bool _forceRemoteCheck = false;
   bool _checkingRemote = false;
@@ -173,6 +174,9 @@ final class MatrixPusherService {
   /// 失败后有限指数退避自动重试；并发守卫防重复注册。
   Future<bool> ensureRegistered() async {
     if (_unregistering || _disposed) return false;
+    if (_serverRetryUntil != null && now().isBefore(_serverRetryUntil!)) {
+      return false;
+    }
     if (_registering) {
       _dirty = true;
       return _registrationInFlight!;
@@ -212,6 +216,11 @@ final class MatrixPusherService {
 
   Future<bool> _doRegister(int generation) async {
     if (generation != _generation) return false;
+    // A dirty convergence pass can follow an in-flight 429. All entry points,
+    // including preference/token changes, must honor the server deadline.
+    if (_serverRetryUntil != null && now().isBefore(_serverRetryUntil!)) {
+      return false;
+    }
     final url = gatewayUrl;
     if (url == null) {
       diagnostics.record(
@@ -309,6 +318,9 @@ final class MatrixPusherService {
           error is MatrixException && error.errcode == 'M_LIMIT_EXCEEDED'
               ? error.retryAfterMs
               : null;
+      if (retryAfter != null && retryAfter > 0) {
+        _serverRetryUntil = now().add(Duration(milliseconds: retryAfter));
+      }
       _scheduleRetry(
           minimumDelay: retryAfter != null && retryAfter > 0
               ? Duration(milliseconds: retryAfter)
@@ -374,6 +386,7 @@ final class MatrixPusherService {
     _retryTimer = null;
     _retryCount = 0;
     _nextRetryAt = null;
+    _serverRetryUntil = null;
   }
 
   /// 外部触发重检查（resume/网络恢复/登录恢复）：不重置退避计数，

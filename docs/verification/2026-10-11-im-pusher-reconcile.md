@@ -46,3 +46,9 @@ Observed checkpoints:2026-10-11T10:53:15+08 setup; baseline output10:53:57; firs
 DND next: separate design frozen with root/gateway owner at [wire design](artifacts/2026-10-11/im-pusher-reconcile/dnd-wire-design.md). Root explicitly assigned minimal AppDelegate.swift IANA read method to this worker after R4 froze. New DND code will be a separate commit; gateway implementation belongs to review_media_android. Neither static-only source nor tests claim scheduled DND/real iPhone acceptance.
 
 Rollback: static change is mobile-code-only, no backend schema; restore prior client/service behavior. No APK/IPA built or distributed by this worker. Source candidate is not a deployed or device-accepted result.
+
+## Review correction — preference changes during HTTP 429
+
+Independent review reproduced that preference synchronization entered `ensureRegistered` directly and bypassed the server's `retry_after_ms` deadline. A separate hard server deadline now gates all registration entry points and dirty convergence passes; ordinary offline retry backoff remains separate. The scheduled retry samples the latest preference at expiry. No data is sent during the hard deadline.
+
+2026-10-11 11:21–11:23 +08: test-first `throttle-preferences-red.txt` fails with writes > 1 during the 30-second server window. `throttle-preferences-green.txt` passes 28 focused tests, including 20 preference/direct registration triggers, no reads/writes through second 29, and exactly one write applying the latest silent preference at second 30. `throttle-focused-analyze.txt` reports no issues. This correction is a separate commit after R5a; uncommitted R5b DND changes were saved and excluded.

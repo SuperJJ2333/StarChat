@@ -20,7 +20,7 @@ final class PushStatusRegistry {
         List.of(_services).map((service) => service.recheck()),
       );
 
-  /// Preference changes may create a new identity even during read retry backoff.
+  /// Preference changes can bypass offline backoff, but never a server 429.
   Future<void> synchronizePreferences() async {
     await Future.wait(
         List.of(_services).map((service) => service.ensureRegistered()));
