@@ -1,0 +1,12 @@
+{
+  "app_latest_version": "0.4.44",
+  "app_latest_build": "2213",
+  "app_min_supported_build": "3",
+  "app_update_notes": "优化启动和切换会话时的缓存显示，修复连续快滑历史跳转；表情面板默认静态并增加最近16个表情；提高回到最新消息按钮的出现距离。",
+  "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+  "app_ios_latest_version": "0.4.44",
+  "app_ios_latest_build": "2213",
+  "app_ios_min_supported_build": "3",
+  "app_ios_update_notes": "修复大历史会话快速上滑跳转、弱网新消息换位和语音首次播放问题，优化聊天记录加载与交互性能。",
+  "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1"
+}

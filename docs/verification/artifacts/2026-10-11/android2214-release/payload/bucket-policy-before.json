@@ -1,0 +1,39 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::starchat-installers-218022113852-sg",
+        "arn:aws:s3:::starchat-installers-218022113852-sg/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    },
+    {
+      "Sid": "AllowOnlyApprovedInstallerDistribution",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+      },
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.19-build2188-arm64.apk",
+        "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.21-build2190-arm64.apk",
+        "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.24-build2193-arm64.apk",
+        "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.25-build2194-arm64.apk"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::218022113852:distribution/E30IR8IHK6PMXZ"
+        }
+      }
+    }
+  ]
+}

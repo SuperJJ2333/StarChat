@@ -1,0 +1,42 @@
+{
+  "files": {
+    "download.html": {
+      "sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "bytes": 9245
+    },
+    "downloads/android-release.json": {
+      "sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "bytes": 372
+    },
+    "src/admin-home.js": {
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "bytes": 25709
+    },
+    "downloads/ios/manifest.plist": {
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "bytes": 793
+    },
+    "src/download-redirect.js": {
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "bytes": 1998
+    },
+    "src/download-network.js": {
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "bytes": 5507
+    },
+    "src/download-network-selector.js": {
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "bytes": 7433
+    }
+  },
+  "registry": {
+    "artifact_bytes": 73139489,
+    "build": 2213,
+    "cdn_url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.44-build2213-arm64.apk",
+    "direct_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.44-build2213-arm64.apk",
+    "platform": "android",
+    "sha256": "08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271",
+    "version": "0.4.44"
+  },
+  "latest_arm64": "ChatFlow-0.4.44-build2213-arm64.apk"
+}
