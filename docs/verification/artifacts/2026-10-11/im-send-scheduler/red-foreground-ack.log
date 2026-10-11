@@ -1,0 +1,32 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart
+00:00 +0: foreground ACK wakes the ordered background room queue
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['local-1791688410060071-0', 'be5db38be2204705a52a165a051e5a77']
+  Actual: ['local-1791688410060071-0']
+   Which: at location [1] is ['local-1791688410060071-0'] which shorter than expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart:198:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart line 198
+The test description was:
+  foreground ACK wakes the ordered background room queue
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: foreground ACK wakes the ordered background room queue [E]
+  Test failed. See exception logs above.
+  The test description was: foreground ACK wakes the ordered background room queue
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: foreground ACK wakes the ordered background room queue

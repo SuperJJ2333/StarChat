@@ -742,6 +742,12 @@ final class RoomTimelineController extends ChangeNotifier
 
   /// 同一 txid 在途去重：恢复流程与用户点击可能同时命中同一行。
   final _inFlightTxids = <String>{};
+  final _transportSettlements = <String, Future<void>>{};
+
+  /// The owned operation before its UI observation timeout. Callers may wait
+  /// for it but cannot cancel it or release its durable claim.
+  Future<void>? pendingTransportSettlement(String transactionId) =>
+      _transportSettlements[transactionId];
 
   PerformanceTrace? _retainedSendTrace(String tx) {
     final lease = _sendTraceLeases[tx];
@@ -1796,8 +1802,17 @@ final class RoomTimelineController extends ChangeNotifier
     // The UI budget never releases the transport's txid or durable claim.
     // The original operation persists its eventual ACK/error, even after the
     // page is disposed; retry remains blocked until that operation settles.
-    return _dispatchSettled(tx, local, outboxRow: outboxRow, trace: trace)
-        .timeout(sendDispatchTimeout, onTimeout: () {
+    final sending =
+        _dispatchSettled(tx, local, outboxRow: outboxRow, trace: trace);
+    final settled =
+        sending.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _transportSettlements[tx] = settled;
+    unawaited(settled.whenComplete(() {
+      if (identical(_transportSettlements[tx], settled)) {
+        _transportSettlements.remove(tx);
+      }
+    }));
+    return sending.timeout(sendDispatchTimeout, onTimeout: () {
       // This is only the UI observation budget. The underlying durable send
       // may still ACK later, so its one trace remains open for the real result.
       // Session teardown and the recorder's active cap bound hung operations.

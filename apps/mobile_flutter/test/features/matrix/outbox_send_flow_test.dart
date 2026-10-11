@@ -130,13 +130,16 @@ class _TransportLease implements OutboxLease {
   Future<void> release() async {}
 }
 
-class _ControllerSender implements OutboxSender {
+class _ControllerSender implements OutboxSender, OutboxTransportSettlement {
   _ControllerSender(this.controller);
   final RoomTimelineController controller;
   @override
   String get roomId => '!room:test';
   @override
   bool get canSend => true;
+  @override
+  Future<void>? pendingTransportSettlement(String transactionId) =>
+      controller.pendingTransportSettlement(transactionId);
   @override
   Future<String> send(OutboxMessage row) async {
     final result = await controller.sendText(row.content, outboxRow: row);
@@ -169,6 +172,118 @@ void main() {
           networkStateManager: manager,
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
+
+  testWidgets('foreground ACK wakes the ordered background room queue',
+      (tester) async {
+    final pending = Completer<String>();
+    final transport = _FakeTransport()..responses.add(() => pending.future);
+    final controller = controllerFor(transport);
+    final sending = controller.sendText('foreground');
+    await tester.pump();
+    final first = (await outbox.unsent()).single;
+    final second = (await outbox.save(
+        receiverId: '@peer:test',
+        roomId: '!room:test',
+        content: 'second',
+        createdAt: first.createdAt.add(const Duration(seconds: 1))))!;
+    final sender = _ControllerSender(controller);
+    final scheduler =
+        MessageSendScheduler(outbox: outbox, senderFor: (_) => sender)..start();
+    addTearDown(() {
+      scheduler.dispose();
+      controller.dispose();
+    });
+    await tester.pump();
+    expect(transport.txids, [first.txid]);
+    pending.complete('ack-foreground');
+    await sending;
+    await tester.pump();
+    expect(transport.txids, [first.txid, second.txid]);
+    expect(await outbox.unsent(), isEmpty);
+  });
+
+  testWidgets(
+      'scheduler keeps true controller ownership after UI timeout and deletion',
+      (tester) async {
+    final transportPending = Completer<String>();
+    final transport = _FakeTransport()
+      ..responses.add(() => transportPending.future);
+    final controller = controllerFor(transport);
+    final sender = _ControllerSender(controller);
+    final scheduler =
+        MessageSendScheduler(outbox: outbox, senderFor: (_) => sender);
+    addTearDown(() {
+      scheduler.dispose();
+      controller.dispose();
+    });
+    final first = (await outbox.save(
+        receiverId: '@peer:test',
+        roomId: '!room:test',
+        content: 'first',
+        createdAt: DateTime.utc(2026, 1, 1)))!;
+    final second = (await outbox.save(
+        receiverId: '@peer:test',
+        roomId: '!room:test',
+        content: 'second',
+        createdAt: DateTime.utc(2026, 1, 2)))!;
+    unawaited(scheduler.drain());
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 21));
+    expect(controller.messages.first.deliveryState,
+        RoomDeliveryState.waitingNetwork);
+    await outbox.removeOrArchive(first.localId);
+    await tester.pump(const Duration(seconds: 10));
+    await scheduler.drain();
+    expect(transport.txids, [first.txid],
+        reason:
+            'deleting a durable row cannot complete the original SDK request');
+    transportPending.complete('event-first');
+    await tester.pump();
+    expect(transport.txids, [first.txid, second.txid]);
+    expect(await outbox.unsent(), isEmpty);
+    expect(controller.messages, hasLength(2));
+    expect(controller.messages.map((row) => row.transactionId).toSet(),
+        {first.txid, second.txid});
+  });
+
+  testWidgets(
+      'account teardown prevents dispatch after the old transport settles',
+      (tester) async {
+    final pending = Completer<String>();
+    final transport = _FakeTransport()..responses.add(() => pending.future);
+    final controller = controllerFor(transport);
+    final sender = _ControllerSender(controller);
+    final scheduler =
+        MessageSendScheduler(outbox: outbox, senderFor: (_) => sender);
+    final first = (await outbox.save(
+        receiverId: '@peer:test',
+        roomId: '!room:test',
+        content: 'first',
+        createdAt: DateTime.utc(2026, 1, 1)))!;
+    final second = (await outbox.save(
+        receiverId: '@peer:test',
+        roomId: '!room:test',
+        content: 'second',
+        createdAt: DateTime.utc(2026, 1, 2)))!;
+    unawaited(scheduler.drain());
+    await tester.pump();
+    final owned = controller.pendingTransportSettlement(first.txid)!;
+    var settled = false;
+    unawaited(owned.then((_) => settled = true));
+    await tester.pump(const Duration(seconds: 21));
+    scheduler.dispose();
+    controller.dispose();
+    await tester.pump(const Duration(seconds: 10));
+    expect(settled, isFalse);
+    expect(controller.pendingTransportSettlement(first.txid), same(owned));
+    pending.complete('late-old-account');
+    await tester.pump();
+    expect(settled, isTrue);
+    expect(controller.pendingTransportSettlement(first.txid), isNull);
+    expect(transport.txids, [first.txid]);
+    expect(
+        (await outbox.byLocalId(second.localId))!.status, OutboxStatus.queued);
+  });
 
   test('failed page send retries with its existing root correlation', () async {
     var now = 0;

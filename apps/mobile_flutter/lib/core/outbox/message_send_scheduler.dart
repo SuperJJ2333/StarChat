@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 
 import '../../core/network_state_manager.dart';
@@ -40,7 +41,7 @@ typedef OutboxLeaseFactory = Future<OutboxLease> Function(String roomId);
 ///
 /// 硬约束：
 /// - 已绑定发送由网络通知与显式 [drain] 驱动；未绑定会话解析额外有界重试；
-/// - **有界顺序处理**：超时的请求仍持有原认领，其他房间可以继续处理；
+/// - 每房一个真实在途请求，跨房最多两个；观察超时不释放房间或认领；
 /// - **幂等**：无论走哪条路径，派发前都必须原子认领该行
 ///   （[PersistentOutboxManager.claim]），因此同一 txid 只会真正发一次；
 /// - 网络问题一律 `waitingNetwork`，**绝不**降级为 `failed`；
@@ -80,13 +81,22 @@ final class MessageSendScheduler {
   final OutboxLeaseFactory? leaseFactory;
   final Duration operationTimeout;
 
-  final Set<String> _inFlight = <String>{};
+  final Map<String, String> _inFlight = <String, String>{};
+  static const _maxActiveRooms = 2;
+  static const _maxActiveResolutions = 2;
+  final Queue<String> _roomTurns = Queue<String>();
+  final Set<String> _roomOperations = <String>{};
+  final Map<String, int> _attemptedRows = <String, int>{};
+  final Set<void Function()> _settlementWaiters = <void Function()>{};
+  int _dispatchRevision = 0;
+  Completer<void>? _drainWakeup;
   NetworkStateManager? _attached;
   bool _started = false;
   int _deadlineRevision = 0;
   bool _draining = false;
   bool _drainRequested = false;
   bool _reportingFailure = false;
+  bool _waitingForExternalClaim = false;
   int _recoveryRevision = 0;
   final Set<String> _openingRooms = <String>{};
   final Set<String> _resolvingReceivers = <String>{};
@@ -197,6 +207,7 @@ final class MessageSendScheduler {
   void _onOutboxChanged() {
     final revision = ++_deadlineRevision;
     unawaited(_refreshDurableDeadlines(revision));
+    if (_waitingForExternalClaim) _resumeAfterSettlement();
   }
 
   Future<void> _refreshDurableDeadlines(int revision) async {
@@ -231,13 +242,16 @@ final class MessageSendScheduler {
 
   /// 扫描并派发一轮；返回本次成功派发的行数。
   ///
-  /// 串行处理：先按房间分组（保持创建顺序），房间之间依次处理，每个房间
-  /// 最多开一个临时租约。并发调用（网络恢复信号 + 显式 drain）由 [_draining]
-  /// 与逐行原子认领双重去重。
-  Future<int> drain() async {
+  /// 每次轮到房间只派发队首一行，保留原创建顺序。解析使用独立容量。
+  /// 返回值只包含观察窗口内完成的发送；迟到结果仍由原所有者结算。
+  Future<int> drain() => _drain(retry: true);
+
+  Future<int> _drain({required bool retry}) async {
     if (_disposed) return 0;
+    if (retry) _dispatchRevision++;
     if (_draining) {
       _drainRequested = true;
+      _wakeDrain();
       return 0;
     }
     _draining = true;
@@ -255,65 +269,135 @@ final class MessageSendScheduler {
 
   Future<int> _drainBatch() async {
     var sent = 0;
-    var rows = await outbox.queryPending();
-    if (_disposed) return 0;
-    if (_networkUsable && resolveUnbound != null) {
-      await _resolveUnboundRows(rows);
-      if (_disposed) return 0;
-      rows = await outbox.queryPending();
-      if (_disposed) return 0;
+    final observations = <Future<void>>{};
+    void observe(Future<void> operation) {
+      late final Future<void> watched;
+      watched = operation.whenComplete(() {
+        observations.remove(watched);
+        _wakeDrain();
+      });
+      observations.add(watched);
+      // Operations own their failures/settlement; retain an error handler for
+      // unexpected storage failures without leaving an unhandled async error.
+      unawaited(
+          watched.then<void>((_) {}, onError: (Object _, StackTrace __) {}));
     }
-    final offline = networkState?.current == NetworkState.offline;
-    final byRoom = <String, List<OutboxMessage>>{};
-    for (final row in rows) {
-      if (row.nextServerRetryAt?.isAfter(outbox.now) ?? false) {
-        _armServerRetry(row);
-        continue;
+
+    while (!_disposed) {
+      final wakeup = _drainWakeup = Completer<void>();
+      // Include durable sending rows: a page's 20s UI future can finish while
+      // the actual transport still owns its claim, even across schedulers.
+      final rows = await outbox.unsent();
+      if (_disposed) break;
+      final ids = rows.map((row) => row.localId).toSet();
+      _attemptedRows.removeWhere((id, _) => !ids.contains(id));
+      final byRoom = <String, OutboxMessage>{};
+      final occupied = <String>{
+        ..._roomOperations,
+        ..._openingRooms,
+        ..._inFlight.values,
+      };
+      _waitingForExternalClaim = false;
+      for (final row in rows) {
+        if (row.status == OutboxStatus.failed) continue;
+        final room = row.roomId?.trim() ?? '';
+        if (room.isEmpty) continue;
+        byRoom.putIfAbsent(room, () => row);
+        if (row.status.isInFlight) {
+          if (!occupied.contains(room)) _waitingForExternalClaim = true;
+          occupied.add(room);
+        }
       }
-      _serverRetryTimers.remove(row.localId)?.cancel();
-      final roomId = row.roomId?.trim() ?? '';
-      if (roomId.isEmpty) {
-        // 会话还没建立：等 pending conversation 绑定房间号。
-        continue;
-      }
-      byRoom.putIfAbsent(roomId, () => <OutboxMessage>[]).add(row);
-    }
-    if (offline) {
-      // 离线不尝试派发：状态落到"等待网络"，恢复后由监听自动继续。
-      for (final roomRows in byRoom.values) {
-        for (final row in roomRows) {
+      if (networkState?.current == NetworkState.offline) {
+        for (final row in rows.where((row) => row.hasRoom)) {
           await outbox.updateStatus(row.localId, OutboxStatus.waitingNetwork,
               lastError: 'offline',
               countRetry: false,
               from: const {OutboxStatus.queued, OutboxStatus.waitingNetwork});
         }
+        break;
       }
-      return 0;
+
+      if (_networkUsable && resolveUnbound != null) {
+        for (final resolving in _resolveUnboundRows(rows)) {
+          observe(resolving);
+        }
+      }
+      _roomTurns.removeWhere((room) => !byRoom.containsKey(room));
+      for (final room in byRoom.keys) {
+        if (!_roomTurns.contains(room)) _roomTurns.add(room);
+      }
+      final turns = _roomTurns.length;
+      for (var i = 0; i < turns && occupied.length < _maxActiveRooms; i++) {
+        final room = _roomTurns.removeFirst();
+        _roomTurns.addLast(room);
+        final row = byRoom[room]!;
+        if (occupied.contains(room) ||
+            !row.status.isAutoDispatchable ||
+            _attemptedRows[row.localId] == _dispatchRevision) {
+          continue;
+        }
+        if (row.nextServerRetryAt?.isAfter(outbox.now) ?? false) {
+          _armServerRetry(row);
+          continue;
+        }
+        if (canDispatch != null && !canDispatch!(row)) continue;
+        final sender = senderFor(room);
+        final factory = leaseFactory;
+        if (sender == null && factory == null) continue;
+        _serverRetryTimers.remove(row.localId)?.cancel();
+        _attemptedRows[row.localId] = _dispatchRevision;
+        occupied.add(room);
+        _roomOperations.add(room);
+        observe(() async {
+          try {
+            sent += sender != null
+                ? await _dispatchViaRoomSender(sender, [row])
+                : await _dispatchViaLease(room, [row], factory!);
+          } finally {
+            _roomOperations.remove(room);
+          }
+        }());
+      }
+      if (observations.isEmpty) {
+        // Settlement can happen while the asynchronous snapshot is read.
+        // Consume that wakeup before declaring this scan quiescent.
+        if (wakeup.isCompleted) continue;
+        break;
+      }
+      await wakeup.future;
     }
-    for (final entry in byRoom.entries) {
-      if (_disposed) break;
-      final sender = senderFor(entry.key);
-      if (sender != null) {
-        sent += await _dispatchViaRoomSender(sender, entry.value);
-        continue;
-      }
-      final factory = leaseFactory;
-      if (factory == null) continue;
-      sent += await _dispatchViaLease(entry.key, entry.value, factory);
+    _drainWakeup = null;
+    if (_disposed) {
+      await Future.wait(observations);
     }
     return sent;
   }
 
-  Future<void> _resolveUnboundRows(List<OutboxMessage> rows) async {
+  void _wakeDrain() {
+    final wakeup = _drainWakeup;
+    if (wakeup != null && !wakeup.isCompleted) wakeup.complete();
+  }
+
+  void _resumeAfterSettlement() {
+    if (_disposed) return;
+    _wakeDrain();
+    if (!_draining) unawaited(_drain(retry: false));
+  }
+
+  Iterable<Future<void>> _resolveUnboundRows(List<OutboxMessage> rows) sync* {
     final peers = <String, OutboxMessage>{};
     for (final row in rows) {
-      if (!row.hasRoom) peers.putIfAbsent(row.receiverId, () => row);
+      if (!row.hasRoom && row.status.isAutoDispatchable) {
+        peers.putIfAbsent(row.receiverId, () => row);
+      }
     }
     for (final peer in _resolutionRetries.keys.toList()) {
       if (!peers.containsKey(peer)) _clearResolutionRetry(peer);
     }
     for (final row in peers.values) {
       if (_disposed || !_networkUsable) return;
+      if (_resolvingReceivers.length >= _maxActiveResolutions) return;
       if (_resolutionTimers.containsKey(row.receiverId)) continue;
       if (!_resolvingReceivers.add(row.receiverId)) continue;
       var timedOut = false;
@@ -360,9 +444,9 @@ final class MessageSendScheduler {
         }
       }();
       unawaited(resolving.then<void>((_) {
-        if (timedOut && !_disposed && _networkUsable) unawaited(drain());
+        if (timedOut && !_disposed && _networkUsable) _resumeAfterSettlement();
       }));
-      await resolving.timeout(operationTimeout, onTimeout: () async {
+      yield resolving.timeout(operationTimeout, onTimeout: () async {
         timedOut = true;
         // The underlying alias resolution remains single-flight. Only its
         // eventual result may bind the original durable rows.
@@ -420,11 +504,28 @@ final class MessageSendScheduler {
     for (final row in rows) {
       if (_disposed) break;
       if (canDispatch != null && !canDispatch!(row)) continue;
-      if (!_inFlight.add(row.localId)) continue;
+      if (_inFlight.containsKey(row.localId)) continue;
+      _inFlight[row.localId] = row.roomId!;
       var timedOut = false;
       try {
         if (!await _authorize(row, claimed: false) || _disposed) continue;
-        final sending = sender.send(row);
+        final sending = () async {
+          try {
+            return await sender.send(row);
+          } finally {
+            // A live controller may return its UI timeout before the SDK
+            // settles. Durable sending is still the transport's ownership.
+            final settlement = sender is OutboxTransportSettlement
+                ? (sender as OutboxTransportSettlement)
+                    .pendingTransportSettlement(row.txid)
+                : null;
+            if (settlement != null) {
+              await settlement;
+            } else {
+              await _waitForSenderSettlement(row.localId);
+            }
+          }
+        }();
         final eventId = await sending.timeout(operationTimeout, onTimeout: () {
           timedOut = true;
           // The live sender still owns its claim. Do not release that
@@ -434,6 +535,7 @@ final class MessageSendScheduler {
               .whenComplete(() async {
             _inFlight.remove(row.localId);
             await _refreshServerRetry(row.localId);
+            _resumeAfterSettlement();
           }));
           return '';
         });
@@ -460,6 +562,32 @@ final class MessageSendScheduler {
     return sent;
   }
 
+  Future<void> _waitForSenderSettlement(String localId) async {
+    if (_disposed) return;
+    final settled = Completer<void>();
+    void finish() {
+      if (!settled.isCompleted) settled.complete();
+    }
+
+    Future<void> check() async {
+      final current = await outbox.byLocalId(localId);
+      // A failed read is not evidence that the owned row was removed.
+      if (current == null && outbox.lastError != null && !_disposed) return;
+      if (_disposed || current?.status != OutboxStatus.sending) finish();
+    }
+
+    void changed() => unawaited(check());
+    _settlementWaiters.add(finish);
+    outbox.addListener(changed);
+    try {
+      await check();
+      await settled.future;
+    } finally {
+      outbox.removeListener(changed);
+      _settlementWaiters.remove(finish);
+    }
+  }
+
   /// 路径 2：房间没有打开 → 临时租约发送，**成功/失败/取消都必须释放**。
   ///
   /// 租约打不开（会话未就绪、房间本地不存在、SDK 生命周期拒绝）时，行保持
@@ -480,8 +608,10 @@ final class MessageSendScheduler {
           _observe(ChatDiagnosticStage.sendAdmission, () => factory(roomId));
       unawaited(acquiring.then<void>((value) async {
         if (acquisitionExpired) await _release(value);
-      }, onError: (Object _) {}).whenComplete(
-          () => _openingRooms.remove(roomId)));
+      }, onError: (Object _) {}).whenComplete(() {
+        _openingRooms.remove(roomId);
+        if (acquisitionExpired) _resumeAfterSettlement();
+      }));
       lease = await acquiring.timeout(operationTimeout, onTimeout: () {
         acquisitionExpired = true;
         throw TimeoutException(
@@ -508,7 +638,8 @@ final class MessageSendScheduler {
           break;
         }
         if (canDispatch != null && !canDispatch!(row)) continue;
-        if (!_inFlight.add(row.localId)) continue;
+        if (_inFlight.containsKey(row.localId)) continue;
+        _inFlight[row.localId] = roomId;
         final activeLease = lease!;
         final recoveryRevision = _recoveryRevision;
         var retryAfterSettlement = false;
@@ -606,7 +737,10 @@ final class MessageSendScheduler {
           // Keep the row sending until the original request settles. A timeout
           // only frees this scheduler to service other rooms, never the claim.
           lease = null;
-          unawaited(sending.whenComplete(() => _release(activeLease)));
+          unawaited(sending.whenComplete(() async {
+            await _release(activeLease);
+            _resumeAfterSettlement();
+          }));
           break;
         }
         if (outcome) sent++;
@@ -749,6 +883,10 @@ final class MessageSendScheduler {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _wakeDrain();
+    for (final finish in _settlementWaiters.toList()) {
+      finish();
+    }
     if (_started) outbox.removeListener(_onOutboxChanged);
     _deadlineRevision++;
     _attached?.state.removeListener(_onNetworkStateChanged);
@@ -764,6 +902,8 @@ final class MessageSendScheduler {
     _serverRetryTimers.clear();
     _serverRetryWakeups.clear();
     _inFlight.clear();
+    _roomTurns.clear();
+    _attemptedRows.clear();
     for (final entry in _correlations.values) {
       entry.$1.close();
     }

@@ -16,6 +16,13 @@ abstract interface class OutboxSender {
   Future<String> send(OutboxMessage message);
 }
 
+/// Optional ownership bridge for senders with a shorter UI observation future.
+/// A pending future must complete only after the underlying transport settles,
+/// including after local cancellation, row deletion or page disposal.
+abstract interface class OutboxTransportSettlement {
+  Future<void>? pendingTransportSettlement(String transactionId);
+}
+
 /// 已打开房间的发送句柄注册表（按 roomId 去重）。
 final class OutboxRoomSenderRegistry {
   OutboxRoomSenderRegistry();

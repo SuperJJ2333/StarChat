@@ -1,0 +1,42 @@
+[
+  {
+    "path": "apps/mobile_flutter/lib/core/outbox/message_send_scheduler.dart",
+    "baselineGitBlob": "11f6c208cfa2fc0eed4863cf4203d038dd3da48b",
+    "sha256": "5fae330ac05354c6e330674317ae6bce0635c808019705878869683ba0f871ab"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/core/outbox/outbox_room_sender_registry.dart",
+    "baselineGitBlob": "f4f776a5f14fdeb41d37b0ca61903387f7f7bb67",
+    "sha256": "e91c82e96116e783b7892d4579c5a79914f127ac5f62e01e99c1d4b9775687db"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+    "baselineGitBlob": "a9783dcc09e74f7b117d7f89d5b73dbba7ec6df9",
+    "sha256": "982f129597d0cba8b9c565e4dff5042c299c73c1a04f98d5973a3fe212c80001"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/room_timeline_controller.dart",
+    "baselineGitBlob": "8f278277497463f913fddb07e6744db818dfc618",
+    "sha256": "4efcee5581b68bf6f2998e16bbd070597470ed6f270792c5fff6692b040cdeff"
+  },
+  {
+    "path": "apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart",
+    "baselineGitBlob": "48249f600034fe3b113b110fee993bad24946922",
+    "sha256": "be78b1722673028c097c7d3b131fbe28665f223ec7b666eb01e448aca8191d0b"
+  },
+  {
+    "path": "apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart",
+    "baselineGitBlob": "b2411953c6b39d8ba26e54b67c731941d21f1d21",
+    "sha256": "921e0fc28cbd3ca3fc38803e158fc3291606b5162ccd78a174074a3691c59a71"
+  },
+  {
+    "path": "apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart",
+    "baselineGitBlob": "c3d3357ca2936dafdd6ff03f66492f00ba8b4acc",
+    "sha256": "b4745bbd78400b82e7a8ff16640afa01f11e47455c426e9f5390c01fda25ad7d"
+  },
+  {
+    "path": "apps/mobile_flutter/pubspec.lock",
+    "baselineGitBlob": "1ad4ab1431b436b20a64445e06e25c73c3173eb0",
+    "sha256": "12ae67427fe7b17a65aa929773940cfef1ce97be4fe5240a925a373c771f191e"
+  }
+]

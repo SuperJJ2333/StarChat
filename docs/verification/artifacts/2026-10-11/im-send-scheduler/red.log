@@ -1,0 +1,88 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler pending room admits another room within 200ms and stays serial
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['697cbc0055c64bb68add6ccdd8402264']
+  Actual: []
+   Which: at location [0] is [] which shorter than expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart:437:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart line 437
+The test description was:
+  pending room admits another room within 200ms and stays serial
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +0 -1: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler pending room admits another room within 200ms and stays serial [E]
+  Test failed. See exception logs above.
+  The test description was: pending room admits another room within 200ms and stays serial
+  
+00:00 +0 -1: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler room turns rotate while true transport concurrency stays two
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['a0', 'b0']
+  Actual: ['a0']
+   Which: at location [1] is ['a0'] which shorter than expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart:474:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart line 474
+The test description was:
+  room turns rotate while true transport concurrency stays two
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -2: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +0 -2: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler room turns rotate while true transport concurrency stays two [E]
+  Test failed. See exception logs above.
+  The test description was: room turns rotate while true transport concurrency stays two
+  
+00:00 +0 -2: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['e56d6abae5fb43d4a8ada4276d1a479b']
+  Actual: []
+   Which: at location [0] is [] which shorter than expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart:46:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart line 46
+The test description was:
+  pending resolution does not spend bound transport capacity
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -3: C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity [E]
+  Test failed. See exception logs above.
+  The test description was: pending resolution does not spend bound transport capacity
+  
+00:00 +0 -3: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler pending room admits another room within 200ms and stays serial
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler room turns rotate while true transport concurrency stays two
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity

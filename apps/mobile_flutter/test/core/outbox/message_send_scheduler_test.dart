@@ -61,6 +61,20 @@ final class _FakeSender implements OutboxSender {
   }
 }
 
+/// Matches the page adapter's observation timeout without settling its claim.
+final class _UiObservedSender implements OutboxSender {
+  _UiObservedSender(this.delegate);
+  final _FakeSender delegate;
+  @override
+  String get roomId => delegate.roomId;
+  @override
+  bool get canSend => delegate.canSend;
+  @override
+  Future<String> send(OutboxMessage message) =>
+      delegate.send(message).timeout(const Duration(seconds: 20),
+          onTimeout: () => throw StateError('UI observation elapsed'));
+}
+
 /// 假临时租约：记录打开/释放与每次发送使用的 txid。
 final class _FakeLease implements OutboxLease {
   final List<String> txids = <String>[];
@@ -127,6 +141,12 @@ final class _Http5xx implements Exception {
   int get statusCode => 502;
   @override
   String toString() => 'HttpException(502): $message';
+}
+
+final class _RateLimited implements Exception {
+  const _RateLimited();
+  int get statusCode => 429;
+  int get retryAfterSeconds => 5;
 }
 
 class _QueryRaceStore implements OutboxStore {
@@ -413,6 +433,245 @@ void main() {
   });
 
   group('MessageSendScheduler', () {
+    testWidgets('429 keeps room order while another room continues',
+        (tester) async {
+      final a = _FakeSender('a', outbox)
+        ..responses.add(() => Future.error(const _RateLimited()));
+      final b = _FakeSender('b', outbox);
+      final scheduler = MessageSendScheduler(
+          outbox: outbox, senderFor: (room) => room == 'a' ? a : b);
+      addTearDown(scheduler.dispose);
+      final first = (await outbox.save(
+          receiverId: 'a',
+          roomId: 'a',
+          content: 'first',
+          createdAt: DateTime.utc(2026, 1, 1)))!;
+      final second = (await outbox.save(
+          receiverId: 'a',
+          roomId: 'a',
+          content: 'second',
+          createdAt: DateTime.utc(2026, 1, 2)))!;
+      final other = (await outbox.save(
+          receiverId: 'b',
+          roomId: 'b',
+          content: 'other',
+          createdAt: DateTime.utc(2026, 1, 3)))!;
+      await scheduler.drain();
+      expect(a.txids, [first.txid]);
+      expect(b.txids, [other.txid]);
+      await tester.pump(const Duration(seconds: 4));
+      await scheduler.drain();
+      expect(a.txids, [first.txid]);
+      expect((await outbox.byLocalId(second.localId))!.createdAt,
+          second.createdAt);
+      await tester.pump(const Duration(seconds: 1));
+      expect(a.txids, [first.txid, first.txid, second.txid]);
+      expect(await outbox.unsent(), isEmpty);
+    });
+
+    testWidgets('cancelled pending lease keeps its room until true settlement',
+        (tester) async {
+      final pending = Completer<String>();
+      final a = _FakeLease()..responses.add(() => pending.future);
+      final b = _FakeLease();
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => null,
+          leaseFactory: (room) async => room == 'a' ? a : b);
+      addTearDown(scheduler.dispose);
+      final first = (await outbox.save(
+          receiverId: 'a',
+          roomId: 'a',
+          content: 'first',
+          createdAt: DateTime.utc(2026, 1, 1)))!;
+      final second = (await outbox.save(
+          receiverId: 'a',
+          roomId: 'a',
+          content: 'second',
+          createdAt: DateTime.utc(2026, 1, 2)))!;
+      final other = (await outbox.save(
+          receiverId: 'b',
+          roomId: 'b',
+          content: 'other',
+          createdAt: DateTime.utc(2026, 1, 3)))!;
+      unawaited(scheduler.drain());
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(b.txids, [other.txid]);
+      await outbox.removeOrArchive(first.localId);
+      await tester.pump(const Duration(seconds: 31));
+      await scheduler.drain();
+      expect(a.txids, [first.txid]);
+      pending.complete('late-cancelled');
+      await tester.pump();
+      expect(a.txids, [first.txid, second.txid]);
+      expect(await outbox.unsent(), isEmpty);
+    });
+
+    testWidgets(
+        'UI timeout retains the durable room and global transport slots',
+        (tester) async {
+      final aPending = Completer<String>();
+      final bPending = Completer<String>();
+      final a = _FakeSender('a', outbox)..responses.add(() => aPending.future);
+      final b = _FakeSender('b', outbox)..responses.add(() => bPending.future);
+      final c = _FakeSender('c', outbox);
+      final first = (await outbox.save(
+          receiverId: 'a',
+          roomId: 'a',
+          content: 'first',
+          createdAt: DateTime.utc(2026, 1, 1)))!;
+      final second = (await outbox.save(
+          receiverId: 'a',
+          roomId: 'a',
+          content: 'second',
+          createdAt: DateTime.utc(2026, 1, 2)))!;
+      await outbox.save(
+          receiverId: 'b',
+          roomId: 'b',
+          content: 'b',
+          createdAt: DateTime.utc(2026, 1, 3));
+      final third = (await outbox.save(
+          receiverId: 'c',
+          roomId: 'c',
+          content: 'c',
+          createdAt: DateTime.utc(2026, 1, 4)))!;
+      final senders = {
+        'a': _UiObservedSender(a),
+        'b': _UiObservedSender(b),
+        'c': c
+      };
+      final scheduler = MessageSendScheduler(
+          outbox: outbox, senderFor: (room) => senders[room]);
+      addTearDown(scheduler.dispose);
+      unawaited(scheduler.drain());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 21));
+      expect(a.txids, [first.txid]);
+      expect(c.txids, isEmpty);
+      expect((await outbox.byLocalId(first.localId))!.status,
+          OutboxStatus.sending);
+      await tester.pump(const Duration(seconds: 10));
+      await scheduler.drain();
+      expect(a.txids, [first.txid]);
+      expect(c.txids, isEmpty);
+      aPending.complete('late-a');
+      await tester.pump();
+      expect(c.txids, [third.txid]);
+      expect(a.txids, [first.txid, second.txid]);
+      bPending.complete('late-b');
+      await tester.pump();
+      expect(await outbox.unsent(), isEmpty);
+    });
+
+    testWidgets('a new room wakes a draining scheduler before its slow peer',
+        (tester) async {
+      final pending = Completer<String>();
+      final a = _FakeSender('a', outbox)..responses.add(() => pending.future);
+      final b = _FakeSender('b', outbox);
+      final scheduler = MessageSendScheduler(
+          outbox: outbox, senderFor: (room) => room == 'a' ? a : b);
+      addTearDown(scheduler.dispose);
+      await outbox.save(receiverId: 'a', roomId: 'a', content: 'a');
+      unawaited(scheduler.drain());
+      await tester.pump();
+      final row =
+          (await outbox.save(receiverId: 'b', roomId: 'b', content: 'b'))!;
+      await scheduler.drain();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(b.txids, [row.txid]);
+      pending.complete('a-ack');
+      await tester.pump();
+      expect(await outbox.unsent(), isEmpty);
+    });
+
+    testWidgets(
+        'pending room admits another room within 200ms and stays serial',
+        (tester) async {
+      final pending = Completer<String>();
+      final a = _FakeSender('!a:test', outbox)
+        ..responses.add(() => pending.future);
+      final b = _FakeSender('!b:test', outbox);
+      final rows = <OutboxMessage>[];
+      for (var i = 0; i < 3; i++) {
+        rows.add((await outbox.save(
+            receiverId: 'a',
+            roomId: a.roomId,
+            content: 'a$i',
+            createdAt: DateTime.utc(2026, 1, 1).add(Duration(seconds: i))))!);
+      }
+      final other = (await outbox.save(
+          receiverId: 'b',
+          roomId: b.roomId,
+          content: 'b',
+          createdAt: DateTime.utc(2026, 1, 2)))!;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox, senderFor: (room) => room == a.roomId ? a : b);
+      addTearDown(scheduler.dispose);
+      unawaited(scheduler.drain());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(b.txids, [other.txid]);
+      expect(a.txids, [rows.first.txid]);
+      await tester.pump(const Duration(seconds: 31));
+      await scheduler.drain();
+      expect(a.txids, [rows.first.txid],
+          reason: 'an observation deadline must not admit the next room row');
+      pending.complete('late-ack');
+      await tester.pump();
+      expect(a.txids, rows.map((row) => row.txid).toList());
+      expect(await outbox.unsent(), isEmpty);
+    });
+
+    testWidgets('room turns rotate while true transport concurrency stays two',
+        (tester) async {
+      final order = <String>[];
+      final gates = <String, Completer<String>>{};
+      final senders = <String, _FakeSender>{};
+      for (final room in ['a', 'b', 'c']) {
+        final sender = _FakeSender(room, outbox);
+        senders[room] = sender;
+        for (var i = 0; i < (room == 'a' ? 3 : 1); i++) {
+          final key = '$room$i';
+          gates[key] = Completer<String>();
+          sender.responses.add(() {
+            order.add(key);
+            return gates[key]!.future;
+          });
+          await outbox.save(
+              receiverId: room,
+              roomId: room,
+              content: key,
+              createdAt: DateTime.utc(2026, 1, 1)
+                  .add(Duration(seconds: room.codeUnitAt(0) * 10 + i)));
+        }
+      }
+      final scheduler = MessageSendScheduler(
+          outbox: outbox, senderFor: (room) => senders[room]);
+      addTearDown(scheduler.dispose);
+      unawaited(scheduler.drain());
+      await tester.pump();
+      expect(order, ['a0', 'b0']);
+      gates['a0']!.complete('ack-a0');
+      await tester.pump();
+      expect(order, ['a0', 'b0', 'c0'],
+          reason: 'a backlogged room yields its next turn to waiting rooms');
+      await tester.pump(const Duration(seconds: 31));
+      await scheduler.drain();
+      expect(order, ['a0', 'b0', 'c0'],
+          reason:
+              'expired observation budgets never free true transport slots');
+      gates['c0']!.complete('ack-c0');
+      await tester.pump();
+      expect(order, ['a0', 'b0', 'c0', 'a1']);
+      gates['a1']!.complete('ack-a1');
+      gates['b0']!.complete('ack-b0');
+      await tester.pump();
+      expect(order, ['a0', 'b0', 'c0', 'a1', 'a2']);
+      gates['a2']!.complete('ack-a2');
+      await tester.pump();
+      expect(await outbox.unsent(), isEmpty);
+    });
+
     test('closed-room send failure emits one content-free diagnostic',
         () async {
       final previous = ChatDiagnostics.instance;
@@ -1190,16 +1449,24 @@ void main() {
     });
 
     test('服务端拒绝 → failed；网络失败 → waitingNetwork；失败路径也释放租约', () async {
-      final lease = _FakeLease();
-      final factory = _LeaseFactory(scripted: <_FakeLease>[lease]);
+      final leases = [_FakeLease(), _FakeLease()];
+      final factory = _LeaseFactory(scripted: [...leases]);
       final scheduler = schedulerFor(null, leaseFactory: factory.open);
       final rejected = await outbox.save(
-          receiverId: '@peer:test', content: '被拒绝', roomId: '!room:test');
+          receiverId: '@peer:test',
+          content: '被拒绝',
+          roomId: '!room:test',
+          createdAt: DateTime.utc(2026, 1, 1));
       final offlineRow = await outbox.save(
-          receiverId: '@peer:test', content: '网络失败', roomId: '!room:test');
-      lease.failuresByText
-        ..['被拒绝'] = StateError('M_FORBIDDEN')
-        ..['网络失败'] = const SocketException('reset');
+          receiverId: '@peer:test',
+          content: '网络失败',
+          roomId: '!room:test',
+          createdAt: DateTime.utc(2026, 1, 2));
+      for (final lease in leases) {
+        lease.failuresByText
+          ..['被拒绝'] = StateError('M_FORBIDDEN')
+          ..['网络失败'] = const SocketException('reset');
+      }
 
       await scheduler.drain();
 
@@ -1207,7 +1474,8 @@ void main() {
           OutboxStatus.failed);
       expect((await outbox.byLocalId(offlineRow!.localId))!.status,
           OutboxStatus.waitingNetwork);
-      expect(lease.releases, 1, reason: '失败路径也必须释放租约');
+      expect(leases.map((lease) => lease.releases), everyElement(1),
+          reason: '每房每轮发送一行，失败路径也必须释放该轮租约');
       scheduler.dispose();
     });
 

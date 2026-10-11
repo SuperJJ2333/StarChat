@@ -6444,10 +6444,16 @@ final class _RoleBadge extends StatelessWidget {
 ///
 /// 调度器只在房间已打开时拿到这个句柄；页面销毁/租约取消后 [canSend] 为
 /// false，注册表按"没有句柄"处理，行继续留在 outbox 等下次进入会话。
-final class _RoomOutboxSender implements OutboxSender {
+final class _RoomOutboxSender
+    implements OutboxSender, OutboxTransportSettlement {
   _RoomOutboxSender(this._page);
 
   final _RoomPageState _page;
+  final _settlements = <String, Future<void>>{};
+
+  @override
+  Future<void>? pendingTransportSettlement(String transactionId) =>
+      _settlements[transactionId];
 
   @override
   String get roomId => _page.roomInfo.id;
@@ -6466,8 +6472,17 @@ final class _RoomOutboxSender implements OutboxSender {
     if (controller == null) {
       throw StateError('Room timeline is not ready');
     }
-    final eventId =
-        await controller.sendText(message.content, outboxRow: message);
+    final sending = controller.sendText(message.content, outboxRow: message);
+    final settled = controller.pendingTransportSettlement(message.txid);
+    if (settled != null) {
+      _settlements[message.txid] = settled;
+      unawaited(settled.whenComplete(() {
+        if (identical(_settlements[message.txid], settled)) {
+          _settlements.remove(message.txid);
+        }
+      }));
+    }
+    final eventId = await sending;
     if (eventId == null || eventId.isEmpty) {
       throw StateError('Matrix event was not accepted');
     }
