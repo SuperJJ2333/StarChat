@@ -224,7 +224,11 @@ def test_theme_is_persistent_and_only_resolved_at_the_app_root():
     )
 
     assert "SharedPreferencesThemePreferenceStore" in main
-    assert "await themeController.load()" in main
+    # Startup loads into a local controller before publishing the ready shell.
+    assert "await loadedThemeController.load()" in main
+    assert main.index("await loadedThemeController.load()") < main.index(
+        "themeController = loadedThemeController"
+    ) < main.index("shellPrepared = true")
     assert "ThemePreference.system" in controller
     assert "ThemePreference.light" in controller
     assert "ThemePreference.dark" in controller
