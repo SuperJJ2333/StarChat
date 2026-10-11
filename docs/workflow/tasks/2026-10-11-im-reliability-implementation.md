@@ -152,3 +152,11 @@ root另外对本地2213成品SHA08a74481进行14个ARM64 ELF静态检查，libcr
 iOS run38125303494的完整arm64 device job SUCCESS，29生产插件/46框架；IPA34964622bytes、SHA0fad8d42bcab9439ff35951e44b7f0df6b284660200b23b576f6d12ce72a4d3b，下载ZIP及IPA SHA/CRC本地核验通过。原生模拟器job仍运行，不把device build当作native acceptance。该包源5988；后续test-only修改若运行时/原生/依赖/workflow闭包完全一致可按影响分析复用，无需重新编译同一运行时代码。尚未企业回签、真机覆盖或发布。
 
 下一步：独立审查test-only修正后集成并冻结最终输入，完整共享Flutter回归；复用未改变的门禁须逐项绑定输入。刷新线上双端2213版本后执行最终ARM64常规重建/固定75b31签名，真实成品经独立评审再按阶段发布。R9b-2长handler续租及OpenSSL16KiB受控实验在隔离树推进，尚未生产部署或集成二进制。官方OEM审核/最终iOS签名/真机及长期SLO仍缺资料。
+
+## 17:15+08 独立复验拒绝 test-only 等待修正
+
+f59cf233独立完整文件首次0 PASS/1 FAIL，新增双bubble解码断言实际1；两轮synthetic诊断复现。一开始的“另一bubble可能未可见”猜测被实际geometry否定：old-image(60,464)-(61,465)、neighbor(60,401)-(61,402)，viewport(0,44)-(800,520)，两者route/ticker有效，defer/scrolling为false、同descriptor、总HTTP1。old持续placeholder，neighbor已解码。新增测试尚未集成；不能仅改断言为一个decoded/公共cache存在，需追首consumer真正完成时序。独立拒绝e0bfd5f4已归档，含17身份PASS及原始失败/诊断编译修正记录。作者隔离获ContainImageBubble最小诊断及必要根因修复所有权，root不改同文件。
+
+iOS38125303494双job于09:06Z前已SUCCESS。三native targets实际13+6+1=20 PASS/0 SKIP/0 FAIL，全部首次执行exit0、无attach stall/hard timeout；两cold-order在SQLCipher六例内。该组与先前文件保护XCTest的4 PASS/4 capability SKIP分开，未声称真机保护通过。IPA与ZIP完整性本地再次校验：Runner bundle/version/build符合，46framework含SQLCipher/OpenSSL/WebRTC/Firebase；Runner无profile/签名资源，依赖内8个既有签名资源条目不能被误称为最终企业签名。摘要ios-final-r2-verified-summary.json。后续若需修运行时代码，该5988构建须作影响复核，不能直接称最终成品。
+
+09:05:39Z线上版本只读复查：双端2213、无2214下载文件。root已集成OpenSSL静态实验文档4197721a/54e7168f，40份字节/hash一致，未集成crypto二进制/依赖；生产compatibility验收仍开放。下一步仍先关闭有效可见首consumer的pending边界，再冻结/完整回归/最终构建；客户端未发布。

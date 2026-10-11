@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "status": "pass",
+  "run_id": 38125303494,
+  "source_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "runtime_version": "26.2",
+  "runtime_build": "23C54",
+  "native_targets": [
+    {
+      "target": "integration_test/ios_timeline_storage_migration_native_test.dart",
+      "passed": 13,
+      "skipped": 0,
+      "failed": 0,
+      "log_sha256": "6c346e346d35692b418b3c08c9a89999defdaf6e684ed7dbc95f3d9675010f8b",
+      "execution": {
+        "target": "integration_test/ios_timeline_storage_migration_native_test.dart",
+        "attempt": 1,
+        "exit_code": 0,
+        "vm_service_stall": false,
+        "hard_timeout": false,
+        "elapsed_seconds": 825.59,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "integration_test/ios_timeline_storage_migration_native_test.dart",
+          "-d",
+          "3A461ACB-281C-49CE-91FF-4AEB52E11821",
+          "--timeout=6m",
+          "--reporter",
+          "expanded",
+          "--verbose"
+        ]
+      }
+    },
+    {
+      "target": "integration_test/sqlcipher_readonly_native_test.dart",
+      "passed": 6,
+      "skipped": 0,
+      "failed": 0,
+      "log_sha256": "1e26056ed3a5a7f3a814a80307a44849a61a5dbf3e5241e9874a1f8e5abe598a",
+      "execution": {
+        "target": "integration_test/sqlcipher_readonly_native_test.dart",
+        "attempt": 1,
+        "exit_code": 0,
+        "vm_service_stall": false,
+        "hard_timeout": false,
+        "elapsed_seconds": 230.54,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "integration_test/sqlcipher_readonly_native_test.dart",
+          "-d",
+          "3A461ACB-281C-49CE-91FF-4AEB52E11821",
+          "--timeout=6m",
+          "--reporter",
+          "expanded",
+          "--verbose"
+        ]
+      }
+    },
+    {
+      "target": "integration_test/ios_keychain_archive_native_test.dart",
+      "passed": 1,
+      "skipped": 0,
+      "failed": 0,
+      "log_sha256": "913bb01b3771eaebc7db41f3f2cc175bde1ca6dd58d2cf05592a2cc79f484cec",
+      "execution": {
+        "target": "integration_test/ios_keychain_archive_native_test.dart",
+        "attempt": 1,
+        "exit_code": 0,
+        "vm_service_stall": false,
+        "hard_timeout": false,
+        "elapsed_seconds": 195.42,
+        "command": [
+          "flutter",
+          "test",
+          "--no-pub",
+          "integration_test/ios_keychain_archive_native_test.dart",
+          "-d",
+          "3A461ACB-281C-49CE-91FF-4AEB52E11821",
+          "--timeout=6m",
+          "--reporter",
+          "expanded",
+          "--verbose"
+        ]
+      }
+    }
+  ],
+  "native_total": {
+    "passed": 20,
+    "skipped": 0,
+    "failed": 0
+  },
+  "unsigned_ipa": {
+    "bytes": 34964622,
+    "sha256": "0fad8d42bcab9439ff35951e44b7f0df6b284660200b23b576f6d12ce72a4d3b",
+    "state": "awaiting-enterprise-resigning"
+  },
+  "limitations": [
+    "Simulator storage migration, SQLCipher cold-open orders and Keychain functional gates only",
+    "Diagnostic simulator excludes mobile_scanner; full arm64 device build retains all 29 production plugins",
+    "No physical device backup/protection, old-data upgrade, final signature/entitlement or APNs arrival acceptance",
+    "Source equivalence must be established for a later test-only/documentation commit"
+  ],
+  "local_zip_inspection": {
+    "bundle_id": "com.liuhetong.liuhetongMobile",
+    "version": "0.4.45",
+    "build": "2214",
+    "minimum_os": "16.0",
+    "framework_count": 46,
+    "required_frameworks_present": [
+      "App.framework",
+      "FirebaseMessaging.framework",
+      "Flutter.framework",
+      "OpenSSL.framework",
+      "SQLCipher.framework",
+      "WebRTC.framework"
+    ],
+    "runner_profile_absent": true,
+    "runner_signature_resource_absent": true,
+    "nested_dependency_signature_resource_entries": [
+      "Payload/Runner.app/Frameworks/objective_c.framework/_CodeSignature/",
+      "Payload/Runner.app/Frameworks/objective_c.framework/_CodeSignature/CodeResources",
+      "Payload/Runner.app/Frameworks/OpenSSL.framework/_CodeSignature/",
+      "Payload/Runner.app/Frameworks/OpenSSL.framework/_CodeSignature/CodeResources",
+      "Payload/Runner.app/Frameworks/Flutter.framework/_CodeSignature/",
+      "Payload/Runner.app/Frameworks/Flutter.framework/_CodeSignature/CodeResources",
+      "Payload/Runner.app/Frameworks/App.framework/_CodeSignature/",
+      "Payload/Runner.app/Frameworks/App.framework/_CodeSignature/CodeResources"
+    ],
+    "inspection_note": "Initial all-ZIP signature-resource absence assertion rejected 8 prebuilt dependency entries; Runner absence checked separately. No enterprise signature or certificate-chain claim."
+  }
+}
