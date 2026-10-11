@@ -1,0 +1,36 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart
+00:00 +0: an unreadable calibration preserves files and can recover later
+00:00 +0 -1: an unreadable calibration preserves files and can recover later [E]
+  FileSystemException: synthetic unreadable directory, path = ''
+  test\features\matrix\media_disk_quota_index_test.dart 219:38                 main.<fn>.<fn>.<fn>
+  test\features\matrix\media_disk_quota_index_test.dart 39:11                  _DirectoryCounter.list
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _StreamIterator.moveNext
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart         MediaDiskQuotaIndex._scan
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart 257:9   MediaDiskQuotaIndex._scan
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart 123:34  MediaDiskQuotaIndex._open
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart 74:9    MediaDiskQuotaIndex._open
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart 71:40   MediaDiskQuotaIndex.ready
+  test\features\matrix\media_disk_quota_index_test.dart 216:44                 main.<fn>.<fn>
+  dart:io                                                                      IOOverrides.runZoned
+  test\features\matrix\media_disk_quota_index_test.dart 216:23                 main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _CustomZone.registerUnaryCallback
+  test\features\matrix\media_disk_quota_index_test.dart 214:19                 main.<fn>
+
+  PathAccessException: Deletion failed, path = 'C:\Users\Administrator\.codex\worktrees\im-media-budget\StarChat\apps\mobile_flutter\../../docs/verification/artifacts/2026-10-11/im-media-cache-index\quota-63966d59' (OS Error: 另一个程序正在使用此文件，进程无法访问。, errno = 32)
+  dart:io                                                      FileSystemEntity.delete
+  test\features\matrix\media_disk_quota_index_test.dart 83:16  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                   _CustomZone.registerUnaryCallback
+  test\features\matrix\media_disk_quota_index_test.dart 82:5   main.<fn>
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: an unreadable calibration preserves files and can recover later

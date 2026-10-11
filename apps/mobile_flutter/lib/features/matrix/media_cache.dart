@@ -11,12 +11,15 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:path/path.dart' as p;
 
 import '../../core/performance_metrics.dart';
 import '../../core/performance_trace.dart';
 import '../../core/network_state_manager.dart' show networkFailureHttpStatus;
 import 'media_cache_metrics.dart';
 import 'media_index.dart';
+import 'media_disk_quota_index.dart';
+import 'media_cache_storage_policy.dart';
 
 /// 本地媒体磁盘配额策略（Phase 2：账号内软配额 + 设备硬上限）。
 @immutable
@@ -116,8 +119,31 @@ final class MediaCache {
   /// 正在使用中的对象路径（播放/解码/上传下载）→ 引用计数。
   static final _pinned = <String, int>{};
 
-  /// 进程内设备用量估计（null = 未知，需要在下次写入时重新统计一次）。
-  static int? _deviceBytesEstimate;
+  static final _quotaIndexes = <String, MediaDiskQuotaIndex>{};
+
+  static Future<MediaDiskQuotaIndex> _quotaIndex(Directory accountRoot) async {
+    final root =
+        Directory(p.normalize(p.absolute(accountRoot.parent.parent.path)));
+    final index = _quotaIndexes.putIfAbsent(
+        _pathKey(root.path), () => MediaDiskQuotaIndex(root));
+    await index.ready();
+    index.scheduleCalibration();
+    return index;
+  }
+
+  @visibleForTesting
+  static Future<void> closeQuotaIndexes() async {
+    for (final index in _quotaIndexes.values) {
+      await index.close();
+    }
+    _quotaIndexes.clear();
+  }
+
+  /// Explicit maintenance; ordinary writes use incremental accounting.
+  static Future<void> reconcileDiskQuota(String accountId) async {
+    final index = await _quotaIndex(await _root(accountId));
+    await index.reconcile();
+  }
 
   static int accountGeneration(String accountId) =>
       _accountGenerations[accountId] ?? 0;
@@ -196,10 +222,13 @@ final class MediaCache {
       await Future.wait(writes
           .map((future) => future.then<void>((_) {}, onError: (Object _) {})));
       final root = Directory(rootPath);
-      if (await root.exists()) await root.delete(recursive: true);
+      final quota = await _quotaIndex(root);
+      await quota.mutate(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+        await quota.clearAccount(_digest(accountId));
+      });
       // 索引行随之清理（对象已删，索引不得继续声称可用）。
       await MediaIndex.shared.clearAccount(accountId);
-      _deviceBytesEstimate = null;
       clearPinsForTest();
     } finally {
       if (rootPath != null) _clearingRoots.remove(rootPath);
@@ -239,6 +268,7 @@ final class MediaCache {
     if (_clearingAccounts.contains(accountId)) {
       throw StateError('Media cache is being cleared');
     }
+    MediaCacheStoragePolicy.shared.ensureScheduled();
     return Directory('${docs.path}/chat-media/v2/${_digest(accountId)}')
         .create(recursive: true);
   }
@@ -388,7 +418,11 @@ final class MediaCache {
     await _deleteQuietly(File('${file.path}.len'));
     await MediaIndex.shared
         .forgetObjects(key.accountId, {file.uri.pathSegments.last});
-    _deviceBytesEstimate = null;
+    final quota = await _quotaIndex(file.parent.parent);
+    await quota.mutate(() async {
+      await quota.remove(MediaDiskObject(_digest(key.accountId),
+          file.uri.pathSegments.last, 0, DateTime.now()));
+    });
   }
 
   static Future<void> _indexVerified(
@@ -636,10 +670,18 @@ final class MediaCache {
       String accountId, File file, Uint8List bytes) async {
     await file.parent.create(recursive: true);
     if (await _knownObjectValid(accountId, file, bytes.length)) return file;
-    await _atomicBytes(
-        File('${file.path}.len'), utf8.encode('${bytes.length}'));
-    await _atomicBytes(file, bytes);
-    return file;
+    final quota = await _quotaIndex(file.parent.parent);
+    return quota.mutate(() async {
+      await _atomicBytes(
+          File('${file.path}.len'), utf8.encode('${bytes.length}'));
+      await _atomicBytes(file, bytes);
+      await quota.upsert(MediaDiskObject(
+          _digest(accountId),
+          file.uri.pathSegments.last,
+          bytes.length,
+          (await file.stat()).modified));
+      return file;
+    });
   }
 
   /// 已存在同内容对象时的廉价判定（Phase 2）：索引 + 精确大小优先，
@@ -692,29 +734,13 @@ final class MediaCache {
     return null;
   }
 
-  static bool _isData(File file) =>
-      !file.path.endsWith('.len') &&
-      !file.path.endsWith('.ref') &&
-      !file.path.endsWith('.tmp');
-  static Future<List<File>> _files() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final root = Directory('${docs.path}/chat-media');
-    if (!await root.exists()) return [];
-    return root
-        .list(recursive: true, followLinks: false)
-        .where((e) => e is File && _isData(e))
-        .cast<File>()
-        .toList();
-  }
-
+  static bool _isData(File file) => RegExp(r'^[a-f0-9]{64}(\.mp4|\.mov)?$')
+      .hasMatch(file.uri.pathSegments.last);
   static Future<int> totalCachedBytes() async {
-    var total = 0;
-    for (final file in await _files()) {
-      try {
-        total += await file.length();
-      } on FileSystemException {/* Concurrent eviction. */}
-    }
-    return total;
+    final docs = await getApplicationDocumentsDirectory();
+    final index = await _quotaIndex(
+        Directory('${docs.path}/chat-media/v2/${_digest('')}'));
+    return index.totalBytes;
   }
 
   /// 账号内对象（objects/ 下的数据文件 + 大小 + mtime）。
@@ -748,49 +774,38 @@ final class MediaCache {
   static Future<void> _enforceDiskQuota(String accountId, File keep) async {
     final watch = MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
     try {
-      final accountRoot = await _root(accountId);
-      final accountObjects = await _accountObjects(accountRoot.path);
-      var accountTotal = 0;
-      for (final object in accountObjects) {
-        accountTotal += object.size;
-      }
-      if (accountTotal > accountSoftQuotaBytes) {
-        await MediaIndex.shared.flush();
-        final access = await _indexedLastAccess(accountId);
-        accountTotal = await _evictOldest(accountObjects, accountTotal,
-            accountSoftQuotaBytes, keep.path, access);
-      }
-      // 设备级：用进程内估计避免每次写入都全盘遍历；估计为 null 或超限时
-      // 才做一次真实统计。
-      final estimate = _deviceBytesEstimate;
-      if (estimate == null) {
-        _deviceBytesEstimate = await totalCachedBytes();
-      } else {
-        _deviceBytesEstimate = estimate + await _lengthOf(keep);
-      }
-      if ((_deviceBytesEstimate ?? 0) <= deviceHardQuotaBytes) return;
-      final all = await _files();
-      final objects = <_CacheObject>[];
-      var deviceTotal = 0;
-      for (final file in all) {
-        try {
-          final stat = await file.stat();
-          objects.add(_CacheObject(file, stat.size, stat.modified));
-          deviceTotal += stat.size;
-        } on FileSystemException {
-          continue;
+      final index = await _quotaIndex(keep.parent.parent);
+      await index.mutate(() async {
+        // Also backfill a pre-upgrade object reused without rewriting its bytes.
+        final stat = await keep.stat();
+        if (stat.type != FileSystemEntityType.file) return;
+        await index.upsert(MediaDiskObject(_digest(accountId),
+            keep.uri.pathSegments.last, stat.size, stat.modified));
+        if (!index.canEvict) return;
+        final namespace = _digest(accountId);
+        if (index.accountBytes(namespace) > accountSoftQuotaBytes ||
+            index.totalBytes > deviceHardQuotaBytes) {
+          await MediaIndex.shared.flush();
+          final access = await _indexedLastAccess(accountId);
+          if (index.accountBytes(namespace) > accountSoftQuotaBytes) {
+            await _evictIndexed(
+                index,
+                index.objects.where((o) => o.namespace == namespace).toList(),
+                accountSoftQuotaBytes,
+                keep.path,
+                access,
+                namespace: namespace);
+          }
+          if (index.totalBytes > deviceHardQuotaBytes) {
+            await _evictIndexed(
+                index, index.objects, deviceHardQuotaBytes, keep.path, access,
+                accessNamespace: namespace);
+          }
         }
-      }
-      _deviceBytesEstimate = deviceTotal;
-      if (deviceTotal <= deviceHardQuotaBytes) return;
-      // 设备兜底：先尝试回收无引用对象（GC 比淘汰更安全），再按 LRU 淘汰。
-      await collectGarbage(accountId, triggeredByQuota: true);
-      final access = await _indexedLastAccess(accountId);
-      deviceTotal = await _evictOldest(
-          objects, deviceTotal, deviceHardQuotaBytes, keep.path, access);
-      _deviceBytesEstimate = deviceTotal;
+      });
     } on FileSystemException {
-      /* Cache quota maintenance is best effort. */
+      // Disk errors keep existing cache files; capacity hints never authorize a
+      // wider cleanup or deletion of pending-media/source directories.
     } finally {
       if (watch != null) {
         MediaCacheMetrics.evictionMicros += watch.elapsedMicroseconds;
@@ -819,50 +834,69 @@ final class MediaCache {
   }
 
   /// 按 LRU（索引 last_access → mtime）最旧优先删除，直到回到
-  /// [targetBytes]；返回剩余总字节。跳过：keep、pinned、在途写入。
-  static Future<int> _evictOldest(
-      List<_CacheObject> objects, int total, int targetBytes, String keepPath,
-      [Map<String, DateTime>? indexedAccess]) async {
-    if (total <= targetBytes) return total;
-    DateTime accessOf(_CacheObject object) {
-      final indexed = indexedAccess?[object.file.uri.pathSegments.last];
-      if (indexed == null) return object.modified;
-      return indexed.isAfter(object.modified) ? indexed : object.modified;
+  /// [targetBytes]。跳过：keep、pinned、在途写入。
+  static Future<void> _evictIndexed(
+      MediaDiskQuotaIndex index,
+      List<MediaDiskObject> objects,
+      int targetBytes,
+      String keepPath,
+      Map<String, DateTime> indexedAccess,
+      {String? namespace,
+      String? accessNamespace}) async {
+    DateTime accessOf(MediaDiskObject object) {
+      final access = (namespace ?? accessNamespace) == object.namespace
+          ? indexedAccess[object.name]
+          : null;
+      return access != null && access.isAfter(object.modified)
+          ? access
+          : object.modified;
     }
 
     objects.sort((a, b) => accessOf(a).compareTo(accessOf(b)));
-    final keepKey = _pathKey(keepPath);
     for (final object in objects) {
+      final total =
+          namespace == null ? index.totalBytes : index.accountBytes(namespace);
       if (total <= targetBytes) break;
-      if (_pathKey(object.file.path) == keepKey) continue;
-      if (isPinned(object.file.path)) continue;
-      if (_isActiveWrite(object.file.path)) continue;
+      final path = index.pathFor(object);
+      if (_pathKey(path) == _pathKey(keepPath) ||
+          isPinned(path) ||
+          _isActiveWrite(path)) {
+        continue;
+      }
+      if (!await index.hasManagedParents(object)) continue;
+      // Revalidate each candidate. A link, replacement, or vanished object is
+      // never blindly deleted based on durable metadata.
+      final type = await FileSystemEntity.type(path, followLinks: false);
+      if (type == FileSystemEntityType.notFound) {
+        await index.remove(object);
+        continue;
+      }
+      if (type != FileSystemEntityType.file) continue;
+      final file = File(path);
       try {
-        await object.file.delete();
-        await _deleteQuietly(File('${object.file.path}.len'));
+        final stat = await file.stat();
+        if (stat.size != object.size ||
+            stat.modified.millisecondsSinceEpoch !=
+                object.modified.millisecondsSinceEpoch) {
+          await index.upsert(MediaDiskObject(
+              object.namespace, object.name, stat.size, stat.modified));
+          continue;
+        }
+        await file.delete();
+        await _deleteQuietly(File('$path.len'));
+        await index.remove(object);
+        MediaCacheMetrics.evictedObjects++;
+        MediaCacheMetrics.evictedBytes += object.size;
       } on FileSystemException {
         continue;
       }
-      _deviceBytesEstimate = (_deviceBytesEstimate ?? total) - object.size;
-      MediaCacheMetrics.evictedObjects++;
-      MediaCacheMetrics.evictedBytes += object.size;
-      total -= object.size;
     }
-    return total;
   }
 
   /// 只登记一次本地对象访问（用于未索引/会话外对象，如相册首帧）：
   /// 批量 LRU，不产生同步落库，也不做任何哈希。
   static void touchLocalObject(String path) {
     MediaIndex.shared.touchPath(path);
-  }
-
-  static Future<int> _lengthOf(File file) async {
-    try {
-      return await file.length();
-    } on FileSystemException {
-      return 0;
-    }
   }
 
   // —— pin / lease：正在使用的对象不得被淘汰或 GC ——
@@ -874,7 +908,7 @@ final class MediaCache {
   /// 判成两个，导致 pin/在途写保护失效。这里统一规范化后再比较。
   static String _pathKey(String path) {
     if (path.isEmpty) return '';
-    final normalized = path.replaceAll(r'\', '/');
+    final normalized = p.normalize(p.absolute(path)).replaceAll(r'\', '/');
     return Platform.isWindows ? normalized.toLowerCase() : normalized;
   }
 
@@ -997,10 +1031,13 @@ final class MediaCache {
       }
       if (!dryRun && removed.isNotEmpty) {
         await MediaIndex.shared.forgetObjects(accountId, removed);
-        final estimate = _deviceBytesEstimate;
-        if (estimate != null) {
-          _deviceBytesEstimate = (estimate - bytes).clamp(0, 1 << 62);
-        }
+        final quota = await _quotaIndex(root);
+        await quota.mutate(() async {
+          for (final name in removed) {
+            await quota
+                .remove(MediaDiskObject(_digest(accountId), name, 0, now));
+          }
+        });
       }
     } on FileSystemException {
       /* Best effort. */
