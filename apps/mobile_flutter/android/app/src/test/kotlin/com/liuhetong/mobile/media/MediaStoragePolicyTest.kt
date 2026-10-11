@@ -2,8 +2,14 @@ package com.liuhetong.mobile.media
 
 import android.app.Application
 import android.content.ContextWrapper
+import android.system.ErrnoException
+import android.system.OsConstants
+import android.system.StructStat
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -14,9 +20,38 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowLinux
+
+// Robolectric 4.14.1 delegates lstat to stat and reports mode=0 instead of
+// ENOENT for a missing file. Model the real no-follow OS contract using the
+// host filesystem; device integration remains a separate acceptance gate.
+@Implements(className = "libcore.io.Linux", isInAndroidSdk = false, minSdk = 26)
+class NoFollowLinux : ShadowLinux() {
+    @Implementation
+    override fun lstat(path: String): StructStat = inspectNoFollow(path)
+}
+
+fun inspectNoFollow(path: String): StructStat {
+        val entry = try {
+            Files.readAttributes(File(path).toPath(), BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS)
+        } catch (_: NoSuchFileException) {
+            throw ErrnoException("lstat", OsConstants.ENOENT)
+        }
+        val mode = when {
+            entry.isSymbolicLink -> OsConstants.S_IFLNK
+            entry.isDirectory -> OsConstants.S_IFDIR
+            entry.isRegularFile -> OsConstants.S_IFREG
+            else -> 0
+        }
+        return StructStat(0L, 0L, mode, 0L, 0, 0, 0L, entry.size(), 0L, 0L, 0L, 0L, 0L)
+}
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class, manifest = Config.NONE)
+@Config(sdk = [24, 35], application = Application::class, manifest = Config.NONE,
+    shadows = [NoFollowLinux::class, NoFollowPosix::class])
 class MediaStoragePolicyTest {
     private val repository = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
         .first { File(it, "docs/verification").isDirectory }

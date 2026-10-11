@@ -1,30 +1,31 @@
 package com.liuhetong.mobile.media
 
 import android.content.Context
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMethodCodec
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.NoSuchFileException
-import java.nio.file.attribute.BasicFileAttributes
 
 /** Fixed app-private roots only. No arbitrary path is accepted from Dart. */
 class MediaStoragePolicy(private val context: Context) {
     private val hex = Regex("^[0-9a-f]{64}$")
 
-    private fun attributes(file: File): BasicFileAttributes? = try {
-        Files.readAttributes(file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-    } catch (_: NoSuchFileException) {
-        null
+    // lstat is available on every supported Android API (21+), including 24.
+    // Do not rely on Java NIO's later platform availability/desugaring here.
+    private fun mode(file: File): Int? = try {
+        Os.lstat(file.path).st_mode
+    } catch (error: ErrnoException) {
+        if (error.errno == OsConstants.ENOENT) null else throw error
     }
 
     private fun root(): File {
         check(!context.isDeviceProtectedStorage) { "Credential storage required" }
         val parent = context.noBackupFilesDir.canonicalFile
         val directory = File(parent, "pending-media-v1")
-        check(attributes(directory)?.isSymbolicLink != true) { "Invalid directory" }
+        check(mode(directory)?.let(OsConstants::S_ISLNK) != true) { "Invalid directory" }
         check(directory.canonicalFile == directory.absoluteFile) { "Invalid directory" }
         check(directory.isDirectory || directory.mkdirs()) { "Directory unavailable" }
         check(directory.canRead() && directory.canWrite()) { "Directory unavailable" }
@@ -39,11 +40,11 @@ class MediaStoragePolicy(private val context: Context) {
     }
 
     private fun checked(file: File, root: File, directory: Boolean = false): File {
-        val entry = attributes(file)
+        val entry = mode(file)
         check(file.canonicalFile == file.absoluteFile &&
             file.path.startsWith(root.path + File.separator)) { "Invalid storage entry" }
-        check(entry != null && !entry.isSymbolicLink &&
-            (if (directory) entry.isDirectory else entry.isRegularFile)) { "Storage entry unavailable" }
+        check(entry != null && !OsConstants.S_ISLNK(entry) &&
+            (if (directory) OsConstants.S_ISDIR(entry) else OsConstants.S_ISREG(entry))) { "Storage entry unavailable" }
         return file
     }
 
@@ -54,14 +55,14 @@ class MediaStoragePolicy(private val context: Context) {
         checked(File(namespace, "manifest-v1.db"), root)
         for (suffix in listOf("-journal", "-wal", "-shm")) {
             val file = File(namespace, "manifest-v1.db$suffix")
-            if (attributes(file) != null) checked(file, root)
+            if (mode(file) != null) checked(file, root)
         }
         if (sourceId != null) {
             val sources = checked(File(namespace, "sources"), root, directory = true)
             var found = false
             for (suffix in listOf(".bin", ".bin.part")) {
                 val file = File(sources, sourceId + suffix)
-                if (attributes(file) != null) {
+                if (mode(file) != null) {
                     checked(file, root)
                     found = true
                 }
