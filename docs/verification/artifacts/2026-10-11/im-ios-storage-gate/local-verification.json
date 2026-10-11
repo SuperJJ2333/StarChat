@@ -1,0 +1,31 @@
+{
+  "at_utc": "2026-10-11T05:58:27.296464+00:00",
+  "base": "9dcd48441bff06d8c69e20255dd9189719bf50c2",
+  "privacy_review_commit": "d17689f2c5010e9659846a503173ac7b0b4a08fb",
+  "checks": [
+    "exact inverse extraction equals baseline Swift",
+    "no production simulator bypass",
+    "8 XCTest cases; 4 explicit capability-gated success cases",
+    "YAML and 3 embedded Python blocks parse",
+    "synthetic formatter preserves 4 PASS + 4 SKIP + 0 FAIL counts",
+    "privacy plist/PBX pytest exit 0"
+  ],
+  "swift_execution": "NOT RUN: Windows host lacks Xcode/Swift iOS SDK; macOS CI required",
+  "verify_ps1": "NOT RUN: isolated checkout has no .env; native-only task defers full candidate gate to root",
+  "inputs": {
+    "apps/mobile_flutter/ios/Runner/IOSMediaStoragePolicy.swift": {
+      "baseline_git_blob_sha256": "d0230485d6505d442cffcbc79e7dbe6717d355fa6a4b06cd3300250baddec511",
+      "candidate_workspace_bytes_sha256": "2e1c48a39ac85e56c2e9db9800f49589b539e384cd9bddd210d01327862b8ca5"
+    },
+    "apps/mobile_flutter/ios/RunnerTests/IOSMediaStoragePolicyTests.swift": {
+      "baseline_git_blob_sha256": "2fa2f97544f3eb3de15253330bc015528f70c9f1b236d36da8d63cd2767616f2",
+      "candidate_workspace_bytes_sha256": "b3fffa6a4ceada9b5e32675d3a5fe8af8bc5f1d692a6a2e1ee9bd70a6431165f"
+    },
+    ".github/workflows/im-native-storage.yml": {
+      "baseline_git_blob_sha256": "1d42ea79ae049126d43b0544498617d9031610dc422404762854e333bf060f0a",
+      "candidate_workspace_bytes_sha256": "ae15c9153f92ffd6ef697f28f9505304d844828fea720f6ee0589f4e42a46dae"
+    }
+  },
+  "synthetic_formatter_exit": 0,
+  "privacy_test_exit": 0
+}

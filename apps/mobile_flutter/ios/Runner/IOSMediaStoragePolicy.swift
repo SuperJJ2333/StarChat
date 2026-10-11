@@ -23,12 +23,19 @@ final class IOSMediaStoragePolicy {
     return info.st_mode & mode_t(S_IFMT)
   }
 
-  private func apply(_ url: URL, inside root: URL, directory: Bool = false) throws {
+  // Kept separate so entry safety is testable even on Simulator filesystems
+  // without Data Protection. Every production apply still validates first.
+  func validateEntry(_ url: URL, inside root: URL, directory: Bool = false) throws -> String {
     let path = url.standardizedFileURL.path
     guard path == root.path || path.hasPrefix(root.path + "/"),
           url.resolvingSymlinksInPath().path == path,
           try entryType(url) == mode_t(directory ? S_IFDIR : S_IFREG)
     else { throw Failure.invalidEntry }
+    return path
+  }
+
+  private func apply(_ url: URL, inside root: URL, directory: Bool = false) throws {
+    let path = try validateEntry(url, inside: root, directory: directory)
     try manager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
                               ofItemAtPath: path)
     var fresh = URL(fileURLWithPath: path)

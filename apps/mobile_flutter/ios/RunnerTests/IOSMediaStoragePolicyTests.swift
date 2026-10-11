@@ -2,6 +2,30 @@ import XCTest
 @testable import Runner
 
 final class IOSMediaStoragePolicyTests: XCTestCase {
+  private struct FilesystemCapabilities {
+    let protection: String?
+    let excluded: Bool?
+    let availableBytes: Int64?
+
+    var verifiedSimulatorWithoutDataProtection: Bool {
+      #if targetEnvironment(simulator)
+      return protection == nil && excluded == true && (availableBytes.map { $0 >= 0 } ?? false)
+      #else
+      return false
+      #endif
+    }
+  }
+
+  private func requireDataProtection() throws {
+    let capabilities = try probeFilesystemCapabilities()
+    if capabilities.verifiedSimulatorWithoutDataProtection {
+      throw XCTSkip("Simulator filesystem returned nil protection after explicit completeUntilFirstUserAuthentication set/readback; backup exclusion and nonnegative important capacity verified. Real-device Data Protection success remains unverified.")
+    }
+    XCTAssertEqual(capabilities.protection, FileProtectionType.completeUntilFirstUserAuthentication.rawValue)
+    XCTAssertEqual(capabilities.excluded, true)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(capabilities.availableBytes), 0)
+  }
+
   func testRunnerBundlesStoragePrivacyReasons() throws {
     let url = try XCTUnwrap(Bundle.main.url(forResource: "PrivacyInfo", withExtension: "xcprivacy"))
     let manifest = try XCTUnwrap(try PropertyListSerialization.propertyList(
@@ -15,7 +39,7 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
     }
   }
 
-  func testReportsSyntheticFilesystemCapabilities() throws {
+  private func probeFilesystemCapabilities() throws -> FilesystemCapabilities {
     let manager = FileManager.default
     let base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                appropriateFor: nil, create: true)
@@ -23,6 +47,8 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
     defer { try? manager.removeItem(at: folder) }
     try manager.createDirectory(at: folder, withIntermediateDirectories: false,
         attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    try manager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                              ofItemAtPath: folder.path)
     var fresh = folder
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
@@ -39,9 +65,21 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
     attachment.lifetime = .keepAlways
     add(attachment)
     print("SYNTHETIC_STORAGE_CAPABILITIES " + report)
+    return FilesystemCapabilities(protection: actual, excluded: resource.isExcludedFromBackup,
+                                 availableBytes: resource.volumeAvailableCapacityForImportantUsage)
+  }
+
+  func testReportsSyntheticFilesystemCapabilities() throws {
+    let capabilities = try probeFilesystemCapabilities()
+    XCTAssertEqual(capabilities.excluded, true)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(capabilities.availableBytes), 0)
+    if !capabilities.verifiedSimulatorWithoutDataProtection {
+      XCTAssertEqual(capabilities.protection, FileProtectionType.completeUntilFirstUserAuthentication.rawValue)
+    }
   }
 
   func testRepeatedDirectoryPreparationPreservesExistingContent() throws {
+    try requireDataProtection()
     let policy = IOSMediaStoragePolicy()
     let first = try policy.pendingDirectory()
     let root = URL(fileURLWithPath: try XCTUnwrap(first["path"] as? String))
@@ -55,6 +93,7 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
   }
 
   func testPendingDirectoryIsProtectedExcludedAndSeparateFromCache() throws {
+    try requireDataProtection()
     let policy = IOSMediaStoragePolicy()
     let result = try policy.pendingDirectory()
     let root = URL(fileURLWithPath: try XCTUnwrap(result["path"] as? String))
@@ -67,6 +106,7 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
   }
 
   func testSealsSyntheticSourceAndRejectsTraversalAndSymlink() throws {
+    try requireDataProtection()
     let policy = IOSMediaStoragePolicy()
     let root = URL(fileURLWithPath: try XCTUnwrap(try policy.pendingDirectory()["path"] as? String))
     let scope = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() + String(repeating: "0", count: 32)
@@ -89,6 +129,7 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
   }
 
   func testRejectsDirectoriesAndDanglingOptionalEntries() throws {
+    try requireDataProtection()
     let manager = FileManager.default
     let policy = IOSMediaStoragePolicy()
     let root = URL(fileURLWithPath: try XCTUnwrap(try policy.pendingDirectory()["path"] as? String))
@@ -116,5 +157,79 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
                                   withDestinationURL: sources.appendingPathComponent("absent-part"))
     XCTAssertThrowsError(try policy.sealPendingFiles(scope: scope, sourceId: source))
     XCTAssertEqual(try Data(contentsOf: file), Data("synthetic-source".utf8))
+  }
+
+  func testDirectoryPreparationMatchesCapabilityAndPreservesContent() throws {
+    let capabilities = try probeFilesystemCapabilities()
+    XCTAssertEqual(capabilities.excluded, true)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(capabilities.availableBytes), 0)
+    let unsupported = capabilities.verifiedSimulatorWithoutDataProtection
+    if !unsupported {
+      XCTAssertEqual(capabilities.protection, FileProtectionType.completeUntilFirstUserAuthentication.rawValue)
+    }
+    let manager = FileManager.default
+    let base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                               appropriateFor: nil, create: true).resolvingSymlinksInPath()
+    let root = base.appendingPathComponent("pending-media-v1", isDirectory: true)
+    let marker = root.appendingPathComponent("synthetic-" + UUID().uuidString)
+    defer { try? manager.removeItem(at: marker) }
+    let policy = IOSMediaStoragePolicy()
+    for attempt in 0..<2 {
+      if unsupported {
+        XCTAssertThrowsError(try policy.pendingDirectory()) {
+          XCTAssertEqual(String(describing: $0), "protectionUnavailable")
+        }
+        XCTAssertThrowsError(try policy.documentsChatMediaPolicy()) {
+          XCTAssertEqual(String(describing: $0), "protectionUnavailable")
+        }
+      } else {
+        XCTAssertEqual(try policy.pendingDirectory()["path"] as? String, root.path)
+        XCTAssertEqual(try policy.documentsChatMediaPolicy()["protected"] as? Bool, true)
+      }
+      if attempt == 0 { try Data("preserved".utf8).write(to: marker) }
+      XCTAssertEqual(try Data(contentsOf: marker), Data("preserved".utf8))
+    }
+  }
+
+  func testEntryValidationWithoutDataProtectionRejectsUnsafeEntries() throws {
+    let manager = FileManager.default
+    let base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                               appropriateFor: nil, create: true).resolvingSymlinksInPath()
+    let fixture = base.appendingPathComponent("entries-" + UUID().uuidString, isDirectory: true)
+    defer { try? manager.removeItem(at: fixture) }
+    let root = fixture.appendingPathComponent("root", isDirectory: true)
+    let outside = fixture.appendingPathComponent("root-outside", isDirectory: true)
+    try manager.createDirectory(at: root, withIntermediateDirectories: true)
+    try manager.createDirectory(at: outside, withIntermediateDirectories: false)
+    let policy = IOSMediaStoragePolicy()
+    let file = root.appendingPathComponent("source.bin")
+    try Data("preserved".utf8).write(to: file)
+    XCTAssertEqual(try policy.validateEntry(root, inside: root, directory: true), root.path)
+    XCTAssertEqual(try policy.validateEntry(file, inside: root), file.path)
+    func rejected(_ url: URL, directory: Bool = false) {
+      XCTAssertThrowsError(try policy.validateEntry(url, inside: root, directory: directory)) {
+        XCTAssertEqual(String(describing: $0), "invalidEntry")
+      }
+    }
+    rejected(root) // A directory must not stand in for a manifest or source.
+    rejected(file, directory: true)
+    rejected(outside, directory: true) // A prefix sibling is outside the root.
+    rejected(root.appendingPathComponent("../root-outside"), directory: true)
+    rejected(root.appendingPathComponent("absent"))
+    let link = root.appendingPathComponent("linked.bin")
+    try manager.createSymbolicLink(at: link, withDestinationURL: file)
+    rejected(link)
+    for name in ["manifest-v1.db-wal", "source.bin.part"] {
+      let dangling = root.appendingPathComponent(name)
+      try manager.createSymbolicLink(at: dangling, withDestinationURL: root.appendingPathComponent("absent"))
+      rejected(dangling)
+    }
+    let alias = root.appendingPathComponent("alias", isDirectory: true)
+    try manager.createSymbolicLink(at: alias, withDestinationURL: root)
+    rejected(alias.appendingPathComponent("source.bin"))
+    XCTAssertThrowsError(try policy.sealPendingFiles(scope: "../outside", sourceId: nil)) {
+      XCTAssertEqual(String(describing: $0), "invalidEntry")
+    }
+    XCTAssertEqual(try Data(contentsOf: file), Data("preserved".utf8))
   }
 }

@@ -35,7 +35,7 @@ jobs:
           xcodebuild -version > "$STORAGE_EVIDENCE/toolchain.txt"
           flutter --version >> "$STORAGE_EVIDENCE/toolchain.txt"
           shasum -a 256 ios/Runner/IOSMediaStoragePolicy.swift ios/RunnerTests/IOSMediaStoragePolicyTests.swift \
-            ios/Runner/AppDelegate.swift ios/Runner.xcodeproj/project.pbxproj \
+            ios/Runner/AppDelegate.swift ios/Runner/PrivacyInfo.xcprivacy ios/Runner.xcodeproj/project.pbxproj \
             > "$STORAGE_EVIDENCE/input-sha256.txt"
           flutter config --no-enable-swift-package-manager
           cp pubspec.lock "$STORAGE_EVIDENCE/pubspec.lock.production"
@@ -52,7 +52,9 @@ jobs:
               'Native storage XCTest on a fresh simulator; no real device, signing, backup extraction, '
               'release APK/IPA or account data. Diagnostic host excludes only mobile_scanner/MLKit '
               'because its current binary has no arm64 simulator slice. Production packaging '
-              'must retain all production plugins and run its independent gate.\n')
+              'must retain all production plugins and run its independent gate. '
+              'Data Protection success cases may SKIP only after verified Simulator capability absence; '
+              'SKIP is not PASS and leaves real-device protection and release acceptance pending.\n')
           host = pathlib.Path(os.environ['STORAGE_EVIDENCE']) / 'storage-host.dart'
           host.write_text("import 'package:flutter/widgets.dart';\nvoid main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const SizedBox.shrink()); }\n")
           PY
@@ -89,12 +91,14 @@ jobs:
             -only-testing:RunnerTests/IOSMediaStoragePolicyTests \
             -resultBundlePath "$STORAGE_EVIDENCE/storage.xcresult" \
             2>&1 | tee "$STORAGE_EVIDENCE/xctest.log"
-      - name: Export XCTest failure diagnostics
+      - name: Export XCTest pass, skip and failure results
         if: always()
         run: |
           if [ -d "$STORAGE_EVIDENCE/storage.xcresult" ]; then
             xcrun xcresulttool get object --legacy --format json \
               --path "$STORAGE_EVIDENCE/storage.xcresult" > "$STORAGE_EVIDENCE/result.json"
+            xcrun xcresulttool get test-results summary \
+              --path "$STORAGE_EVIDENCE/storage.xcresult" > "$STORAGE_EVIDENCE/test-summary.json"
             python3 <<'PY'
           import json, os, pathlib
           def walk(value):
@@ -105,6 +109,14 @@ jobs:
               elif isinstance(value, list):
                   for child in value: walk(child)
           walk(json.loads((pathlib.Path(os.environ['STORAGE_EVIDENCE']) / 'result.json').read_text()))
+          summary = json.loads((pathlib.Path(os.environ['STORAGE_EVIDENCE']) / 'test-summary.json').read_text())
+          report = ('### Native storage XCTest results\n\n'
+                    'Simulator-only evidence. SKIP is not PASS; real-device Data Protection and '
+                    'production release acceptance remain pending. Counts below are the unmodified '
+                    'xcresulttool summary.\n\n```json\n' + json.dumps(summary, indent=2) + '\n```\n')
+          print(report)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
+              output.write(report)
           PY
           fi
       - name: Preserve exact source, native results and limitations
