@@ -2,6 +2,19 @@ import XCTest
 @testable import Runner
 
 final class IOSMediaStoragePolicyTests: XCTestCase {
+  func testRunnerBundlesStoragePrivacyReasons() throws {
+    let url = try XCTUnwrap(Bundle.main.url(forResource: "PrivacyInfo", withExtension: "xcprivacy"))
+    let manifest = try XCTUnwrap(try PropertyListSerialization.propertyList(
+        from: Data(contentsOf: url), format: nil) as? [String: Any])
+    let entries = try XCTUnwrap(manifest["NSPrivacyAccessedAPITypes"] as? [[String: Any]])
+    for (category, reason) in [("DiskSpace", "E174.1"), ("FileTimestamp", "C617.1"), ("UserDefaults", "CA92.1")] {
+      let entry = try XCTUnwrap(entries.first {
+        $0["NSPrivacyAccessedAPIType"] as? String == "NSPrivacyAccessedAPICategory" + category
+      })
+      XCTAssertTrue((entry["NSPrivacyAccessedAPITypeReasons"] as? [String])?.contains(reason) == true)
+    }
+  }
+
   func testReportsSyntheticFilesystemCapabilities() throws {
     let manager = FileManager.default
     let base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
