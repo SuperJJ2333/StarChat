@@ -1,0 +1,276 @@
+{
+  "created_utc": "2026-10-11T10:59:02.147517+00:00",
+  "scope": "Read-only local evidence and report consistency; no remote, new container, product write or rerun of completed gates.",
+  "root_head": "70f030073ac77b873f40b78bf7a84aa2715edd67",
+  "root_inputs": [
+    {
+      "path": "docs/verification/2026-10-11-im-reliability-release-result.md",
+      "sha256": "0401303d14ba41aaef2a084a1ac3a39c8604326aea715d1a4577cf5043287991",
+      "bytes": 8020
+    },
+    {
+      "path": "docs/workflow/current-state.md",
+      "sha256": "db8812c825f44b05795a29b55b46cac0441f14ec51bc521cc9333758fe061624",
+      "bytes": 211718
+    },
+    {
+      "path": "docs/workflow/tasks/2026-10-11-im-reliability-implementation.md",
+      "sha256": "f8e631e12cc16178296a364754cb8b2319e205032f06dfe30419f8b3216f0e61",
+      "bytes": 35917
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/assemble.json",
+      "sha256": "813b740fc6068f3da7f0d83d6c7b2dfdb0a2d3f91e6d88e06d2f12f8cf3ea43b",
+      "bytes": 334
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/audit.json",
+      "sha256": "56de215f731e2db29ff07ee9db17a79c90318a4a3e1b0d7d4a86f4e21205f9b0",
+      "bytes": 1992
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/cdn-check.json",
+      "sha256": "c9022ad518fb71c076285aa601ff1ecc4a015b0d9e6e7c6078f522b7991a885c",
+      "bytes": 589
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/cdn-install.json",
+      "sha256": "7440141195711387582f8271462e93730358da094ad4dfc570ed1fef0ec39eee",
+      "bytes": 602
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/hk-install.json",
+      "sha256": "766a3161ada561186b55a22667d4508036be17c9d1fd6048954d84b967395221",
+      "bytes": 296
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/hk-switch.json",
+      "sha256": "1b7ee472ae3984d7288363c957eb7ccaed32721ad6d371cda24a52d8a84b8f2a",
+      "bytes": 295
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/publish.json",
+      "sha256": "67309a04d932769800fbe4748f2d09c62ed4f781ab3ab3399df09693702c3f78",
+      "bytes": 411
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/runtime.json",
+      "sha256": "a0b13fa8691353be62fd517e49fefca34bffab038cb226794a8bec4f7aa87ebb",
+      "bytes": 255
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/execution/im2214-e9d297-r3-20261011/upload.json",
+      "sha256": "56c2a206fa6c022683fa5ce2c47638c91296fd292bba9b29afa7a97edb227dc5",
+      "bytes": 348
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/worker-active-lease-execution-r3.json",
+      "sha256": "35aab932d9cb3bba30a73a5baaf6073175786aedf73faeaf8fe0d3a7b0a34afe",
+      "bytes": 428
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/worker-active-lease-deployment-r3.json",
+      "sha256": "7c40ee9c9d8bfb7977c2e7b4412e7668c202fc4d10790101b11354da8f1d68c1",
+      "bytes": 812
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/worker-active-lease-pre-cutover-r3.json",
+      "sha256": "4cef68a67039fd3df6205d11f21feb5a223375c25bd06642e6237defe20f68da",
+      "bytes": 2597
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/source-backfill-result-r3.json",
+      "sha256": "70e452459481b0601d5357988f1e7888a035d8aa0e660cedeabdfe8578e9b467",
+      "bytes": 4071
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/receipt.json",
+      "sha256": "436a9f209d3a0888c1f22a06131e384ee8c9139705e8b156d2da9aa8d9ec52ec",
+      "bytes": 2022
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/tunnel-cleanup.json",
+      "sha256": "907e12da228a2790a7a7c3ae820f11047c78a10b98e28bb61fdd266bcba44e98",
+      "bytes": 121
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/android-release.json",
+      "sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "bytes": 372
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/cdn-apk-head.headers",
+      "sha256": "c5345c6822349fab88cb908efb0d1e43a62a3c4c657b5cecc216610df18550bd",
+      "bytes": 673
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/api-ready.json",
+      "sha256": "9cdff9c59e4e06113f43f9d437d4ec6063b8aab0846f701f7dfb6925d41eaa08",
+      "bytes": 62
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/workstation-public-final-r3/update-auth-required.json",
+      "sha256": "f6f7bacc5d50bdfbef3b10b638f0be34cc119338475b286d3aad08916ecfd8c1",
+      "bytes": 117
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/ios-reuse.json",
+      "sha256": "49c1c33e1b428955464b994495938ea91f0a24bcd6a21cba2782ad2477b2b7ab",
+      "bytes": 1008
+    }
+  ],
+  "backend_frozen_inputs": [
+    {
+      "commit": "e40bd28688cc582731d2a91130c1c4f9d5b3e914",
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/REPORT.md",
+      "sha256": "093d0a4262b0ed90fa5f7df854499c35c69c03f89585e94630916a6de4ae9354",
+      "bytes": 5519
+    },
+    {
+      "commit": "e40bd28688cc582731d2a91130c1c4f9d5b3e914",
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/post-cutover-result.json",
+      "sha256": "816e0a42893d3dfc286a49520bd0ebf28384c17dac9853ac33996d91302a30c3",
+      "bytes": 3262
+    },
+    {
+      "commit": "e40bd28688cc582731d2a91130c1c4f9d5b3e914",
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/execution-metadata.json",
+      "sha256": "a2b88d2d5cb7f10ebccee9e3216332095afe09f5340e1ba8a17c86cc8eb6422e",
+      "bytes": 547
+    },
+    {
+      "commit": "e40bd28688cc582731d2a91130c1c4f9d5b3e914",
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/WARNING-STRUCTURE.md",
+      "sha256": "e075f97aa9592e0453b81769e2faef8ec0dbd33a8766e600f2f393d2341b91f3",
+      "bytes": 2553
+    },
+    {
+      "commit": "e40bd28688cc582731d2a91130c1c4f9d5b3e914",
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/warning-structure-result.json",
+      "sha256": "b6381deaf278e5f6fc996eed3f9e46f58a1aee234a29e47117a8040e0965be80",
+      "bytes": 621
+    }
+  ],
+  "checks": {
+    "android_phase_receipts": 9,
+    "phase_pass": 9,
+    "phase_same_freeze": true,
+    "public_response_raw_hashes": 4,
+    "source_backfill_actual_after": 2,
+    "preserved_local_raw_and_git": 5,
+    "worker_pre_cutover_source_identity": 5,
+    "backend_nine_structural_checks": true,
+    "domains_covered": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "quantified_performance_not_invented": true
+  },
+  "notes": {
+    "build_elapsed_typo_present": true,
+    "missing_root_report_links": [
+      "artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/REPORT.md"
+    ],
+    "worker_log_status": "STRUCTURAL_PASS_LOG_REVIEW_REQUIRED; later LOGGER_STRUCTURE_OBSERVED_CAUSE_UNRESOLVED remains open; non-comparable filters"
+  },
+  "warning_enum_followup": {
+    "checked_utc": "2026-10-11T11:00:31.122755+00:00",
+    "receipt": {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/worker-warning-static-enums-r3.json",
+      "sha256": "6dfabd9651de7931bc836f595d7abe080728e73870eb5bccce016f66bd297557"
+    },
+    "source_literals": [
+      {
+        "path": "services/business-worker/app/tasks/manual_wallet.py",
+        "sha256": "d8c38a01dbb9bc04e17bceb8480eec8b9899f6667e5f99f4da7a497c861e65a8",
+        "bytes": 6445
+      },
+      {
+        "path": "services/business-api/app/modules/wallet/manual_reserve_monitor.py",
+        "sha256": "00025a5c076d0276183789a0c5fbee167e3f7c110740f185ef55ad5ccb9056c8",
+        "bytes": 45208
+      },
+      {
+        "path": "services/business-api/app/integrations/tron/diagnostics.py",
+        "sha256": "de938367719b8175b6b1233f66c044d9831a422eec3ad34af06e2bb904fb6f2f",
+        "bytes": 12905
+      }
+    ],
+    "all_emitted_values_in_static_AST": true,
+    "semantics": "WAITING has multiple monitor branches; BALANCE_UNSTABLE means not stable, RECONCILIATION_PENDING maps unverified; status OK does not imply healthy; no harmlessness or historical-occurrence inference.",
+    "updated_root_documents": [
+      {
+        "path": "docs/verification/2026-10-11-im-reliability-release-result.md",
+        "sha256": "0bcb521f195833f5ef1ea0b4a579d370ca56f74d91515fdafa1aa360d602feb5",
+        "bytes": 8744
+      },
+      {
+        "path": "docs/workflow/current-state.md",
+        "sha256": "a6058217c5e79d91e00b46ea63f9907caaaadb52f04055ad8d679ea9b9cca83a",
+        "bytes": 211801
+      },
+      {
+        "path": "docs/workflow/tasks/2026-10-11-im-reliability-implementation.md",
+        "sha256": "bebb93476ab21ce1906b227ad02dd2085f203ca0d49ec59326b239108ba32d97",
+        "bytes": 37201
+      }
+    ],
+    "worker_report_now_exists": true,
+    "elapsed_typo_now_present": false
+  },
+  "final_document_followup": {
+    "checked_utc": "2026-10-11T11:01:58.201442+00:00",
+    "missing_links": [],
+    "elapsed_corrected": true,
+    "backend_received_representation": [
+      {
+        "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/REPORT.md",
+        "root_raw_sha256": "093d0a4262b0ed90fa5f7df854499c35c69c03f89585e94630916a6de4ae9354",
+        "e40_git_blob_sha256": "093d0a4262b0ed90fa5f7df854499c35c69c03f89585e94630916a6de4ae9354",
+        "raw_equal": true,
+        "eol_equivalent": true,
+        "strict_json_equal": null
+      },
+      {
+        "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/post-cutover-result.json",
+        "root_raw_sha256": "fe34cc5913421d135a176b6e4e07a933b4da148bda1612cd2a3b0916d5bf7bc9",
+        "e40_git_blob_sha256": "816e0a42893d3dfc286a49520bd0ebf28384c17dac9853ac33996d91302a30c3",
+        "raw_equal": false,
+        "eol_equivalent": true,
+        "strict_json_equal": true
+      },
+      {
+        "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/execution-metadata.json",
+        "root_raw_sha256": "c8ffad66bd54c3dc1606579955ad897d87fa80f4343ac97df4011336ab32bb45",
+        "e40_git_blob_sha256": "a2b88d2d5cb7f10ebccee9e3216332095afe09f5340e1ba8a17c86cc8eb6422e",
+        "raw_equal": false,
+        "eol_equivalent": true,
+        "strict_json_equal": true
+      },
+      {
+        "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/WARNING-STRUCTURE.md",
+        "root_raw_sha256": "e075f97aa9592e0453b81769e2faef8ec0dbd33a8766e600f2f393d2341b91f3",
+        "e40_git_blob_sha256": "e075f97aa9592e0453b81769e2faef8ec0dbd33a8766e600f2f393d2341b91f3",
+        "raw_equal": true,
+        "eol_equivalent": true,
+        "strict_json_equal": null
+      },
+      {
+        "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-post-cutover-audit/warning-structure-result.json",
+        "root_raw_sha256": "f292f5d0651e82102f2857060da9841aa6a697cc485bb9283e153f070c793d12",
+        "e40_git_blob_sha256": "b6381deaf278e5f6fc996eed3f9e46f58a1aee234a29e47117a8040e0965be80",
+        "raw_equal": false,
+        "eol_equivalent": true,
+        "strict_json_equal": true
+      }
+    ],
+    "rule": "Preserve separate checkout raw and frozen Git-blob identities; no data or production baseline changed."
+  }
+}
