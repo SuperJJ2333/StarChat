@@ -9,12 +9,19 @@ import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 
 import 'matrix_e2ee_client.dart';
+import 'matrix_media_upload_limit.dart';
 import 'video_transcode.dart';
 import 'video_poster_extractor.dart';
 
 /// 普通文件发送的大小上限（M01）：Matrix 文件走 homeserver 上传，
 /// 客户端在 readAsBytes **之前**拒绝超限文件，避免整文件载入内存。
 const maxFileSendBytes = 100 * 1024 * 1024;
+
+/// Known Matrix gateway ceiling; deployment changes must update this build
+/// setting as well. Server-advertised limits may be lower.
+const matrixProxyUploadLimitBytes = int.fromEnvironment(
+    'CHATFLOW_MATRIX_PROXY_UPLOAD_LIMIT_BYTES',
+    defaultValue: 100 * 1024 * 1024);
 
 /// 附件发送并发预算（M01）：同时在途的加密上传任务上限。
 const mediaSendConcurrency = 3;
@@ -122,8 +129,11 @@ abstract interface class RoomPickedMediaSender {
 }
 
 final class MediaMessageService implements RoomPickedMediaSender {
-  MediaMessageService(this.matrix, {this.isGroup = false});
+  MediaMessageService(this.matrix,
+      {this.isGroup = false,
+      this.proxyLimitBytes = matrixProxyUploadLimitBytes});
   final bool isGroup;
+  final int proxyLimitBytes;
   final MatrixEncryptedMediaGateway matrix;
   final ImagePicker _imagePicker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
@@ -141,7 +151,7 @@ final class MediaMessageService implements RoomPickedMediaSender {
   static Future<void> ensureWithinSendLimit(File file,
       {int limitBytes = maxFileSendBytes}) async {
     final stat = await file.stat();
-    if (stat.type == FileSystemEntityType.notFound) {
+    if (stat.type != FileSystemEntityType.file) {
       throw StateError('文件不存在或已被移除');
     }
     if (stat.size > limitBytes) {
@@ -208,17 +218,41 @@ final class MediaMessageService implements RoomPickedMediaSender {
   Future<XFile?> pickFileForSend() => openFile();
 
   Future<void> validateSelectedFile(XFile file) async {
+    await _validateSelectedFile(file, await _effectiveSendLimit());
+  }
+
+  Future<int> _effectiveSendLimit() async {
+    if (proxyLimitBytes <= 0) throw StateError('Invalid media gateway limit');
+    var limit =
+        proxyLimitBytes < maxFileSendBytes ? proxyLimitBytes : maxFileSendBytes;
+    final gateway = matrix;
+    if (gateway is MatrixMediaUploadLimitGateway) {
+      final server = await (gateway as MatrixMediaUploadLimitGateway)
+          .maximumUploadBytes()
+          .timeout(const Duration(seconds: 5));
+      if (server != null) {
+        if (server < 0) throw StateError('Invalid media server limit');
+        if (server < limit) limit = server;
+      }
+    }
+    return limit;
+  }
+
+  Future<void> _validateSelectedFile(XFile file, int limit) async {
     final mime = file.mimeType;
     final isVideo = (mime?.startsWith('video/') ?? false) ||
         mimeFromFileName(file.name).startsWith('video/');
-    if (!isVideo) await ensureWithinSendLimit(File(file.path));
+    if (!isVideo) {
+      await ensureWithinSendLimit(File(file.path), limitBytes: limit);
+    }
   }
 
   Future<String> sendSelectedFile(String roomId, XFile file,
       {String? txid}) async {
     final local = File(file.path);
     // 读取前预检（大小/存在性），再进入有界并发槽上传。
-    await validateSelectedFile(file);
+    final sendLimit = await _effectiveSendLimit();
+    await _validateSelectedFile(file, sendLimit);
     await _sendSlots.acquire();
     VideoRendition? videoRendition;
     try {
@@ -236,6 +270,7 @@ final class MediaMessageService implements RoomPickedMediaSender {
         videoRendition = rendition;
         upload = rendition.file;
         mime = 'video/mp4';
+        await ensureWithinSendLimit(upload, limitBytes: sendLimit);
         poster = await extractVideoPoster(upload.path);
         try {
           final metadata = await VideoCompress.getMediaInfo(upload.path)
@@ -250,7 +285,10 @@ final class MediaMessageService implements RoomPickedMediaSender {
           // Optional metadata must not prevent sending the validated output.
         }
       }
+      // Recheck after queueing/transcoding, before allocating the payload.
+      await ensureWithinSendLimit(upload, limitBytes: sendLimit);
       final bytes = await upload.readAsBytes();
+      if (bytes.length > sendLimit) throw MediaTooLargeException(sendLimit);
       return await matrix.sendEncryptedMedia(roomId, bytes, mime,
           txid: txid,
           filename: mime == 'video/mp4'
@@ -306,10 +344,13 @@ final class MediaMessageService implements RoomPickedMediaSender {
       {Duration? duration, String? txid}) async {
     final local = File(path);
     // 语音消息同样走读取前预检（防异常大录音）+ 有界并发。
-    await ensureWithinSendLimit(local);
+    final sendLimit = await _effectiveSendLimit();
+    await ensureWithinSendLimit(local, limitBytes: sendLimit);
     await _sendSlots.acquire();
     try {
+      await ensureWithinSendLimit(local, limitBytes: sendLimit);
       final bytes = await local.readAsBytes();
+      if (bytes.length > sendLimit) throw MediaTooLargeException(sendLimit);
       return await matrix.sendEncryptedMedia(roomId, bytes, mimeType,
           txid: txid,
           extraContent: duration == null
