@@ -1,0 +1,78 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart
+00:00 +0: RoomPage current and old media decode and open; late and foreign results are rejected
+Scenario: current image
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+REVIEW_PROBE physical=Size(2400.0, 1800.0) dpr=3.0
+REVIEW_PROBE decoded=1 downloads=[/_matrix/client/v1/media/download/matrix.test/image-thumbnail]
+REVIEW_PROBE total_bubbles=2 visible_finder=2
+REVIEW_PROBE bubble=0 key=[<'image-$old-image'>] bubbleKey=[GlobalKey#ba95f] source=($old-image, ["@self-current-image:matrix.test","8e045316381b06ef79d2cee071a890e3b406dabab18a6811dc566df26cc37aa9"]) defer=false initial=null scrolling=false raws=0
+REVIEW_PROBE render=RenderConstrainedBox#8b8b0 relayoutBoundary=up17
+REVIEW_PROBE bounds=Rect.fromLTRB(60.0, 464.0, 61.0, 465.0) viewport=Rect.fromLTRB(0.0, 44.0, 800.0, 520.0) ticker=true route=true
+ContainImageBubble-[<'image-$old-image'>](dependencies: [_EffectiveTickerMode, _ModalScopeStatus], state: _ContainImageBubbleState#e59a7)
+└MediaVisibility(dependencies: [MediaQuery, _EffectiveTickerMode, _ModalScopeStatus, _ScrollableScope], state: _MediaVisibilityState#dc91c)
+ └SizedBox-[GlobalKey#ba95f](width: 1.0, height: 1.0, renderObject: RenderConstrainedBox#8b8b0 relayoutBoundary=up17)
+  └ClipRRect(BorderRadius.circular(8.0), dependencies: [Directionality], renderObject: RenderClipRRect#79f4c)
+   └Center(alignment: Alignment.center, dependencies: [Directionality], renderObject: RenderPositionedBox#c1b2b)
+    └Icon(IconData(U+0F767), color: Color(alpha: 1.0000, red: 0.6980, green: 0.6980, blue: 0.6980, colorSpace: ColorSpace.sRGB), dependencies: [Directionality, IconTheme, InheritedCupertinoTheme, MediaQuery])
+     └Semantics(container: false, properties: SemanticsProperties, renderObject: RenderSemanticsAnnotations#48ad2 relayoutBoundary=up1)
+      └ExcludeSemantics(excluding: true, renderObject: RenderExcludeSemantics#980c5 relayoutBoundary=up2)
+       └SizedBox(width: 24.0, height: 24.0, renderObject: RenderConstrainedBox#107fe relayoutBoundary=up3)
+        └Center(alignment: Alignment.center, dependencies: [Directionality], renderObject: RenderPositionedBox#1f227)
+         └RichText(textDirection: ltr, softWrap: wrapping at box width, overflow: visible, maxLines: unlimited, text: "", dependencies: [_LocalizationsScope-[GlobalKey#8cdfc]], renderObject: RenderParagraph#893b9 relayoutBoundary=up1)
+
+REVIEW_PROBE bubble=1 key=[<'image-$current-neighbor'>] bubbleKey=[GlobalKey#e3a0a] source=($current-neighbor, ["@self-current-image:matrix.test","8e045316381b06ef79d2cee071a890e3b406dabab18a6811dc566df26cc37aa9"]) defer=false initial=null scrolling=false raws=1
+REVIEW_PROBE raw=[1×1] width=null height=null
+REVIEW_PROBE render=RenderConstrainedBox#9bd6e relayoutBoundary=up17
+REVIEW_PROBE bounds=Rect.fromLTRB(60.0, 401.0, 61.0, 402.0) viewport=Rect.fromLTRB(0.0, 44.0, 800.0, 520.0) ticker=true route=true
+ContainImageBubble-[<'image-$current-neighbor'>](dependencies: [_EffectiveTickerMode, _ModalScopeStatus], state: _ContainImageBubbleState#d51cf)
+└MediaVisibility(dependencies: [MediaQuery, _EffectiveTickerMode, _ModalScopeStatus, _ScrollableScope], state: _MediaVisibilityState#506fa)
+ └SizedBox-[GlobalKey#e3a0a](width: 1.0, height: 1.0, renderObject: RenderConstrainedBox#9bd6e relayoutBoundary=up17)
+  └ClipRRect(BorderRadius.circular(8.0), dependencies: [Directionality], renderObject: RenderClipRRect#85c42)
+   └GestureDetector(startBehavior: start, dependencies: [MediaQuery, ScrollConfiguration])
+    └RawGestureDetector(state: RawGestureDetectorState#bcd23(gestures: [tap]))
+     └_GestureSemantics(renderObject: RenderSemanticsGestureHandler#f14af)
+      └Listener(listeners: [down, panZoomStart], behavior: deferToChild, renderObject: RenderPointerListener#ed388)
+       └BudgetedMediaImage(state: _BudgetedMediaImageState#a8e6d)
+        └TickerMode(dependencies: [_EffectiveTickerMode], state: _TickerModeState#77c0d(requested mode: enabled))
+         └_EffectiveTickerMode(effective mode: enabled)
+          └Image-[<EncodedBudgetResizeImage()>](image: EncodedBudgetResizeImage(), frameBuilder: null, loadingBuilder: null, fit: contain, alignment: Alignment.centerLeft, this.excludeFromSemantics: false, filterQuality: medium, dependencies: [Directionality, MediaQuery, _EffectiveTickerMode, _LocalizationsScope-[GlobalKey#8cdfc], _ViewScope], state: _ImageState#69608(stream: ImageStream#118d3(MultiFrameImageStreamCompleter#19794, MemoryImage(_UnmodifiableUint8ArrayView#4e847) - Resized(720×720) [1×1] @ 1.0x, 1 listener, 0 ephemeralErrorListeners), pixels: MemoryImage(_UnmodifiableUint8ArrayView#4e847) - Resized(720×720) [1×1] @ 1.0x, loadingProgress: null, frameNumber: 0, wasSynchronouslyLoaded: false))
+           └Semantics(container: false, properties: SemanticsProperties, label: "", dependencies: [Directionality], renderObject: RenderSemanticsAnnotations#33333)
+            └RawImage(image: [1×1], fit: contain, alignment: Alignment.centerLeft, invertColors: false, filterQuality: medium, renderObject: RenderImage#ba2df)
+
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: <2>
+  Actual: <1>
+Both current messages must finish the shared preview
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart:339:11)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart line 339
+The test description was:
+  RoomPage current and old media decode and open; late and foreign results are rejected
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:15 +0 -1: RoomPage current and old media decode and open; late and foreign results are rejected [E]
+  Test failed. See exception logs above.
+  The test description was: RoomPage current and old media decode and open; late and foreign results are rejected
+  
+00:15 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart: RoomPage current and old media decode and open; late and foreign results are rejected

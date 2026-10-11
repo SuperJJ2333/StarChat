@@ -1,0 +1,57 @@
+{
+  "candidate": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "generated_utc": "2026-10-11T09:11:39.722977+00:00",
+  "verdict": "REJECT",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 73,
+      "sha256": "d62ccd4b43845316ee0db6423d6c739e8afd8b104399fbb36209e4b005c5bc2f"
+    },
+    {
+      "path": "full-file-receipt.json",
+      "bytes": 349,
+      "sha256": "bc9d1426b7586f55a93f41554bb566b96159a1ceef5bc4ba190f9988f93efbf5"
+    },
+    {
+      "path": "full-file.log",
+      "bytes": 3204,
+      "sha256": "846b1562fbbcfec4a6bec65ab03a19a65a64dd408841f17b9e530ecaa150154f"
+    },
+    {
+      "path": "geometry-probe-compilation-failure-2.log",
+      "bytes": 2680,
+      "sha256": "b76bb913d045f2dceb77577e18771d6f542b70fb08a74f12f899243dd5b68d73"
+    },
+    {
+      "path": "geometry-probe-compilation-failure.log",
+      "bytes": 3965,
+      "sha256": "e47ec8779681528a9bbcdba6fbad2992562e3e33a170d070fc1c746b5b9214e8"
+    },
+    {
+      "path": "geometry-probe.log",
+      "bytes": 8220,
+      "sha256": "35ad68f55fcefe46198fc2b2a55728df47d7ca335308fdd798b477ab0a4cddcf"
+    },
+    {
+      "path": "geometry-probe.patch",
+      "bytes": 3276,
+      "sha256": "d122cd28b63b7730017b92ddb3b108a3a43de75a5315a6e65d567292b9be08e0"
+    },
+    {
+      "path": "identity-audit.json",
+      "bytes": 7303,
+      "sha256": "b3ee0e87fad38cc330645ee8dd41c98f15c32ac350ce6d9197e9a92dd60141d2"
+    },
+    {
+      "path": "review.md",
+      "bytes": 4549,
+      "sha256": "2c31a80da98bc4161b8beaef9297cc1c5c5958e8faa9963a232079bd29b0660f"
+    },
+    {
+      "path": "visibility-probe.log",
+      "bytes": 7790,
+      "sha256": "34b18b29bfcb9e7763c7111b1b9278943927fad790666368b3f8fe226d62857a"
+    }
+  ]
+}

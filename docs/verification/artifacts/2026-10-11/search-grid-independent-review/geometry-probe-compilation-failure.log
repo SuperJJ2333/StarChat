@@ -1,0 +1,29 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart
+../../docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart:333:69: Error: The method 'localToGlobal' isn't defined for the type 'RenderAbstractViewport?'.
+ - 'RenderAbstractViewport' is from 'package:flutter/src/rendering/viewport.dart' ('/C:/src/flutter/packages/flutter/lib/src/rendering/viewport.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'localToGlobal'.
+              final viewportRect = viewport is RenderBox ? viewport.localToGlobal(Offset.zero) & viewport.size : null;
+                                                                    ^^^^^^^^^^^^^
+../../docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart:333:107: Error: The getter 'size' isn't defined for the type 'RenderAbstractViewport?'.
+ - 'RenderAbstractViewport' is from 'package:flutter/src/rendering/viewport.dart' ('/C:/src/flutter/packages/flutter/lib/src/rendering/viewport.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'size'.
+              final viewportRect = viewport is RenderBox ? viewport.localToGlobal(Offset.zero) & viewport.size : null;
+                                                                                          ^^^^
+00:00 +0 -1: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart [E]
+  Failed to load "C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart":
+  Compilation failed for testPath=C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart: ../../docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart:333:69: Error: The method 'localToGlobal' isn't defined for the type 'RenderAbstractViewport?'.
+   - 'RenderAbstractViewport' is from 'package:flutter/src/rendering/viewport.dart' ('/C:/src/flutter/packages/flutter/lib/src/rendering/viewport.dart').
+  Try correcting the name to the name of an existing method, or defining a method named 'localToGlobal'.
+                final viewportRect = viewport is RenderBox ? viewport.localToGlobal(Offset.zero) & viewport.size : null;
+                                                                      ^^^^^^^^^^^^^
+  ../../docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart:333:107: Error: The getter 'size' isn't defined for the type 'RenderAbstractViewport?'.
+   - 'RenderAbstractViewport' is from 'package:flutter/src/rendering/viewport.dart' ('/C:/src/flutter/packages/flutter/lib/src/rendering/viewport.dart').
+  Try correcting the name to the name of an existing getter, or defining a getter or field named 'size'.
+                final viewportRect = viewport is RenderBox ? viewport.localToGlobal(Offset.zero) & viewport.size : null;
+                                                                                                            ^^^^
+  .
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart

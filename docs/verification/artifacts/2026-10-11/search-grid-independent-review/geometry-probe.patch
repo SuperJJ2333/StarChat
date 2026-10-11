@@ -1,0 +1,48 @@
+--- apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
++++ docs/verification/artifacts/2026-10-11/search-grid-independent-review/visibility_probe_test.dart
+@@ -4,6 +4,7 @@
+ import 'dart:ui' as ui;
+ 
+ import 'package:flutter/cupertino.dart';
++import 'package:flutter/rendering.dart';
+ import 'package:flutter_test/flutter_test.dart';
+ import 'package:http/http.dart' as http;
+ import 'package:http/testing.dart';
+@@ -24,7 +25,7 @@
+ import 'package:shared_preferences/shared_preferences.dart';
+ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+ 
+-import 'profile_repository_test.dart' show MemoryProfileStore;
++import 'file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/profile_repository_test.dart' show MemoryProfileStore;
+ 
+ final _png = base64Decode(
+     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+@@ -312,6 +313,28 @@
+             await tester.runAsync(
+                 () => Future<void>.delayed(const Duration(milliseconds: 100)));
+             await tester.pump(const Duration(milliseconds: 16));
++          }
++          debugPrint('REVIEW_PROBE physical=${tester.view.physicalSize} dpr=${tester.view.devicePixelRatio}');
++          debugPrint('REVIEW_PROBE decoded=${decodedCurrentImages()} downloads=$downloads');
++          final bubbles = find.byType(ContainImageBubble, skipOffstage: false);
++          debugPrint('REVIEW_PROBE total_bubbles=${bubbles.evaluate().length} visible_finder=${find.byType(ContainImageBubble).evaluate().length}');
++          for (var i = 0; i < bubbles.evaluate().length; i++) {
++            final bubble = tester.widget<ContainImageBubble>(bubbles.at(i));
++            final raws = find.descendant(of: bubbles.at(i), matching: find.byType(RawImage, skipOffstage: false), skipOffstage: false);
++            final box = tester.renderObject(bubbles.at(i));
++            debugPrint('REVIEW_PROBE bubble=$i key=${bubble.key} bubbleKey=${bubble.bubbleKey} source=${bubble.sourceIdentity} defer=${bubble.deferLoading} initial=${bubble.initialBytes?.length} scrolling=${bubble.isScrolling?.value} raws=${raws.evaluate().length}');
++            for (final raw in tester.widgetList<RawImage>(raws)) {
++              debugPrint('REVIEW_PROBE raw=${raw.image} width=${raw.width} height=${raw.height}');
++            }
++            debugPrint('REVIEW_PROBE render=$box');
++            if (box is RenderBox) {
++              final bounds = box.localToGlobal(Offset.zero) & box.size;
++              final viewport = RenderAbstractViewport.maybeOf(box);
++              final viewportRect = viewport is RenderBox ? (viewport as RenderBox).localToGlobal(Offset.zero) & (viewport as RenderBox).size : null;
++              final element = bubbles.at(i).evaluate().single;
++              debugPrint('REVIEW_PROBE bounds=$bounds viewport=$viewportRect ticker=${TickerMode.of(element)} route=${ModalRoute.of(element)?.isCurrent}');
++            }
++            debugPrint(bubbles.at(i).evaluate().single.toStringDeep());
+           }
+           expect(decodedCurrentImages(), 2,
+               reason: 'Both current messages must finish the shared preview');

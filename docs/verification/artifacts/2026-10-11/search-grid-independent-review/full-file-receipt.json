@@ -1,0 +1,9 @@
+{
+  "exit_code": 1,
+  "ended_utc": "2026-10-11T09:01:52.2576951Z",
+  "started_utc": "2026-10-11T09:01:28.5076488Z",
+  "scenario_filter": false,
+  "elapsed_seconds": 23.7500463,
+  "command": "flutter test --no-pub test/features/matrix/room_search_media_grid_test.dart --reporter expanded",
+  "candidate": "f59cf233b22a827723db47784eaaa5df45f4eefc"
+}
