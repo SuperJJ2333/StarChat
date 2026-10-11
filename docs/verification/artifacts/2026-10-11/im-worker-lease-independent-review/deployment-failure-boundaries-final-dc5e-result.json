@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-10-11T13:54:27.2488786+08:00",
+  "completed_at": "2026-10-11T13:54:27.4059253+08:00",
+  "exit_code": 0,
+  "harness_sha256": "4E2F6132C1EDC48FBE603E8893733A19C74883C727FD23BD702E225FB3A6E1DD",
+  "source_sha256": "DC5E6DC8F02F6F1D01D79BB635FCAB6545B57B105AA048A34D1CC542C4A94B44",
+  "scope": "Local AST function/handler verification with inert substitutes; no production or OS process operations"
+}

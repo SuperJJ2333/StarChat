@@ -94,3 +94,11 @@ R9a独立源码审查通过，70dee9dd/9e036261集成为f8579cf7/5584d294。精�
 持久附件850710bd独立审查为CHANGES REQUIRED：准备全局串行阻挡后续intent、较早重试被已有晚timer阻挡、替换实例取消误删活跃copy、旧flight迟到结束未自动恢复。4个真实RED均已交owner最小修正；尚未合入候选，不用原作者35项通过掩盖新增失败。
 
 iOS第二轮能力附件证实当前模拟器file protection读回nil，备份排除和容量读回正常；生产保护条件保持，明确区分模拟器不支持与实际手机验收。详情和原始artifact身份见[原生报告](../../verification/2026-10-11-native-media-storage.md)。Android完整原生94PASS/1条件skip可复用同源码输入；双端共享候选、Android固定重建与iOS完整插件unsigned包尚待。
+
+## 13:56+08 R9a 已部署
+
+13:55:31–13:55:53+08 仅business-worker切换为`sha256:18a88c4dde6e09fb75122aef1f011fd11c7a0421e61559b0548ed78c1b8b3ecf`，worker.py SHA `96f67aa7ed95a98b91650cf487033dcf8237564ac4ce17a899ded05989a2d72d`。schema0095、API及其余容器ID不变，HTTPS API/Matrix与worker健康通过。13:56:10+08 后验running/healthy、0 restart/OOM、有限500行窗口实际4行、0 traceback/ERROR；样本不作为慢任务或容量验收。
+
+部署脚本最终SHA`dc5e6dc8f02f6f1d01d79bb635fcab6545b57b105aa048a34d1cc542c4a94b44`，独立规格→质量及11项无副作用故障分支通过；旧版本未执行。内/外层guard失败、wait/清理异常均视为不确定，停止自动回退；只有切换明确成功后后验失败才自动回退。回退镜像仍为`sha256:5a9cec63cc780e1e3cc769d3f249e120499bdfc5a37a99419302bd1c862bdbe1`；冻结配置/旧日志保存在`/opt/starchat/releases/im-worker-jit-20261011/private`。历史死信不重放，金融handler/schema不变，active handler超五分钟R9b仍未修。完整receipt和review见`artifacts/2026-10-11/im-worker-jit-deployment/`及`im-worker-lease-independent-review/`。
+
+13:54:33+08 只读正式版本仍两端0.4.44+2213、无2214下载文件；源码候选升为0.4.45+2214（522b2e22），既有版本/隐私4专项PASS。尚未构建/上传客户端；新版本号不表示产品发布。

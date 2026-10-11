@@ -1,0 +1,6 @@
+{
+  "observed_at": "2026-10-11T13:53:47.1671880+08:00",
+  "exit_code": 1,
+  "source_sha256": "79c5d5332dbed0f60c63988797eeaedd1791831300d38a8d3c9d9cbe2f756087",
+  "scope": "Fault injected PermissionError in inert killpg substitute; expected UncertainSwitch; no real process signal or production call"
+}
