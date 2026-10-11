@@ -10,10 +10,9 @@ import datetime as dt
 import itertools
 import json
 import math
-import queue
+import os
 import re
 import subprocess
-import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
@@ -24,6 +23,7 @@ SERVICES = {
     "synapse": "starchat-synapse-1",
     "sync_worker": "starchat-synapse-sync-worker-1",
 }
+CHILD_REAP_TIMEOUT = 2
 METHOD = r"(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)"
 REQUEST = re.compile(r'"(' + METHOD + r') ([^\s"]+)(?: HTTP/[0-9.]+)?"')
 START = re.compile(r"Received request:\s*(" + METHOD + r') ([^\s"]+)')
@@ -76,7 +76,8 @@ def route_category(target):
     return "other"
 
 
-def _idle_sync(line, target, status, category):
+def _long_sync_zero_db_fetch_candidate(line, target, status, category):
+    """Log evidence only: database fetches say nothing about response events."""
     if status != "200" or category != "sync" or "[0 dbevts]" not in line:
         return False
     duration = re.search(r"Processed request:\s*([0-9]+(?:\.[0-9]+)?)sec", line)
@@ -116,7 +117,7 @@ def summarize_logs(
         )
     )
     buckets, pending = collections.Counter(), collections.Counter()
-    started = paired = unpaired_starts = idle = 0
+    started = paired = unpaired_starts = long_sync_candidates = 0
     observed = list(itertools.islice(lines, tail_limit))
     for index, line in enumerate(observed):
         if partial_last_line and index == len(observed) - 1:
@@ -162,7 +163,9 @@ def summarize_logs(
             if identity and pending[key]:
                 pending[key] -= 1
                 paired += 1
-            idle += int(_idle_sync(line, target, status, category))
+            long_sync_candidates += int(
+                _long_sync_zero_db_fetch_candidate(line, target, status, category)
+            )
         elif opening:
             kinds["http_started"] += 1
             started += 1
@@ -184,7 +187,7 @@ def summarize_logs(
         "started_without_observed_completion": sum(pending.values()) + unpaired_starts,
         "uncorrelated_started_records": unpaired_starts,
         "http_without_completion_status": kinds["http_without_completion_status"],
-        "idle_sync_30s_completed": idle,
+        "long_sync_30s_zero_db_fetch_candidates": long_sync_candidates,
         "traceback_headers": kinds["traceback_header"],
         "truncation": {
             "tail_limit": tail_limit,
@@ -203,49 +206,77 @@ class CommandResult:
     byte_limit_reached: bool = False
 
 
+class _NonBlockingPipe:
+    """Single-reader pipe; None means no bytes yet, b"" means EOF.
+
+    Windows Python 3.11 cannot use os.set_blocking on a pipe. PeekNamedPipe
+    reports available bytes; with this sole reader, reading at most that many
+    never waits for an inherited writer. No reader thread needs cancellation.
+    """
+
+    def __init__(self, stream):
+        self.fd = stream.fileno()
+        if os.name == "nt":
+            import ctypes
+            import msvcrt
+            from ctypes import wintypes
+
+            self.handle = msvcrt.get_osfhandle(self.fd)
+            self.ctypes = ctypes
+            self.available = wintypes.DWORD()
+            self.peek = ctypes.WinDLL("kernel32", use_last_error=True).PeekNamedPipe
+            self.peek.argtypes = (
+                wintypes.HANDLE,
+                wintypes.LPVOID,
+                wintypes.DWORD,
+                wintypes.LPVOID,
+                ctypes.POINTER(wintypes.DWORD),
+                wintypes.LPVOID,
+            )
+            self.peek.restype = wintypes.BOOL
+        else:
+            os.set_blocking(self.fd, False)
+
+    def read(self, maximum):
+        if os.name == "nt":
+            if not self.peek(
+                self.handle, None, 0, None, self.ctypes.byref(self.available), None
+            ):
+                code = self.ctypes.get_last_error()
+                if code in (109, 232):  # Broken/disconnected pipe is EOF.
+                    return b""
+                raise OSError(code, "pipe_read_failed")
+            if not self.available.value:
+                return None
+            maximum = min(maximum, self.available.value)
+        try:
+            return os.read(self.fd, maximum)
+        except BlockingIOError:
+            return None
+
+
 def run_bounded(argv, *, max_bytes, timeout):
-    """Bound memory/time without storing raw output on disk or printing errors."""
+    """Bound reads by deadline/bytes; allow at most 2s to reap the owned child."""
     try:
         process = subprocess.Popen(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0
         )
     except OSError:
         return CommandResult(b"", "unavailable")
-    messages, stopped = queue.Queue(maxsize=2), threading.Event()
-
-    def offer(value):
-        while not stopped.is_set():
-            try:
-                messages.put(value, timeout=0.05)
-                return
-            except queue.Full:
-                pass
-
-    def read():
-        try:
-            while not stopped.is_set():
-                chunk = process.stdout.read(8192)
-                if not chunk:
-                    break
-                offer(chunk)
-        finally:
-            offer(None)
-
-    reader = threading.Thread(target=read, daemon=True)
-    reader.start()
     data, error, truncated = bytearray(), None, False
     deadline = time.monotonic() + timeout
     try:
+        reader = _NonBlockingPipe(process.stdout)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 error = "timeout"
                 break
-            try:
-                chunk = messages.get(timeout=min(remaining, 0.05))
-            except queue.Empty:
-                continue
+            chunk = reader.read(8192)
             if chunk is None:
+                time.sleep(min(remaining, 0.01))
+                continue
+            if not chunk:
                 process.wait(timeout=max(0.01, deadline - time.monotonic()))
                 if process.returncode != 0:
                     error = "command_failed"
@@ -257,12 +288,17 @@ def run_bounded(argv, *, max_bytes, timeout):
                 break
     except subprocess.TimeoutExpired:
         error = "timeout"
+    except OSError:
+        error = "read_failed"
     finally:
-        stopped.set()
-        if process.poll() is None:
-            process.kill()
-        process.wait(timeout=2)
-        reader.join(timeout=1)
+        try:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=CHILD_REAP_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            error = "cleanup_timeout"
+        except OSError:
+            error = "cleanup_failed"
         process.stdout.close()
     return CommandResult(bytes(data), error, truncated)
 
@@ -425,7 +461,7 @@ def collect_sample(
             }
         )
     return {
-        "schema": 1,
+        "schema": 2,
         "since_utc": since.isoformat(),
         "until_utc": until.isoformat(),
         "observed_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -434,8 +470,9 @@ def collect_sample(
             "tail_lines_per_service": tail_limit,
             "log_bytes_per_service": max_bytes,
             "command_timeout_seconds": command_timeout,
+            "command_cleanup_timeout_seconds": CHILD_REAP_TIMEOUT,
         },
-        "semantics": "HTTP observations only; recovery routes are not users; provider HTTP is not device delivery; uncompleted starts may cross window boundaries.",
+        "semantics": "HTTP observations only; recovery routes are not users; provider HTTP is not device delivery; uncompleted starts may cross window boundaries; zero database fetches in long sync are candidates only, not evidence of idle or empty responses.",
         "services": rows,
     }
 

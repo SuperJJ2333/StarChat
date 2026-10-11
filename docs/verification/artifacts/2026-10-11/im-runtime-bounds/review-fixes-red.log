@@ -1,0 +1,23 @@
+test_zero_database_fetches_are_only_a_long_poll_candidate (scripts.tests.test_collect_im_runtime_sample.RuntimeLogTest.test_zero_database_fetches_are_only_a_long_poll_candidate) ... FAIL
+test_inherited_stdout_does_not_extend_timeout_or_kill_descendant (scripts.tests.test_collect_im_runtime_sample.RuntimeCollectionTest.test_inherited_stdout_does_not_extend_timeout_or_kill_descendant) ... FAIL
+
+======================================================================
+FAIL: test_zero_database_fetches_are_only_a_long_poll_candidate (scripts.tests.test_collect_im_runtime_sample.RuntimeLogTest.test_zero_database_fetches_are_only_a_long_poll_candidate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-runtime-bounds\StarChat\scripts\tests\test_collect_im_runtime_sample.py", line 21, in test_zero_database_fetches_are_only_a_long_poll_candidate
+    self.assertEqual(
+AssertionError: None != 1
+
+======================================================================
+FAIL: test_inherited_stdout_does_not_extend_timeout_or_kill_descendant (scripts.tests.test_collect_im_runtime_sample.RuntimeCollectionTest.test_inherited_stdout_does_not_extend_timeout_or_kill_descendant)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-runtime-bounds\StarChat\scripts\tests\test_collect_im_runtime_sample.py", line 154, in test_inherited_stdout_does_not_extend_timeout_or_kill_descendant
+    self.assertLess(elapsed, 3, f"inherited pipe delayed return: {elapsed}")
+AssertionError: 5.125 not less than 3 : inherited pipe delayed return: 5.125
+
+----------------------------------------------------------------------
+Ran 2 tests in 5.133s
+
+FAILED (failures=2)

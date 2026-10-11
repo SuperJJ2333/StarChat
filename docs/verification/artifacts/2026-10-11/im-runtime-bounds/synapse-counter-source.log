@@ -1,0 +1,47 @@
+synapse.http.site
+508:         self.synapse_site.access_logger.log(
+509:             log_level,
+510:             "%s - %s - {%s}"
+511:             " Processed request: %.3fsec/%.3fsec (%.3fsec, %.3fsec) (%.3fsec/%.3fsec/%d)"
+512:             ' %sB %s "%s %s %s" "%s" [%d dbevts]',
+513:             self.get_client_ip_if_available(),
+514:             self.synapse_site.site_tag,
+515:             requester,
+516:             processing_time,
+517:             response_send_time,
+518:             usage.ru_utime,
+519:             usage.ru_stime,
+520:             usage.db_sched_duration_sec,
+521:             usage.db_txn_duration_sec,
+522:             int(usage.db_txn_count),
+523:             self.sentLength,
+524:             code,
+525:             self.get_method(),
+526:             self.get_redacted_uri(),
+527:             self.clientproto.decode("ascii", errors="replace"),
+528:             user_agent,
+529:             usage.evt_db_fetch_count,
+530:         )
+synapse.logging.context
+107:         ru_utime (float): user CPU time (in seconds)
+108:         ru_stime (float): system CPU time (in seconds)
+109:         db_txn_count (int): number of database transactions done
+110:         db_sched_duration_sec (float): amount of time spent waiting for a
+111:             database connection
+112:         db_txn_duration_sec (float): amount of time spent doing database
+113:             transactions (excluding scheduling time)
+114:         evt_db_fetch_count (int): number of events requested from the database
+115:     """
+116:
+117:     __slots__ = [
+synapse.logging.context
+572:
+573:     def record_event_fetch(self, event_count: int) -> None:
+574:         """Record a number of events being fetched from the db
+575:
+576:         Args:
+577:             event_count: number of events being fetched
+578:         """
+579:         self._resource_usage.evt_db_fetch_count += event_count
+580:         if self.parent_context:
+581:             self.parent_context.record_event_fetch(event_count)

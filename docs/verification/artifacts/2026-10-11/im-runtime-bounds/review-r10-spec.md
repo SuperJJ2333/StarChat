@@ -1,0 +1,11 @@
+# R10 independent SPEC/domain review
+
+Reviewed frozen source dc5a562e38af82618e5b63a2fcf4a6a3ba039336, integrated as 3b52c63290d5ee4ae5f207d5c53ccf87255586db, before taking ownership of corrections. The review covered the sampler, its ten tests, the approved R10 plan, the sampling report and aggregate runtime-sample.json. Root's unchanged-input ten-test PASS in im-reliability-implementation/r10-independent.txt was reused, not rerun for this review.
+
+Outcome: changes required, P2. The idle_sync_30s_completed classification overstates what the available logs establish. The predicate requires sync HTTP 200, timeout=30000, duration >=29 seconds and [0 dbevts], but dbevts is a count of events fetched from the database, not response events. Cached events and other sync response sections are not ruled out. Rename it to an explicit long-poll/zero-database-fetch candidate count and remove idle/no-message claims from reports, tests and presentation of the sample. Do not inspect response bodies to fill this gap.
+
+Primary source was inspected read-only in the locally present pinned Synapse v1.132.0 image sha256:3036ec25dfb5fcc5120942465788c1e1f2bb3671e28b04d7b3a1db4400ac84f4, with --network none and no mounts or secrets. synapse.http.site:512 emits [%d dbevts] using usage.evt_db_fetch_count at line 529. synapse.logging.context:114 documents it as events requested from the database; record_event_fetch at lines 573-579 increments that counter. This source inspection exited 0; it did not sample production or infer response contents.
+
+The remaining bounded scope matches the approved diagnostic: four fixed services; finite since/until/tail; route/status observations distinct from users/device delivery; line buckets conserve observed lines, HTTP buckets conserve completed records, and start/completion correlations preserve unpaired boundaries. Missing commands are not zero success. No claim of full R10, device SLO, message delivery, performance capacity or end-to-end tracing is supported.
+
+SPEC/domain review preceded the separate QUALITY review. Parent accepted this finding and authorized the small correction on 2026-10-11. The correction requires fresh targeted RED/GREEN and independent review; this report is not approval of code subsequently authored by this reviewer.

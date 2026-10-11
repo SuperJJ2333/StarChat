@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-runtime-bounds\verify_corrected_sample.py", line 19, in <module>
+    assert corrected[field] == original[field]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

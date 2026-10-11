@@ -2,6 +2,7 @@ import importlib
 import json
 import pathlib
 import sys
+import tempfile
 import time
 import unittest
 
@@ -11,6 +12,15 @@ sample = importlib.import_module("collect_im_runtime_sample")
 
 
 class RuntimeLogTest(unittest.TestCase):
+    def test_zero_database_fetches_are_only_a_long_poll_candidate(self):
+        result = sample.summarize_logs(
+            [
+                'Processed request: 30.002sec/0sec 4096B 200 "GET /_matrix/client/v3/sync?timeout=30000 HTTP/1.1" [0 dbevts]',
+            ]
+        )
+        self.assertEqual(result.get("long_sync_30s_zero_db_fetch_candidates"), 1)
+        self.assertNotIn("idle_sync_30s_completed", result)
+
     def test_synapse_status_before_request_is_counted(self):
         result = sample.summarize_logs(
             [
@@ -53,7 +63,7 @@ class RuntimeLogTest(unittest.TestCase):
         self.assertEqual(result["started_without_observed_completion"], 1)
         self.assertEqual(result["completed_without_observed_start"], 3)
         self.assertEqual(result["http_without_completion_status"], 1)
-        self.assertEqual(result["idle_sync_30s_completed"], 1)
+        self.assertEqual(result["long_sync_30s_zero_db_fetch_candidates"], 1)
         self.assertEqual(result["traceback_headers"], 1)
         self.assertEqual(result["line_buckets"]["unmatched"], 2)
         self.assertEqual(result["http_buckets"]["recovery_route:503"], 1)
@@ -70,7 +80,9 @@ class RuntimeLogTest(unittest.TestCase):
         ]:
             self.assertNotIn(sensitive, rendered)
 
-    def test_long_sync_is_idle_only_with_zero_events_and_timeout_evidence(self):
+    def test_long_sync_candidate_requires_zero_database_fetch_and_timeout_evidence(
+        self,
+    ):
         result = sample.summarize_logs(
             [
                 'Processed request: 30.002sec/0sec 1B 200 "GET /_matrix/client/v3/sync?timeout=30000 HTTP/1.1" [3 dbevts]',
@@ -79,7 +91,7 @@ class RuntimeLogTest(unittest.TestCase):
             ]
         )
         self.assertEqual(result["http_completed"], 3)
-        self.assertEqual(result["idle_sync_30s_completed"], 0)
+        self.assertEqual(result["long_sync_30s_zero_db_fetch_candidates"], 0)
 
     def test_duplicate_start_ids_and_window_edges_do_not_lose_requests(self):
         result = sample.summarize_logs(
@@ -110,6 +122,40 @@ class RuntimeLogTest(unittest.TestCase):
 
 
 class RuntimeCollectionTest(unittest.TestCase):
+    def test_inherited_stdout_does_not_extend_timeout_or_kill_descendant(self):
+        artifact = ROOT / "docs/verification/artifacts/2026-10-11/im-runtime-bounds/tmp"
+        artifact.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=artifact) as folder:
+            done = pathlib.Path(folder) / "descendant-completed"
+            # The grandchild keeps the output handle after the owned child is
+            # killed. It must survive to write its own completion marker.
+            descendant = (
+                "import pathlib,time; time.sleep(5); "
+                f"pathlib.Path({str(done)!r}).write_text('completed'); "
+            )
+            child = (
+                "import subprocess,sys,time; "
+                f"subprocess.Popen([sys.executable,'-c',{descendant!r}], "
+                "stdout=sys.stdout,stderr=sys.stderr); "
+                "print('ready',flush=True); time.sleep(10)"
+            )
+            started = time.monotonic()
+            captured = sample.run_bounded(
+                [sys.executable, "-c", child], max_bytes=128, timeout=1
+            )
+            elapsed = time.monotonic() - started
+            # Wait boundedly for natural completion before asserting, so the
+            # RED path never leaves a child trying to write a removed folder.
+            deadline = started + 8
+            while not done.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(done.exists(), "descendant must not be terminated")
+            self.assertEqual(captured.error, "timeout")
+            self.assertLess(elapsed, 3, f"inherited pipe delayed return: {elapsed}")
+            self.assertEqual(
+                captured.data, b"ready\r\n" if sys.platform == "win32" else b"ready\n"
+            )
+
     def test_bounded_process_limits_bytes_and_timeout_without_error_text(self):
         captured = sample.run_bounded(
             [sys.executable, "-c", 'print("SECRET" * 10000)'], max_bytes=128, timeout=2

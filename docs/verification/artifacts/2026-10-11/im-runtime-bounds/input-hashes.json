@@ -1,0 +1,102 @@
+[
+  {
+    "path": "scripts/collect_im_runtime_sample.py",
+    "modified": "2026-10-11T13:25:16.9981071+08:00",
+    "sha256": "1C31AB2AE87605789B5A6B4D5650BBC7FA0EB5BA237B6E6253624F6D66FA9F7C"
+  },
+  {
+    "path": "scripts/tests/test_collect_im_runtime_sample.py",
+    "modified": "2026-10-11T13:23:05.7412185+08:00",
+    "sha256": "4450F56DB7FA9E05EBA5A26CDD88D544CBD591E3CCF14BA252620FA910B29A6E"
+  },
+  {
+    "path": "docs/verification/2026-10-11-im-runtime-sampling.md",
+    "modified": "2026-10-11T13:24:00.8131855+08:00",
+    "sha256": "9F85E4770FF58D58B91C1542E98BE04E57BB8F1020C4C40CBB2CAF15D2FF27BA"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/review-r10-spec.md",
+    "modified": "2026-10-11T13:20:34.6606995+08:00",
+    "sha256": "4245DBDBEB032610A47A2BE8E631391FACFDA0CC363F7C9847DFFCD3416361B0"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/review-r10-quality.md",
+    "modified": "2026-10-11T13:20:34.6616782+08:00",
+    "sha256": "A3D321DABCFFEE28014D538B5883AAED5A22A05144A2B6E41F68C2511755A830"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/task.md",
+    "modified": "2026-10-11T13:27:17.6009150+08:00",
+    "sha256": "5C11B04A8F140EEACA323AD4E146E1BD8F8E675DB5F397A04BC88A588DE67EA4"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/runtime-sample-corrected.json",
+    "modified": "2026-10-11T13:25:44.8866903+08:00",
+    "sha256": "B43C6407D097A8749503BAC959F1DE25813287DA464595A4F9A32D05FC1B8AA6"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/verify_corrected_sample.py",
+    "modified": "2026-10-11T13:25:17.8196483+08:00",
+    "sha256": "794D6C3AA2A29A760446BB054DCF0303DC0690ED73EE6F77580C74CCE4E948F7"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/review-fixes-red.log",
+    "modified": "2026-10-11T13:27:37.0524286+08:00",
+    "sha256": "B6BE1B96E5F349F49B9BAFCE32756C48DC8C64FE03421DECBD1EA1BAE6E2B8ED"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/windows-green.log",
+    "modified": "2026-10-11T13:27:37.0582881+08:00",
+    "sha256": "1A6C129B6B48457D3CD5C19E810A48256A54F4D31059E35380FD7847F438DD6C"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/windows312-green.log",
+    "modified": "2026-10-11T13:27:37.0679839+08:00",
+    "sha256": "A312ED06D50645CA30374E28D87EDF57EBC4A5C64547855CFCF0259E130D486C"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/linux-green.log",
+    "modified": "2026-10-11T13:27:37.0738621+08:00",
+    "sha256": "527FC46098C5DFF4244FB9848CCB51A61D99E3DB0D7C081CDE96B27478E4A211"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/quality-green.log",
+    "modified": "2026-10-11T13:27:37.0787440+08:00",
+    "sha256": "EDB324586E6086E7733CC17A75383146D2D6897CD63E7A5B4C86C8A0DAA03166"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/repository-policy.log",
+    "modified": "2026-10-11T13:27:37.0848280+08:00",
+    "sha256": "6A46550AF8B27B0D1E3A834383C86D38457649D5E7BA07E556F9A938942B8E4D"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/deployment-policy.log",
+    "modified": "2026-10-11T13:27:37.0897111+08:00",
+    "sha256": "5C7EBB9FB67672F5CC1360248097010C464E89B6898AB459466C6F1E794761FA"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/template-policy.log",
+    "modified": "2026-10-11T13:27:37.0946595+08:00",
+    "sha256": "A2AB2F7E54B05C37B391A50ECD35041B56C46A7E2661ECD6A39B0744BBDB6876"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/sample-consistency-red.log",
+    "modified": "2026-10-11T13:27:37.1068913+08:00",
+    "sha256": "5D02C013F8EF8A3905416D0028D68019C16217989F584720634AAEB9EBBAA757"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/sample-consistency.log",
+    "modified": "2026-10-11T13:27:37.1127495+08:00",
+    "sha256": "99AE5F9A503A5FC02B89B7541B781027E3E35DA79881C043A79245437FCB338F"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/synapse-counter-source.log",
+    "modified": "2026-10-11T13:27:37.1176315+08:00",
+    "sha256": "23C808B1B9CB2ECF6C5D5A5CF58D05DC1EE6E884F3F135DC6277F892F1ABD4CD"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-runtime-bounds/tooling.log",
+    "modified": "2026-10-11T13:27:37.1224646+08:00",
+    "sha256": "073721465B7C89EF60D647D9BD7808396E1C5260EC703AD38B68A896C0281DCB"
+  }
+]
