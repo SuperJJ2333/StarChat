@@ -1,7 +1,7 @@
 # 当前工作状态
 ## 2026-10-11 IM可靠性：服务端分批已部署，客户端最终回归中
 
-用户已授权产品修改、服务重启和部署。恢复鉴权8082、Getui跨房去重/节流、业务媒体异步IO、核心日志轮转、worker逐条领取与代次校验已部署；永久Worker实际入口protocol guard也已安装，无业务容器重启。worker当前bfde7c86，活跃handler超过五分钟的续租正在隔离实现。客户端缓存取消/共享对象/准备集合及SQLCipher初始化顺序修复已集成5988deb4。Android API28原生3用例通过，固定75b31重建；final-r2完整Flutter5957 PASS/9 SKIP/1 FAIL，唯一搜索网格初始缓存时序失败；test-only修正独立复验被拒绝，两bubble可见但首个持续placeholder，正在追完成通知，尚未集成该修正；analyze0、边界401/1条件skip、三policy通过。源码候选0.4.45+2214，正式双端仍2213，尚无2214客户端发布。iOS同源run38125303494完整unsigned arm64 IPA已成功构建并下载验SHA，三native targets实际20 PASS/0 SKIP/0 FAIL；真机保护/签名另列。Android最终ARM64成品待共享门禁完成；libcrypto4KiB ELF为已记录P1兼容性风险，16KiB源码实验尚无运行验证。精确身份/证据/下一步见[任务](tasks/2026-10-11-im-reliability-implementation.md)，按[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)续作，复用门禁须证明输入不变。企业回签/真机保数据覆盖、OEM审核、全ROM弱网/功耗与长期容量指标仍未完成。
+用户已授权产品修改、服务重启和部署。恢复鉴权8082、Getui跨房去重/节流、业务媒体异步IO、核心日志轮转、worker逐条领取与代次校验已部署；永久Worker实际入口protocol guard也已安装。worker线上bfde7c86，活跃handler有界续租c3dd3142及独审cc1c3727已整合，部署脚本准备中，尚未切换。客户端运行时保持5988，Android原生3项通过；final-r2完整Flutter5957/9/1失败保留，唯一搜索网格fixture经canonical目录+同10秒内更密集I/O/帧推进修正，在原RED环境独立完整文件1PASS，双解码2/前后HTTP1未放宽。不存在已确认永久丢通知的结论。下一步冻结final-r3完整Flutter/analyze及受影响边界，复用未变native/iOS闭包。正式双端仍0.4.44+2213，2214尚未发布。iOS同源run38125303494完整unsigned arm64 IPA已下载核验，三native targets实际20PASS/0SKIP/0FAIL；企业签名/真机另列。Android最终ARM64成品待回归完成，libcrypto4KiB ELF为已记录P1兼容性风险，16KiB实验尚无运行验证。精确身份/证据/下一步见[任务](tasks/2026-10-11-im-reliability-implementation.md)，按[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)续作；不重复等价已通过门禁。企业回签/真机保数据覆盖、OEM审核、全ROM弱网/功耗与长期容量指标仍未完成。
 
 ## 2026-10-09 iOS0.4.44+2213普通更新弹窗已启用
 

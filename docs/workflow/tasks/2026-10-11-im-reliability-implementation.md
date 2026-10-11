@@ -160,3 +160,11 @@ f59cf233独立完整文件首次0 PASS/1 FAIL，新增双bubble解码断言实�
 iOS38125303494双job于09:06Z前已SUCCESS。三native targets实际13+6+1=20 PASS/0 SKIP/0 FAIL，全部首次执行exit0、无attach stall/hard timeout；两cold-order在SQLCipher六例内。该组与先前文件保护XCTest的4 PASS/4 capability SKIP分开，未声称真机保护通过。IPA与ZIP完整性本地再次校验：Runner bundle/version/build符合，46framework含SQLCipher/OpenSSL/WebRTC/Firebase；Runner无profile/签名资源，依赖内8个既有签名资源条目不能被误称为最终企业签名。摘要ios-final-r2-verified-summary.json。后续若需修运行时代码，该5988构建须作影响复核，不能直接称最终成品。
 
 09:05:39Z线上版本只读复查：双端2213、无2214下载文件。root已集成OpenSSL静态实验文档4197721a/54e7168f，40份字节/hash一致，未集成crypto二进制/依赖；生产compatibility验收仍开放。下一步仍先关闭有效可见首consumer的pending边界，再冻结/完整回归/最终构建；客户端未发布。
+
+## 2026-10-11T17:45:57+08:00 最终候选整合与 final-r3 冻结前检查
+
+继续既有用户授权；root领取最终组合冻结、共享门禁、实际Android成品/发布与任务索引，agent各自拥有独立部署/评审目录。R9b-2源c3dd3142及独审cc1c3727已整合为62d0786d/20a04c9c，4源+6测试SHA逐个与作者清单相等。342作者影响用例和35独立唯一用例证据保持原范围；尚无新worker镜像部署，线上仍bfde7c86。部署准备由backend_review独立执行，worker切换安排在客户端发布后，避免破坏客户端精确容器基线。
+
+搜索网格诊断纠正17:15假设：没有证据证明永久丢失完成通知；序列化可选缓存写入在清理阶段额外pump才完成。非规范Windows路径还触发持久化目录枚举错误。f59单独被拒绝保持，最终f186仅test的canonical路径+同10秒真实deadline内16ms I/O/帧推进经原RED环境独立SPEC→QUALITY通过。阶段诊断两次persist-done均在assert前、零error；无trace完整十场景文件1PASS，真实2053ms/104pumps/fake1664ms；双decode2、导航前后HTTP1未放宽。集成为ad38bf67/04e712f3，独审8dc15a2a→f7097dea，10份独立证据原始SHA/bytes全部核验。
+
+最终运行时代码与5988相同，只有一个测试文件改变。final-r2 5957/9/1历史失败保留；下一步冻结final-r3并运行完整Flutter+analyze。边界用例自身虽未变，但privacy扫描包含新server代码，补跑该影响范围；policy输入未改变可复用精确范围。Android原生3项及iOS 20项/unsignedIPA通过运行时、依赖、原生、workflow闭包比较后绑定复用，不重复编译相同代码。全仓verify前置.env缺失继续明确为未执行，不能称全仓PASS。然后刷新线上版本，ARM64源码→常规重建→固定75b31签名及实际成品独审。
