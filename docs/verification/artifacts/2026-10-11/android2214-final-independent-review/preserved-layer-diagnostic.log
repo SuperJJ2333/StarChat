@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-11\android2214-final-independent-review\inspect_exact_package.py", line 85, in <module>
+    blob=git('show','HEAD:'+name);raw=(R/name).read_bytes();check('preserved current Git identity '+name,sha(blob)==expected)
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-11\android2214-final-independent-review\inspect_exact_package.py", line 18, in check
+    if not ok:raise AssertionError(name)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: preserved current Git identity frontend/src/admin-home.js

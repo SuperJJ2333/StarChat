@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "operations": [
+    "preflight",
+    "runtime",
+    "upload",
+    "assemble",
+    "hk-install",
+    "cdn-install",
+    "cdn-check",
+    "hk-switch",
+    "publish",
+    "inspect",
+    "audit"
+  ],
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "review_sha256": "19c2d355d2ed0f62ea8b26777da04cf3ba1875544482aa7a93aded895636908e",
+  "spec_domain_sha256": "1b5ddb7e2336fd7fb7cf6c26f84d7c8f93cfb4d3f4abae8287e38fa492adf654",
+  "quality_security_sha256": "11005af35b86c5906f38a8caf70f1e865cef9b76c469db035df7dd33919e30da",
+  "evidence_sha256": "9dadd37c98cfec3b1208635f77faa402eb4361fe5994263e212fc8ee12538995",
+  "check": "Existing executor validate_package + validate_review for all 11 operations; no run/execution/remote call.",
+  "checked_at_utc": "2026-10-11T10:28:02.390885+00:00"
+}

@@ -1,0 +1,61 @@
+{
+  "created_utc": "2026-10-11T10:28:25.170387+00:00",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 69,
+      "sha256": "16c5280edfb441190e1e5e87d9fb1e02a3a9b5b47c8df414f366db472851f251"
+    },
+    {
+      "path": "inspect_exact_package.py",
+      "bytes": 11673,
+      "sha256": "8b141b548588e0e6c10774eedc1db3a97faf86badf54c620d2e2ef1946a2b44d"
+    },
+    {
+      "path": "independent-evidence.json",
+      "bytes": 31430,
+      "sha256": "9dadd37c98cfec3b1208635f77faa402eb4361fe5994263e212fc8ee12538995"
+    },
+    {
+      "path": "independent-inspection.log",
+      "bytes": 1419,
+      "sha256": "33071fedc673e093795c528c91c1183a3db97ac93a737b2637d8411cffc0d2f5"
+    },
+    {
+      "path": "independent-inspection-final.log",
+      "bytes": 1408,
+      "sha256": "e3e14eb6284e2b273edaf44f566f7dff2ed2c91720754d1298641e0c1a7bc462"
+    },
+    {
+      "path": "preserved-layer-diagnostic.log",
+      "bytes": 854,
+      "sha256": "52063a79f6e53339df7e7c7bc1f98175aeba67a4ad3fed022bc7a78395c15c2e"
+    },
+    {
+      "path": "crypto-readelf.log",
+      "bytes": 1688,
+      "sha256": "3b1ca368a18d64bede2de3249fbe922efd46d57a3791122cfb7ee71f24d62e48"
+    },
+    {
+      "path": "spec-domain.md",
+      "bytes": 8104,
+      "sha256": "1b5ddb7e2336fd7fb7cf6c26f84d7c8f93cfb4d3f4abae8287e38fa492adf654"
+    },
+    {
+      "path": "quality-security.md",
+      "bytes": 9147,
+      "sha256": "11005af35b86c5906f38a8caf70f1e865cef9b76c469db035df7dd33919e30da"
+    },
+    {
+      "path": "release-review.json",
+      "bytes": 1273,
+      "sha256": "19c2d355d2ed0f62ea8b26777da04cf3ba1875544482aa7a93aded895636908e"
+    },
+    {
+      "path": "review-validation.json",
+      "bytes": 849,
+      "sha256": "b06a63610c8e3ef52721a7bfb8ae2d8a7a3670e4705334467bbd516f778775b6"
+    }
+  ],
+  "rule": "All files must preserve raw bytes in Git and across worktrees; extracted APK/ELF binaries are not committed."
+}

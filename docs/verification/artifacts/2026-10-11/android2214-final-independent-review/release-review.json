@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "artifact_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "runtime_sha256": "1be3d1abdf7da35e26e363ae786b5334e5cd279d620a6d56bb9dd33be5e7c0f5",
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "operation_id": "im2214-e9d297-r3-20261011",
+  "checks": {
+    "spec_domain": {
+      "status": "pass",
+      "path": "spec-domain.md",
+      "sha256": "1b5ddb7e2336fd7fb7cf6c26f84d7c8f93cfb4d3f4abae8287e38fa492adf654"
+    },
+    "quality_security": {
+      "status": "pass",
+      "path": "quality-security.md",
+      "sha256": "11005af35b86c5906f38a8caf70f1e865cef9b76c469db035df7dd33919e30da"
+    }
+  },
+  "authorized_operations": [
+    "preflight",
+    "runtime",
+    "upload",
+    "assemble",
+    "hk-install",
+    "cdn-install",
+    "cdn-check",
+    "hk-switch",
+    "publish",
+    "inspect",
+    "audit"
+  ],
+  "scope": "Exact existing-scope Android2214 publication only; retained libcrypto 4KiB P1 and no final ARM64 real-phone/16KiB claim; see ordered reports.",
+  "independent_evidence_sha256": "9dadd37c98cfec3b1208635f77faa402eb4361fe5994263e212fc8ee12538995",
+  "created_utc": "2026-10-11T10:28:02.042418+00:00"
+}

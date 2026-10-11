@@ -1,0 +1,1130 @@
+{
+  "started_utc": "2026-10-11T10:26:37.444859+00:00",
+  "script_sha256": "8b141b548588e0e6c10774eedc1db3a97faf86badf54c620d2e2ef1946a2b44d",
+  "created_utc": "2026-10-11T10:26:43.962671+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "artifact_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "checks": [
+    {
+      "check": "freeze exact",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "package frozen file and runtime tar validation",
+      "passed": true,
+      "detail": {
+        "frozen_files": 38,
+        "runtime_files": 24
+      }
+    },
+    {
+      "check": "all source manifest files and lock exact",
+      "passed": true,
+      "detail": {
+        "files": 2101,
+        "commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+        "manifest": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687"
+      }
+    },
+    {
+      "check": "previously independently reviewed source orchestrator/package_release.py",
+      "passed": true,
+      "detail": "841f748f91881749c214833e80728b3f110758b691a634faa337ce18d34aaa12"
+    },
+    {
+      "check": "previously independently reviewed source orchestrator/execute_release.py",
+      "passed": true,
+      "detail": "1285d349d6bedcfb3144034db7e445c1ea790ab17e59730e3f7970760bb30d51"
+    },
+    {
+      "check": "previously independently reviewed source runtime/delivery_2214.py",
+      "passed": true,
+      "detail": "0697a59e026c40d2ca42bf48870314f4444d1f0b86064ee5804d5dc4d89266cf"
+    },
+    {
+      "check": "previously independently reviewed source runtime/release_2214.py",
+      "passed": true,
+      "detail": "24275770c0948d25b30e4633c0d5301f0897393d8095af32290a8783aaeca0bf"
+    },
+    {
+      "check": "previously independently reviewed source runtime/settings_2214.py",
+      "passed": true,
+      "detail": "2ce834bb06ef59ce3a30e54894859f2a5f2ebb21dafa1ee4c13c260fd9741734"
+    },
+    {
+      "check": "previously independently reviewed source runtime/verify_production_2214.py",
+      "passed": true,
+      "detail": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14"
+    },
+    {
+      "check": "build APK equals packaged immutable APK",
+      "passed": true,
+      "detail": {
+        "bytes": 73336097,
+        "sha": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614"
+      }
+    },
+    {
+      "check": "source APK exact",
+      "passed": true,
+      "detail": "e56016e96962a88c6bb784ebf6d95110e4ab0dfdd95e0da63af2bdbb872d3509"
+    },
+    {
+      "check": "bound native static report unchanged",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "signature output bound to actual build log",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "release identity output bound to actual build log",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "28 bound build logs",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "shared flutter actual log",
+      "passed": true,
+      "detail": {
+        "result": {
+          "passed": 5958,
+          "skipped": 9,
+          "failed": 0
+        },
+        "log_sha256": "375475f10f5cc6fccfcca30505cea693dd20ad2ed832c1774111259498a768e6"
+      }
+    },
+    {
+      "check": "shared flutter termination",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "shared analyze actual log",
+      "passed": true,
+      "detail": {
+        "result": {
+          "issues": 0
+        },
+        "log_sha256": "4dc260a9a1ac906e5c933be34dbcf125cc167a22fc7224f0f3574a068c52f4a9"
+      }
+    },
+    {
+      "check": "shared analyze termination",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "shared boundaries actual log",
+      "passed": true,
+      "detail": {
+        "result": {
+          "passed": 401,
+          "skipped": 1,
+          "failed": 0
+        },
+        "log_sha256": "2835c036fd6a18973489fd802b57b115a8fcffe483eafd5f2e7b663b3e3044b5"
+      }
+    },
+    {
+      "check": "shared boundaries termination",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "native reuse input closure empty",
+      "passed": true,
+      "detail": {
+        "executed": "0fc080e54bad0ad2789cc5d2c7fba28b753c2e17",
+        "device": "emulator-5558/API28/x86_64",
+        "real_tests": 3
+      }
+    },
+    {
+      "check": "native original evidence receipt.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "native original evidence native-drive.log",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "native original evidence steps.tsv",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "native original evidence identity.log",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "native original evidence signature.log",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "native original evidence rebuild-verification.log",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged gate matches root final-apk.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged gate matches root shared-flutter.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "packaged gate matches root native-android.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "APK ZIP entry uniqueness",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "274 actual native/assets same source to final",
+      "passed": true,
+      "detail": 274
+    },
+    {
+      "check": "14 ARM64 library entries",
+      "passed": true,
+      "detail": [
+        "lib/arm64-v8a/libapp.so",
+        "lib/arm64-v8a/libbarhopper_v3.so",
+        "lib/arm64-v8a/libc++_shared.so",
+        "lib/arm64-v8a/libcrypto.so",
+        "lib/arm64-v8a/libdartjni.so",
+        "lib/arm64-v8a/libdatastore_shared_counter.so",
+        "lib/arm64-v8a/libflutter.so",
+        "lib/arm64-v8a/libflutter_openssl_crypto.so",
+        "lib/arm64-v8a/libimage_processing_util_jni.so",
+        "lib/arm64-v8a/libjingle_peerconnection_so.so",
+        "lib/arm64-v8a/libolm.so",
+        "lib/arm64-v8a/libsqlcipher.so",
+        "lib/arm64-v8a/libsurface_util_jni.so",
+        "lib/arm64-v8a/libzxprotect.so"
+      ]
+    },
+    {
+      "check": "2213 comparison baseline exact",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "13 non-libapp native bytes unchanged from 2213",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "all native stored ZIP16k aligned",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "known-only libcrypto PT_LOAD16k failure observed",
+      "passed": true,
+      "detail": [
+        "lib/arm64-v8a/libcrypto.so"
+      ]
+    },
+    {
+      "check": "RELRO raw observations agree with limits",
+      "passed": true,
+      "detail": {
+        "nonzero": [
+          "lib/arm64-v8a/libc++_shared.so",
+          "lib/arm64-v8a/libcrypto.so",
+          "lib/arm64-v8a/libdatastore_shared_counter.so",
+          "lib/arm64-v8a/libflutter.so",
+          "lib/arm64-v8a/libflutter_openssl_crypto.so",
+          "lib/arm64-v8a/libjingle_peerconnection_so.so",
+          "lib/arm64-v8a/libolm.so",
+          "lib/arm64-v8a/libsqlcipher.so",
+          "lib/arm64-v8a/libsurface_util_jni.so",
+          "lib/arm64-v8a/libzxprotect.so"
+        ],
+        "tail_rw_overlap": [
+          "lib/arm64-v8a/libcrypto.so"
+        ]
+      }
+    },
+    {
+      "check": "only three Android settings change",
+      "passed": true,
+      "detail": [
+        "app_latest_build",
+        "app_latest_version",
+        "app_update_notes"
+      ]
+    },
+    {
+      "check": "minima stay3 and iOS2213 unchanged",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "CF exactly one new behavior",
+      "passed": true,
+      "detail": {
+        "before": 15,
+        "after": 16,
+        "added": {
+          "AllowedMethods": {
+            "CachedMethods": {
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "Items": [
+              "HEAD",
+              "GET"
+            ],
+            "Quantity": 2
+          },
+          "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+          "Compress": false,
+          "FieldLevelEncryptionId": "",
+          "FunctionAssociations": {
+            "Quantity": 0
+          },
+          "GrpcConfig": {
+            "Enabled": false
+          },
+          "LambdaFunctionAssociations": {
+            "Quantity": 0
+          },
+          "PathPattern": "downloads/ChatFlow-0.4.45-build2214-arm64.apk",
+          "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+          "SmoothStreaming": false,
+          "TargetOriginId": "installer-hong-kong",
+          "TrustedKeyGroups": {
+            "Enabled": false,
+            "Quantity": 0
+          },
+          "TrustedSigners": {
+            "Enabled": false,
+            "Quantity": 0
+          },
+          "ViewerProtocolPolicy": "https-only"
+        }
+      }
+    },
+    {
+      "check": "bucket policy unchanged",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "exactly two source-backfill files",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "production before and exact reviewed after frontend/download.html",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Git before and local CRLF-only equivalent frontend/download.html",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "production before and exact reviewed after frontend/downloads/android-release.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Git before and local CRLF-only equivalent frontend/downloads/android-release.json",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved production captured frontend/downloads/ios/manifest.plist",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved current Git identity equals frozen e9 frontend/downloads/ios/manifest.plist",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved production captured frontend/src/admin-home.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved current Git identity equals frozen e9 frontend/src/admin-home.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved production captured frontend/src/download-network-selector.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved current Git identity equals frozen e9 frontend/src/download-network-selector.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved production captured frontend/src/download-network.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved current Git identity equals frozen e9 frontend/src/download-network.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved production captured frontend/src/download-redirect.js",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "preserved current Git identity equals frozen e9 frontend/src/download-redirect.js",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "passed": 58,
+  "failed": 0,
+  "elf": [
+    {
+      "path": "lib/arm64-v8a/libapp.so",
+      "sha256": "a30a2a0d7a201b57b609fff0939ff64b7eaf72519c638460057a9c3926ac5070",
+      "bytes": 19268496,
+      "matches_2213": false,
+      "zip_method": 0,
+      "zip_data_offset": 15941632,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 7494786,
+          "memsz": 7494786,
+          "align": 65536,
+          "congruent_16k": true
+        },
+        {
+          "flags": 5,
+          "offset": 7536640,
+          "vaddr": 7536640,
+          "filesz": 11700992,
+          "memsz": 11700992,
+          "align": 65536,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 19267584,
+          "vaddr": 19267584,
+          "filesz": 112,
+          "memsz": 112,
+          "align": 65536,
+          "congruent_16k": true
+        }
+      ],
+      "relro": []
+    },
+    {
+      "path": "lib/arm64-v8a/libbarhopper_v3.so",
+      "sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+      "bytes": 4946720,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 35225600,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 4859168,
+          "memsz": 4859168,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 4911488,
+          "vaddr": 4927872,
+          "filesz": 33000,
+          "memsz": 294192,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 4866048,
+          "end": 4915200,
+          "end_mod_16k": 0,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libc++_shared.so",
+      "sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+      "bytes": 1253544,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 40173568,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 624800,
+          "memsz": 624800,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 5,
+          "offset": 624800,
+          "vaddr": 641184,
+          "filesz": 585720,
+          "memsz": 585720,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 1250352,
+          "vaddr": 1299504,
+          "filesz": 568,
+          "memsz": 32032,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 1243288,
+          "end": 1286144,
+          "end_mod_16k": 8192,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libcrypto.so",
+      "sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+      "bytes": 2594184,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 41435136,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 1036532,
+          "memsz": 1036532,
+          "align": 4096,
+          "congruent_16k": true
+        },
+        {
+          "flags": 5,
+          "offset": 1040384,
+          "vaddr": 1044480,
+          "filesz": 1379680,
+          "memsz": 1379680,
+          "align": 4096,
+          "congruent_16k": false
+        },
+        {
+          "flags": 6,
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "filesz": 166112,
+          "memsz": 166112,
+          "align": 4096,
+          "congruent_16k": false
+        },
+        {
+          "flags": 6,
+          "offset": 2586176,
+          "vaddr": 2598464,
+          "filesz": 5928,
+          "memsz": 19569,
+          "align": 4096,
+          "congruent_16k": false
+        }
+      ],
+      "relro": [
+        {
+          "start": 2428256,
+          "end": 2596864,
+          "end_mod_16k": 8192,
+          "tail_writable_intersections": [
+            {
+              "start": 2598464,
+              "end": 2605056
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libdartjni.so",
+      "sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+      "bytes": 131400,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 44040192,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 125968,
+          "memsz": 125968,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 125968,
+          "vaddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 127344,
+          "vaddr": 160112,
+          "filesz": 1784,
+          "memsz": 2424,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 142352,
+          "end": 147456,
+          "end_mod_16k": 0,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libdatastore_shared_counter.so",
+      "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "bytes": 7112,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 44187648,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 4544,
+          "memsz": 4544,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 4544,
+          "vaddr": 20928,
+          "filesz": 616,
+          "memsz": 616,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 5160,
+          "vaddr": 37928,
+          "filesz": 0,
+          "memsz": 1,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 20928,
+          "end": 24576,
+          "end_mod_16k": 8192,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libflutter.so",
+      "sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+      "bytes": 11581856,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 44204032,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 11186288,
+          "memsz": 11186288,
+          "align": 65536,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 65536,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 11554224,
+          "vaddr": 11685296,
+          "filesz": 25256,
+          "memsz": 102232,
+          "align": 65536,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 11251824,
+          "end": 11620352,
+          "end_mod_16k": 4096,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libflutter_openssl_crypto.so",
+      "sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+      "bytes": 3928,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 55787520,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 1440,
+          "memsz": 1440,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 1440,
+          "vaddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 17824,
+          "end": 20480,
+          "end_mod_16k": 4096,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libimage_processing_util_jni.so",
+      "sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+      "bytes": 32544,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 55803904,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 29488,
+          "memsz": 29488,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 29488,
+          "vaddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 30480,
+          "vaddr": 63248,
+          "filesz": 0,
+          "memsz": 4,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 45872,
+          "end": 49152,
+          "end_mod_16k": 0,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libjingle_peerconnection_so.so",
+      "sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+      "bytes": 11377944,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 55836672,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 11199600,
+          "memsz": 11199600,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 11372528,
+          "vaddr": 11405296,
+          "filesz": 3256,
+          "memsz": 568944,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 11215984,
+          "end": 11390976,
+          "end_mod_16k": 4096,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libolm.so",
+      "sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+      "bytes": 154392,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 67223552,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 119280,
+          "memsz": 119280,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 119280,
+          "vaddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 120456,
+          "vaddr": 153224,
+          "filesz": 31732,
+          "memsz": 31732,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 135664,
+          "end": 139264,
+          "end_mod_16k": 8192,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libsqlcipher.so",
+      "sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+      "bytes": 5187544,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 67387392,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 4816064,
+          "memsz": 4816064,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "filesz": 347904,
+          "memsz": 347904,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 5163968,
+          "vaddr": 5196736,
+          "filesz": 21248,
+          "memsz": 34865,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 4832448,
+          "end": 5181440,
+          "end_mod_16k": 4096,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libsurface_util_jni.so",
+      "sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+      "bytes": 4896,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 72581120,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 2480,
+          "memsz": 2480,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 2480,
+          "vaddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 18864,
+          "end": 20480,
+          "end_mod_16k": 4096,
+          "tail_writable_intersections": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libzxprotect.so",
+      "sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+      "bytes": 538680,
+      "matches_2213": true,
+      "zip_method": 0,
+      "zip_data_offset": 72597504,
+      "zip_16k_aligned": true,
+      "loads": [
+        {
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 522176,
+          "memsz": 522176,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 522176,
+          "vaddr": 538560,
+          "filesz": 14144,
+          "memsz": 14144,
+          "align": 16384,
+          "congruent_16k": true
+        },
+        {
+          "flags": 6,
+          "offset": 536320,
+          "vaddr": 569088,
+          "filesz": 88,
+          "memsz": 3120,
+          "align": 16384,
+          "congruent_16k": true
+        }
+      ],
+      "relro": [
+        {
+          "start": 538560,
+          "end": 552960,
+          "end_mod_16k": 12288,
+          "tail_writable_intersections": []
+        }
+      ]
+    }
+  ],
+  "static_16k_checks_pass": false,
+  "runtime_16k_verified": false,
+  "backfill": [
+    {
+      "path": "frontend/download.html",
+      "local_raw_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "local_raw_bytes": 9245,
+      "git_blob_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "captured_before_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "after_sha256": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44",
+      "rule": "After actual publication audit, CAS these exact local raw bytes and unchanged Git blob; copy exact frozen target bytes. Never normalize production before guard."
+    },
+    {
+      "path": "frontend/downloads/android-release.json",
+      "local_raw_sha256": "d551fb5d6dad641cfcc2272571f758973236ec5b49ba60656457298822d83d63",
+      "local_raw_bytes": 381,
+      "git_blob_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "captured_before_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "after_sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "rule": "After actual publication audit, CAS these exact local raw bytes and unchanged Git blob; copy exact frozen target bytes. Never normalize production before guard."
+    }
+  ],
+  "preserved": [
+    {
+      "path": "frontend/downloads/ios/manifest.plist",
+      "captured_production_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "git_equals_captured": true,
+      "git_blob_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "local_raw_sha256": "059fd04cc113d88e86d91c123715526234d8624342adf94c61d2acfdbea43bf4",
+      "local_raw_bytes": 824,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/admin-home.js",
+      "captured_production_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "git_equals_captured": false,
+      "git_blob_sha256": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+      "local_raw_sha256": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+      "local_raw_bytes": 25798,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/download-network-selector.js",
+      "captured_production_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "git_equals_captured": true,
+      "git_blob_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "local_raw_sha256": "b5acc7be7a25ec620e8848d40ffea627e582b1d39271b4d7282e86fa59515181",
+      "local_raw_bytes": 7595,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/download-network.js",
+      "captured_production_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "git_equals_captured": true,
+      "git_blob_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "local_raw_sha256": "6c1e12c6e7098a4f0b77e4f63748ae9c931e88179c2db48ddbe352722eae9786",
+      "local_raw_bytes": 5617,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/download-redirect.js",
+      "captured_production_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "git_equals_captured": true,
+      "git_blob_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "local_raw_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "local_raw_bytes": 1998,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    }
+  ],
+  "scope": "Independent read-only source/artifact/evidence/package inspection; no rebuild, server execution, device run or publication."
+}

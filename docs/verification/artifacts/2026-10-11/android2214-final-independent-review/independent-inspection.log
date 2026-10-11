@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-11\android2214-final-independent-review\inspect_exact_package.py", line 76, in <module>
+    local=(R/name).read_bytes();blob=git('show','HEAD:'+name);captured=(P/'runtime/hk-snapshot'/name.removeprefix('frontend/')).read_bytes();target=(P/v['staged']).read_bytes();check('production before and exact reviewed after '+name,sha(captured)==v['before'] and sha(target)==v['after']);check('Git before and local CRLF-only equivalent '+name,blob==captured and local.replace(b'\r\n',b'\n')==captured)
+                                                                                                                                                                                                                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-11\android2214-final-independent-review\inspect_exact_package.py", line 17, in check
+    if not ok:raise AssertionError(name)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Git before and local CRLF-only equivalent frontend/download.html
