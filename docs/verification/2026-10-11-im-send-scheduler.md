@@ -69,3 +69,13 @@ exit 0，**194 PASS**，无跳过。范围 analyze 7 个修改 Dart 文件 exit 
 主动/工具时长未连续计时，精确分解未知；最终测试日志报告执行 13 秒，不等于全部任务墙钟。未运行部署、构建或外部设备操作。
 
 下一步：主任务先做 SPEC、再做 QUALITY/SECURITY 审查，按本次输入身份合入最终共享候选，执行统一门禁。回退仅回退调度/所有权接线提交，不删除或重建任何 outbox 数据。
+
+## 审查补充：前台删行与真实页面适配器
+
+首个候选提交为 `d72b8a12ab8028984c5b0a0c3d9e9ca57bb9004b`。主任务提出一个待验证边界：前台已持有真实传输，用户删除 durable 行后，同房后台队列是否仍受屏障保护。以真实控制器分别覆盖调度器删除前已扫描、删除前未扫描两种时序，两个用例在首候选均 RED，日志为 `red-foreground-delete.log`。失败均为旧 SDK Future 未结算时第二个 txid 已派发。
+
+最小补充接口 `pendingRoomTransportSettlement` 查询控制器尚未结算的原始 `_dispatchSettled` 集合；调度器捕获外部真实所有权，行删除和 30 秒观察窗口不释放占用。真实结算后唤醒原轮转队列。主任务授权将 RoomPage 尾部适配器抽成 `lib/features/matrix/room_outbox_sender.dart`，页面仍提供原权限和生命周期条件，测试直接使用生产适配器。
+
+新增适配器用例断言：`send()` 返回后、第一次 pump 前，已捕获控制器原始 Future；UI 超时返回错误后清空页面 controller 并 dispose、删除行、再过 31 秒，该 Future 仍未完成且 room 查询仍有占用；只有完成模拟 SDK 原请求后才清空。原账号 teardown、429、迟到 ACK、取消和排序回归继续通过。
+
+最终补充冻结为 2026-10-11 11:32+08:00，输入见 [followup-input-hashes.json](artifacts/2026-10-11/im-send-scheduler/followup-input-hashes.json)。同一完整专项命令 **197 PASS**，exit 0，日志 `focused-green-followup.log`；8 个 Dart 文件范围 analyze exit 0、无问题，日志 `analyze-followup.log`；format 与 `git diff --check` 通过。旧日志及旧输入清单保持用于各轮 RED/GREEN 追踪。共享全量、双端与生产行为的验收边界仍按上文由主任务完成。

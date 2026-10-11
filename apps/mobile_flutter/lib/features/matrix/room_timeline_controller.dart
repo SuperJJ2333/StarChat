@@ -749,6 +749,11 @@ final class RoomTimelineController extends ChangeNotifier
   Future<void>? pendingTransportSettlement(String transactionId) =>
       _transportSettlements[transactionId];
 
+  Future<void>? get pendingRoomTransportSettlement =>
+      _transportSettlements.isEmpty
+          ? null
+          : Future.wait(_transportSettlements.values).then<void>((_) {});
+
   PerformanceTrace? _retainedSendTrace(String tx) {
     final lease = _sendTraceLeases[tx];
     if (lease == null) return null;

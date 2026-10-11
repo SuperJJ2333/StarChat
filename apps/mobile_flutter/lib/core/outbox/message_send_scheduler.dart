@@ -86,6 +86,7 @@ final class MessageSendScheduler {
   static const _maxActiveResolutions = 2;
   final Queue<String> _roomTurns = Queue<String>();
   final Set<String> _roomOperations = <String>{};
+  final Set<String> _externalRoomOperations = <String>{};
   final Map<String, int> _attemptedRows = <String, int>{};
   final Set<void Function()> _settlementWaiters = <void Function()>{};
   int _dispatchRevision = 0;
@@ -294,6 +295,7 @@ final class MessageSendScheduler {
       final byRoom = <String, OutboxMessage>{};
       final occupied = <String>{
         ..._roomOperations,
+        ..._externalRoomOperations,
         ..._openingRooms,
         ..._inFlight.values,
       };
@@ -322,6 +324,29 @@ final class MessageSendScheduler {
         for (final resolving in _resolveUnboundRows(rows)) {
           observe(resolving);
         }
+      }
+      for (final room in byRoom.keys) {
+        if (_roomOperations.contains(room) ||
+            _externalRoomOperations.contains(room) ||
+            _inFlight.containsValue(room)) {
+          continue;
+        }
+        final sender = senderFor(room);
+        if (sender is! OutboxTransportSettlement) continue;
+        final pending = (sender as OutboxTransportSettlement)
+            .pendingRoomTransportSettlement;
+        if (pending == null) continue;
+        // Capture the actual foreground owner before its row or page can go
+        // away. The snapshot also covers a row deleted before our first scan.
+        _externalRoomOperations.add(room);
+        occupied.add(room);
+        final settled = pending
+            .then<void>((_) {}, onError: (Object _, StackTrace __) {})
+            .whenComplete(() {
+          _externalRoomOperations.remove(room);
+          _resumeAfterSettlement();
+        });
+        observe(settled.timeout(operationTimeout, onTimeout: () {}));
       }
       _roomTurns.removeWhere((room) => !byRoom.containsKey(room));
       for (final room in byRoom.keys) {

@@ -148,6 +148,7 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import 'room_outbox_sender.dart';
 import 'room_paged_history_source.dart';
 import 'sent_video_local_registry.dart';
 import 'room_history_date_capability.dart';
@@ -996,7 +997,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   late final OutboxJournal? _outboxJournal = _buildOutboxJournal();
 
   /// 注册到发送句柄注册表，供调度器在网络恢复时把持久化行交回本会话发送。
-  _RoomOutboxSender? _outboxSender;
+  RoomOutboxSender? _outboxSender;
   PersistentOutboxManager? _observedOutbox;
 
   void _outboxChanged() {
@@ -1501,7 +1502,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _observedOutbox = _outbox;
       _observedOutbox?.addListener(_outboxChanged);
       // 调度器只有在房间已打开时才允许派发持久化行；句柄随页面销毁注销。
-      final sender = _RoomOutboxSender(this);
+      final sender = RoomOutboxSender(
+        roomId: roomInfo.id,
+        controller: () => controller,
+        canSend: () =>
+            !widget.readOnly &&
+            mounted &&
+            !_disposing &&
+            !widget.roomLease.canceled &&
+            controller != null,
+      );
       _outboxSender = sender;
       OutboxRoomSenderRegistry.shared.register(sender);
       controller!.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
@@ -6438,56 +6448,6 @@ final class _RoleBadge extends StatelessWidget {
           ),
         ),
       );
-}
-
-/// 把持久化 outbox 行交回**当前打开的房间会话**发送。
-///
-/// 调度器只在房间已打开时拿到这个句柄；页面销毁/租约取消后 [canSend] 为
-/// false，注册表按"没有句柄"处理，行继续留在 outbox 等下次进入会话。
-final class _RoomOutboxSender
-    implements OutboxSender, OutboxTransportSettlement {
-  _RoomOutboxSender(this._page);
-
-  final _RoomPageState _page;
-  final _settlements = <String, Future<void>>{};
-
-  @override
-  Future<void>? pendingTransportSettlement(String transactionId) =>
-      _settlements[transactionId];
-
-  @override
-  String get roomId => _page.roomInfo.id;
-
-  @override
-  bool get canSend =>
-      !_page.widget.readOnly &&
-      _page.mounted &&
-      !_page._disposing &&
-      !_page.widget.roomLease.canceled &&
-      _page.controller != null;
-
-  @override
-  Future<String> send(OutboxMessage message) async {
-    final controller = _page.controller;
-    if (controller == null) {
-      throw StateError('Room timeline is not ready');
-    }
-    final sending = controller.sendText(message.content, outboxRow: message);
-    final settled = controller.pendingTransportSettlement(message.txid);
-    if (settled != null) {
-      _settlements[message.txid] = settled;
-      unawaited(settled.whenComplete(() {
-        if (identical(_settlements[message.txid], settled)) {
-          _settlements.remove(message.txid);
-        }
-      }));
-    }
-    final eventId = await sending;
-    if (eventId == null || eventId.isEmpty) {
-      throw StateError('Matrix event was not accepted');
-    }
-    return eventId;
-  }
 }
 
 /// One future per mounted grid cell; rebuilding must not restart downloads.

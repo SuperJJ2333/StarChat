@@ -1,0 +1,47 @@
+[
+  {
+    "path": "apps/mobile_flutter/lib/core/outbox/message_send_scheduler.dart",
+    "baselineGitBlob": "11f6c208cfa2fc0eed4863cf4203d038dd3da48b",
+    "sha256": "05365599a72f94812387b2a5844d6af0ac5129ae7ce4e970d13ba1386c89d05f"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/core/outbox/outbox_room_sender_registry.dart",
+    "baselineGitBlob": "f4f776a5f14fdeb41d37b0ca61903387f7f7bb67",
+    "sha256": "28dc77b4e72e3ff903f33fd157ee06c751b987e0fecd974684411d2a0004c64e"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/room_outbox_sender.dart",
+    "baselineGitBlob": null,
+    "sha256": "158a6e02c62b7306773198e897207ac7961cd68bf54bb1876a03a3c9d3e6c9cd"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+    "baselineGitBlob": "a9783dcc09e74f7b117d7f89d5b73dbba7ec6df9",
+    "sha256": "4a3d0356b59258802a6617b7a65001a5bbb09dfceb71bc172d1cdbd4adb50db8"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/room_timeline_controller.dart",
+    "baselineGitBlob": "8f278277497463f913fddb07e6744db818dfc618",
+    "sha256": "09e7d850586e97433354df7466231f2f0549d0d2518820b2ca379eb457f23a60"
+  },
+  {
+    "path": "apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart",
+    "baselineGitBlob": "48249f600034fe3b113b110fee993bad24946922",
+    "sha256": "be78b1722673028c097c7d3b131fbe28665f223ec7b666eb01e448aca8191d0b"
+  },
+  {
+    "path": "apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart",
+    "baselineGitBlob": "b2411953c6b39d8ba26e54b67c731941d21f1d21",
+    "sha256": "921e0fc28cbd3ca3fc38803e158fc3291606b5162ccd78a174074a3691c59a71"
+  },
+  {
+    "path": "apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart",
+    "baselineGitBlob": "c3d3357ca2936dafdd6ff03f66492f00ba8b4acc",
+    "sha256": "139abc03265a9e1f7ea0ad93b3dbb54fbc62fab9f749de0c817905e924eb92bc"
+  },
+  {
+    "path": "apps/mobile_flutter/pubspec.lock",
+    "baselineGitBlob": "1ad4ab1431b436b20a64445e06e25c73c3173eb0",
+    "sha256": "12ae67427fe7b17a65aa929773940cfef1ce97be4fe5240a925a373c771f191e"
+  }
+]

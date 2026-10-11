@@ -8,10 +8,10 @@ import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/outbox/message_send_scheduler.dart';
-import 'package:liuhetong_mobile/core/outbox/outbox_room_sender_registry.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/room_outbox_sender.dart';
 
 /// 记录每次派发使用的 txid 的假传输层（应答脚本由测试注入）。
 final class _FakeTransport
@@ -130,23 +130,11 @@ class _TransportLease implements OutboxLease {
   Future<void> release() async {}
 }
 
-class _ControllerSender implements OutboxSender, OutboxTransportSettlement {
-  _ControllerSender(this.controller);
-  final RoomTimelineController controller;
-  @override
-  String get roomId => '!room:test';
-  @override
-  bool get canSend => true;
-  @override
-  Future<void>? pendingTransportSettlement(String transactionId) =>
-      controller.pendingTransportSettlement(transactionId);
-  @override
-  Future<String> send(OutboxMessage row) async {
-    final result = await controller.sendText(row.content, outboxRow: row);
-    if (result == null) throw StateError('send not accepted');
-    return result;
-  }
-}
+RoomOutboxSender _controllerSender(RoomTimelineController controller) =>
+    RoomOutboxSender(
+        roomId: '!room:test',
+        controller: () => controller,
+        canSend: () => true);
 
 class _ServerUnavailable implements Exception {
   int get statusCode => 503;
@@ -173,6 +161,87 @@ void main() {
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
 
+  testWidgets('page sender captures transport before UI timeout and disposal',
+      (tester) async {
+    final pending = Completer<String>();
+    final transport = _FakeTransport()..responses.add(() => pending.future);
+    final controller = controllerFor(transport);
+    RoomTimelineController? currentController = controller;
+    final sender = RoomOutboxSender(
+        roomId: '!room:test',
+        controller: () => currentController,
+        canSend: () => currentController != null);
+    final row = (await outbox.save(
+        receiverId: '@peer:test', roomId: '!room:test', content: 'first'))!;
+    Object? uiError;
+    unawaited(sender.send(row).then<void>((_) {}, onError: (Object error) {
+      uiError = error;
+    }));
+    // Capture occurs synchronously, before even the first pump of the UI.
+    final owned = sender.pendingTransportSettlement(row.txid)!;
+    expect(owned, same(controller.pendingTransportSettlement(row.txid)));
+    var settled = false;
+    unawaited(owned.then((_) => settled = true));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 21));
+    expect(uiError, isStateError);
+    currentController = null;
+    controller.dispose();
+    await outbox.removeOrArchive(row.localId);
+    await tester.pump(const Duration(seconds: 31));
+    expect(sender.canSend, isFalse);
+    expect(sender.pendingTransportSettlement(row.txid), same(owned));
+    expect(sender.pendingRoomTransportSettlement, isNotNull);
+    expect(settled, isFalse);
+    pending.complete('late-ack');
+    await tester.pump();
+    expect(settled, isTrue);
+    expect(sender.pendingTransportSettlement(row.txid), isNull);
+    expect(sender.pendingRoomTransportSettlement, isNull);
+    expect(transport.txids, [row.txid]);
+  });
+
+  for (final scanBeforeDelete in [false, true]) {
+    testWidgets(
+        'foreground deletion preserves true room ownership (prior scan: $scanBeforeDelete)',
+        (tester) async {
+      final pending = Completer<String>();
+      final transport = _FakeTransport()..responses.add(() => pending.future);
+      final controller = controllerFor(transport);
+      final foreground = controller.sendText('foreground');
+      await tester.pump();
+      final first = (await outbox.unsent()).single;
+      final second = (await outbox.save(
+          receiverId: '@peer:test',
+          roomId: '!room:test',
+          content: 'second',
+          createdAt: first.createdAt.add(const Duration(seconds: 1))))!;
+      final sender = _controllerSender(controller);
+      final scheduler =
+          MessageSendScheduler(outbox: outbox, senderFor: (_) => sender);
+      addTearDown(() {
+        scheduler.dispose();
+        controller.dispose();
+      });
+      if (scanBeforeDelete) {
+        scheduler.start();
+        await tester.pump();
+      }
+      await tester.pump(const Duration(seconds: 21));
+      expect(await foreground, isNull);
+      await outbox.removeOrArchive(first.localId);
+      unawaited(scheduler.drain());
+      await tester.pump(const Duration(seconds: 31));
+      expect(transport.txids, [first.txid],
+          reason:
+              'absence of the old durable txid is not transport settlement');
+      pending.complete('ack-foreground');
+      await tester.pump();
+      expect(transport.txids, [first.txid, second.txid]);
+      expect(await outbox.unsent(), isEmpty);
+    });
+  }
+
   testWidgets('foreground ACK wakes the ordered background room queue',
       (tester) async {
     final pending = Completer<String>();
@@ -186,7 +255,7 @@ void main() {
         roomId: '!room:test',
         content: 'second',
         createdAt: first.createdAt.add(const Duration(seconds: 1))))!;
-    final sender = _ControllerSender(controller);
+    final sender = _controllerSender(controller);
     final scheduler =
         MessageSendScheduler(outbox: outbox, senderFor: (_) => sender)..start();
     addTearDown(() {
@@ -209,7 +278,7 @@ void main() {
     final transport = _FakeTransport()
       ..responses.add(() => transportPending.future);
     final controller = controllerFor(transport);
-    final sender = _ControllerSender(controller);
+    final sender = _controllerSender(controller);
     final scheduler =
         MessageSendScheduler(outbox: outbox, senderFor: (_) => sender);
     addTearDown(() {
@@ -252,7 +321,7 @@ void main() {
     final pending = Completer<String>();
     final transport = _FakeTransport()..responses.add(() => pending.future);
     final controller = controllerFor(transport);
-    final sender = _ControllerSender(controller);
+    final sender = _controllerSender(controller);
     final scheduler =
         MessageSendScheduler(outbox: outbox, senderFor: (_) => sender);
     final first = (await outbox.save(
@@ -647,7 +716,7 @@ void main() {
     store.fail = true;
     final restored = controllerFor(transport)..restoreOutboxMessage(row);
     final scheduler = MessageSendScheduler(
-        outbox: outbox, senderFor: (_) => _ControllerSender(restored))
+        outbox: outbox, senderFor: (_) => _controllerSender(restored))
       ..start();
     await Future<void>.delayed(const Duration(milliseconds: 30));
     expect(store.failedWrites, lessThanOrEqualTo(3));
@@ -850,7 +919,7 @@ void main() {
     final row = (await outbox.save(
         receiverId: '@peer:test', content: 'x', roomId: '!room:test'))!;
     final scheduler = MessageSendScheduler(
-        outbox: outbox, senderFor: (_) => _ControllerSender(controller));
+        outbox: outbox, senderFor: (_) => _controllerSender(controller));
     await scheduler.drain();
     final failed = (await outbox.byLocalId(row.localId))!;
     expect(failed.serverRetryCount, 1);

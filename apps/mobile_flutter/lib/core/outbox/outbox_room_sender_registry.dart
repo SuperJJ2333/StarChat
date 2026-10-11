@@ -21,6 +21,9 @@ abstract interface class OutboxSender {
 /// including after local cancellation, row deletion or page disposal.
 abstract interface class OutboxTransportSettlement {
   Future<void>? pendingTransportSettlement(String transactionId);
+
+  /// Includes foreground sends whose durable rows may already be removed.
+  Future<void>? get pendingRoomTransportSettlement;
 }
 
 /// 已打开房间的发送句柄注册表（按 roomId 去重）。

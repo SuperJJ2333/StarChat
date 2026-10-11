@@ -1,0 +1,63 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart
+00:00 +0: foreground deletion preserves true room ownership (prior scan: false)
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['local-1791688875798954-0']
+  Actual: ['local-1791688875798954-0', 'c972e5138c5c4495aa5c15a1aae66fa1']
+   Which: at location [1] is ['local-1791688875798954-0', 'c972e5138c5c4495aa5c15a1aae66fa1'] which
+longer than expected
+absence of the old durable txid is not transport settlement
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart:203:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart line 203
+The test description was:
+  foreground deletion preserves true room ownership (prior scan: false)
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: foreground deletion preserves true room ownership (prior scan: false) [E]
+  Test failed. See exception logs above.
+  The test description was: foreground deletion preserves true room ownership (prior scan: false)
+
+00:00 +0 -1: foreground deletion preserves true room ownership (prior scan: true)
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['local-1791688875929998-0']
+  Actual: ['local-1791688875929998-0', 'f3eca084e83941b1a427f05a39efa910']
+   Which: at location [1] is ['local-1791688875929998-0', 'f3eca084e83941b1a427f05a39efa910'] which
+longer than expected
+absence of the old durable txid is not transport settlement
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart:203:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart line 203
+The test description was:
+  foreground deletion preserves true room ownership (prior scan: true)
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -2: foreground deletion preserves true room ownership (prior scan: true) [E]
+  Test failed. See exception logs above.
+  The test description was: foreground deletion preserves true room ownership (prior scan: true)
+
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: foreground deletion preserves true room ownership (prior scan: false)
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: foreground deletion preserves true room ownership (prior scan: true)
