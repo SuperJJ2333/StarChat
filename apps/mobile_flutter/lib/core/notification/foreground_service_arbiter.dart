@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'notification_diagnostics.dart';
@@ -116,7 +119,10 @@ final class FlutterForegroundServiceBackend
   Future<void> start(ForegroundServiceRequest request) async {
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await android?.startForegroundService(
+    if (android == null) {
+      throw StateError('Android foreground service unavailable');
+    }
+    await android.startForegroundService(
       request.notificationId,
       request.title,
       request.body,
@@ -146,13 +152,30 @@ final class FlutterForegroundServiceBackend
   }
 }
 
-/// 前台服务仲裁器（修复"通话结束停止消息保活"）：
-///
-/// - `acquire(owner, request)`：登记所有权并呈现当前最高优先级请求；
-/// - `release(owner)`：仍有其他 owner 时**重申**剩余最高优先级请求
-///   （通话结束 → 回写保活通知 41003），无剩余 owner 才真正 stop；
-/// - `reassert()`：看门狗/生命周期自愈，幂等重申当前呈现；
-/// - 后端失败不抛出（保活尽力而为），必留诊断。
+/// Native sends only fixed lifecycle reasons, after releasing locks/stopSelf.
+/// A single handler fans out to the arbiter and keepalive state machine.
+abstract final class ForegroundServiceLifecycle {
+  static const _channel = MethodChannel('chatflow/foreground_service');
+  static final _events = StreamController<String>.broadcast(sync: true);
+  static bool _attached = false;
+
+  static Stream<String> get events {
+    if (!_attached) {
+      _channel.setMethodCallHandler((call) async {
+        if (call.method == 'stopped') _events.add('stopped');
+        if (call.method == 'locksReleased') _events.add('locksReleased');
+      });
+      _attached = true;
+    }
+    return _events.stream;
+  }
+}
+
+enum ForegroundServiceApplyResult { applied, denied, stopped }
+
+/// desired ownership is retained separately from OS-confirmed running state.
+/// Mutations are immediate; native operations are serialized so a late start
+/// cannot overtake stop or resurrect an owner released while it was pending.
 final class ForegroundServiceArbiter {
   ForegroundServiceArbiter({
     required this.backend,
@@ -161,58 +184,79 @@ final class ForegroundServiceArbiter {
 
   final ForegroundServiceBackend backend;
   final NotificationDiagnostics diagnostics;
+  final Map<ForegroundServiceOwner, ForegroundServiceRequest> _desired = {};
+  Future<void> _tail = Future.value();
+  StreamSubscription<String>? _lifecycle;
+  int _revision = 0;
+  bool _running = false;
+  bool _suspended = false;
 
-  final Map<ForegroundServiceOwner, ForegroundServiceRequest> _active = {};
+  bool isDesired(ForegroundServiceOwner owner) => _desired.containsKey(owner);
+  bool isActive(ForegroundServiceOwner owner) => _running && isDesired(owner);
 
-  bool isActive(ForegroundServiceOwner owner) => _active.containsKey(owner);
-
-  Future<void> acquire(
+  Future<ForegroundServiceApplyResult> acquire(
     ForegroundServiceOwner owner,
     ForegroundServiceRequest request,
-  ) async {
-    final previous = _active[owner];
-    if (previous == request) {
-      await reassert();
-      return;
-    }
-    _active[owner] = request;
-    await _applyTop('acquire:$owner');
+  ) {
+    _lifecycle ??= ForegroundServiceLifecycle.events.listen((event) {
+      if (event == 'locksReleased') return;
+      _revision++;
+      _running = false;
+      _suspended = true;
+    });
+    _desired[owner] = request;
+    _suspended = false; // Explicit lifecycle/call request, never a timer.
+    return _enqueue(++_revision);
   }
 
   Future<void> release(ForegroundServiceOwner owner) async {
-    if (_active.remove(owner) == null) return;
-    if (_active.isEmpty) {
+    if (_desired.remove(owner) == null) return;
+    await _enqueue(++_revision);
+    if (_desired.isEmpty) {
+      await _lifecycle?.cancel();
+      _lifecycle = null;
+    }
+  }
+
+  Future<void> reassert() async {
+    if (_desired.isEmpty || _suspended) return;
+    await _enqueue(++_revision);
+  }
+
+  Future<ForegroundServiceApplyResult> _enqueue(int revision) {
+    final result = _tail.then((_) => _apply(revision));
+    _tail = result.then<void>((_) {});
+    return result;
+  }
+
+  Future<ForegroundServiceApplyResult> _apply(int revision) async {
+    if (revision != _revision || _suspended) {
+      return ForegroundServiceApplyResult.stopped;
+    }
+    if (_desired.isEmpty) {
+      _running = false;
       try {
         await backend.stop();
-        diagnostics.record(
-            NotificationDiagStage.foregroundService, 'stopped (no owners)');
       } catch (error) {
         diagnostics.record(NotificationDiagStage.foregroundService,
             'stop failed: ${error.runtimeType}');
       }
-      return;
+      return ForegroundServiceApplyResult.stopped;
     }
-    await _applyTop('release:$owner → reassert remaining');
-  }
-
-  Future<void> reassert() async {
-    if (_active.isEmpty) return;
-    await _applyTop('reassert');
-  }
-
-  Future<void> _applyTop(String reason) async {
-    var topOwner = _active.keys.first;
-    for (final owner in _active.keys) {
-      if (owner.priority > topOwner.priority) topOwner = owner;
+    var top = _desired.keys.first;
+    for (final owner in _desired.keys) {
+      if (owner.priority > top.priority) top = owner;
     }
-    final request = _active[topOwner]!;
     try {
-      await backend.start(request);
-      diagnostics.record(NotificationDiagStage.foregroundService,
-          '$reason → applied #${request.notificationId}');
+      await backend.start(_desired[top]!);
+      if (revision != _revision) return ForegroundServiceApplyResult.stopped;
+      _running = true;
+      return ForegroundServiceApplyResult.applied;
     } catch (error) {
+      _running = false;
       diagnostics.record(NotificationDiagStage.foregroundService,
-          '$reason failed: ${error.runtimeType}');
+          'start failed: ${error.runtimeType}');
+      return ForegroundServiceApplyResult.denied;
     }
   }
 }

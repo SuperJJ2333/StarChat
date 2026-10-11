@@ -1,0 +1,50 @@
+[
+  {
+    "name": "com.dexterous.flutterlocalnotifications.ForegroundServiceLifecycleTest",
+    "tests": "7",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.296"
+  },
+  {
+    "name": "com.liuhetong.mobile.call.BackgroundCallPresentationTest",
+    "tests": "4",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "2.711"
+  },
+  {
+    "name": "com.liuhetong.mobile.call.IncomingCallNotificationTest",
+    "tests": "1",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.099"
+  },
+  {
+    "name": "com.liuhetong.mobile.call.LockScreenCallPresentationTest",
+    "tests": "1",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.447"
+  },
+  {
+    "name": "com.liuhetong.mobile.call.PendingCallActionsTest",
+    "tests": "3",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "0.002"
+  },
+  {
+    "name": "com.liuhetong.mobile.SyncKeepAliveResourceOwnerTest",
+    "tests": "8",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "4.814"
+  }
+]

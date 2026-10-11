@@ -1,0 +1,13 @@
+{
+  "version": "19.4.2",
+  "modified_or_added": [
+    "CHANGELOG.md",
+    "CHATFLOW_PATCH.md",
+    "README.md",
+    "android/src/main/java/com/dexterous/flutterlocalnotifications/FlutterLocalNotificationsPlugin.java",
+    "android/src/main/java/com/dexterous/flutterlocalnotifications/ForegroundService.java",
+    "ios/flutter_local_notifications.podspec"
+  ],
+  "license_equal": true,
+  "license_sha256": "d6885e4633e08ec3a52cd90299b97831444d487f16721e5d092289bcfedfc511"
+}

@@ -1,9 +1,22 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/notification/sync_keepalive_service.dart';
 
 /// BUG 2（后台/锁屏无通知）根因修复：dataSync 前台服务保活 Matrix 同步，
 /// 登录会话期间常驻、退出登录停止、幂等可重入。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const locksChannel = MethodChannel('chatflow/keepalive');
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(locksChannel, (_) async => true);
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(locksChannel, null);
+  });
   test('start 幂等：重复启动只调一次后端', () async {
     final backend = _RecordingKeepAliveBackend();
     final service = SyncKeepAliveService(backend: backend);
@@ -63,15 +76,15 @@ void main() {
     expect(hooks.releases, 1);
   });
 
-  test('看门狗：运行中周期性重申前台服务与唤醒锁（系统回收后自愈）', () async {
+  test('R4：看门狗不重复后台启动服务或重取锁', () async {
     final backend = _RecordingKeepAliveBackend();
     final hooks = _RecordingKeepAliveHooks();
     final service = SyncKeepAliveService(backend: backend, hooks: hooks);
     await service.ensureStarted();
     // 模拟系统静默回收后的自愈：看门狗每拍无条件重申（FGS+唤醒锁）。
     await service.runWatchdogTick();
-    expect(backend.starts, 2, reason: '前台服务被回收后必须重申');
-    expect(hooks.acquires, 2, reason: '唤醒锁幂等重取');
+    expect(backend.starts, 1, reason: '只能在明确生命周期恢复时重新申请');
+    expect(hooks.acquires, 1, reason: '锁由原生服务生命周期管理');
     expect(service.isRunning, isTrue);
   });
 
@@ -94,24 +107,133 @@ void main() {
     );
     await service.ensureStarted();
     expect(service.isRunning, isTrue);
+    expect(service.locksAcquired, isFalse);
   });
 
-  test('C05：start 失败后 stop 仍释放锁并停止看门狗（资源计数归零）', () async {
+  test('R4替代C05弱保活：start被拒不持锁，stop仍清理已尝试的服务', () async {
     final hooks = _RecordingKeepAliveHooks();
+    final backend = _RecordingKeepAliveBackend()..failStart = true;
     final service = SyncKeepAliveService(
-      backend: _RecordingKeepAliveBackend()..failStart = true,
+      backend: backend,
       hooks: hooks,
     );
     await service.ensureStarted();
     expect(service.isRunning, isFalse);
-    expect(service.locksAcquired, isTrue, reason: '降级弱保活仍持锁（被跟踪）');
+    expect(service.locksAcquired, isFalse, reason: '没有合法FGS时禁止弱保活持锁');
     await service.stop();
     // 关键断言：清理不依赖 _running——锁必释放、看门狗必取消。
-    expect(hooks.releases, 1, reason: 'start 失败后 stop 必须释放已持有锁');
+    expect(hooks.acquires, 0);
+    expect(backend.stops, 1);
     expect(service.locksAcquired, isFalse);
     // 停止后看门狗不再重申任何资源。
     await service.runWatchdogTick();
-    expect(hooks.acquires, 1, reason: '看门狗已取消，不再取锁');
+    expect(hooks.acquires, 0, reason: '看门狗已取消，不再取锁');
+  });
+
+  for (final response in [false, null, 'exception']) {
+    test('R4：原生锁返回$response不能虚报已获取', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(locksChannel, (_) async {
+        if (response == 'exception') throw PlatformException(code: 'denied');
+        return response;
+      });
+      final service =
+          SyncKeepAliveService(backend: _RecordingKeepAliveBackend());
+      await service.ensureStarted();
+      expect(service.isRunning, isTrue);
+      expect(service.locksAcquired, isFalse);
+      await service.stop();
+    });
+  }
+
+  test('R4：并发启动合并，stop后迟到start不复活或取锁', () async {
+    final pending = Completer<void>();
+    final backend = _RecordingKeepAliveBackend()..startGate = pending;
+    final hooks = _RecordingKeepAliveHooks();
+    final service = SyncKeepAliveService(backend: backend, hooks: hooks);
+    final starts = [service.ensureStarted(), service.ensureStarted()];
+    await Future<void>.delayed(Duration.zero);
+    await service.stop();
+    pending.complete();
+    await Future.wait(starts);
+    expect(backend.starts, 1);
+    expect(service.isRunning, isFalse);
+    expect(service.locksAcquired, isFalse);
+    expect(hooks.acquires, 0);
+    await service.runWatchdogTick();
+    expect(backend.starts, 1);
+  });
+
+  test('R4：原生停止通知清除实际状态且不会由看门狗重新拉起', () async {
+    final backend = _RecordingKeepAliveBackend();
+    final service = SyncKeepAliveService(backend: backend);
+    await service.ensureStarted();
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+            'chatflow/foreground_service',
+            const StandardMethodCodec()
+                .encodeMethodCall(const MethodCall('stopped', 'timeout')),
+            (_) {});
+    expect(service.isRunning, isFalse);
+    expect(service.locksAcquired, isFalse);
+    await service.runWatchdogTick();
+    expect(backend.starts, 1);
+    await service.stop();
+    await service.stop();
+  });
+
+  test('R4：旧start在stop后迟到不能吞掉下一次明确前台启动', () async {
+    final gate = Completer<void>();
+    final backend = _RecordingKeepAliveBackend()..startGate = gate;
+    final service = SyncKeepAliveService(backend: backend);
+    final oldStart = service.ensureStarted();
+    await Future<void>.delayed(Duration.zero);
+    await service.stop();
+    final resumed = service.ensureStarted();
+    backend.startGate = null;
+    gate.complete();
+    await Future.wait([oldStart, resumed]);
+    expect(service.isRunning, isTrue);
+    expect(backend.starts, 2);
+    await service.stop();
+  });
+
+  test('R4：锁租约到期仅清除持锁状态，前台请求可重新取锁', () async {
+    final backend = _RecordingKeepAliveBackend();
+    final hooks = _RecordingKeepAliveHooks();
+    final service = SyncKeepAliveService(backend: backend, hooks: hooks);
+    await service.ensureStarted();
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+            'chatflow/foreground_service',
+            const StandardMethodCodec()
+                .encodeMethodCall(const MethodCall('locksReleased')),
+            (_) {});
+    expect(service.isRunning, isTrue);
+    expect(service.isDesired, isTrue);
+    expect(service.locksAcquired, isFalse);
+    await service.runWatchdogTick();
+    expect(hooks.acquires, 1);
+    await service.ensureStarted();
+    expect(service.locksAcquired, isTrue);
+    expect(hooks.acquires, 2);
+    expect(backend.starts, 1);
+    await service.stop();
+  });
+
+  test('R4：取锁迟到遇stop必须释放且不能恢复状态', () async {
+    final gate = Completer<bool>();
+    final hooks = _RecordingKeepAliveHooks()..acquireGate = gate;
+    final service = SyncKeepAliveService(
+        backend: _RecordingKeepAliveBackend(), hooks: hooks);
+    final starting = service.ensureStarted();
+    await Future<void>.delayed(Duration.zero);
+    await service.stop();
+    gate.complete(true);
+    await starting;
+    expect(service.locksAcquired, isFalse);
+    expect(service.isRunning, isFalse);
+    expect(hooks.releases, 1);
   });
 
   test('C05：反复 start/stop 交错后锁计数平衡（无泄漏）', () async {
@@ -144,11 +266,13 @@ final class _RecordingKeepAliveHooks implements KeepAliveHooks {
   var acquires = 0;
   var releases = 0;
   var fail = false;
+  Completer<bool>? acquireGate;
 
   @override
-  Future<void> acquire() async {
+  Future<bool> acquire() async {
     if (fail) throw StateError('wakelock denied');
     acquires++;
+    return await acquireGate?.future ?? true;
   }
 
   @override
@@ -163,6 +287,7 @@ final class _RecordingKeepAliveBackend implements SyncKeepAliveBackend {
   var stops = 0;
   var failStart = false;
   var failStop = false;
+  Completer<void>? startGate;
 
   @override
   Future<void> start({
@@ -173,6 +298,7 @@ final class _RecordingKeepAliveBackend implements SyncKeepAliveBackend {
   }) async {
     if (failStart) throw StateError('foreground service start failed');
     starts++;
+    await startGate?.future;
   }
 
   @override

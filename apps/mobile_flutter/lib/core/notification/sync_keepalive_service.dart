@@ -7,19 +7,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'foreground_service_arbiter.dart';
 import 'notification_diagnostics.dart';
 
-/// 后台/锁屏通知保活（BUG 2 修复）：
-///
-/// Android 后台进程数分钟内即被冻结/查杀（MIUI 更激进），Matrix 长连接
-/// 随之停止——消息通知、来电铃声全部无法触达。本服务组合三层保活：
-/// 1. dataSync 类型前台服务（低优先级无声常驻通知）提升进程优先级；
-/// 2. PARTIAL WakeLock + 高性能 WifiLock（原生 `chatflow/keepalive`
-///    通道）：前台服务不阻止息屏后 CPU 休眠与 WiFi 低功耗断连，长轮询
-///    同步仍会停——必须显式持锁；
-/// 3. 看门狗周期性重申（系统静默回收后自愈），回前台生命周期亦重申。
-///
-/// Android 14+ 对 dataSync 前台服务有每日时长配额（约 6 小时）；厂商
-/// ROM（MIUI 等）需用户开启自启动与电池优化白名单（登录后一次性引导，
-/// 见 AppHome `_primeBatteryOptimization`）。
+/// Android 消息同步保活。运行态只在原生确认 FGS 成功后建立；
+/// 系统停止/超时时由原生先释放锁，再尽力通知 Dart。恢复只由显式
+/// ensureStarted（登录/前台生命周期）触发，不周期性后台重启。
 abstract interface class SyncKeepAliveBackend {
   Future<void> start({
     required int notificationId,
@@ -33,7 +23,7 @@ abstract interface class SyncKeepAliveBackend {
 
 /// 原生保活钩子：唤醒锁/WiFi 锁的获取与释放（可注入测试）。
 abstract interface class KeepAliveHooks {
-  Future<void> acquire();
+  Future<bool> acquire();
   Future<void> release();
 }
 
@@ -45,11 +35,11 @@ final class MethodChannelKeepAliveHooks implements KeepAliveHooks {
   static const _channel = MethodChannel('chatflow/keepalive');
 
   @override
-  Future<void> acquire() async {
+  Future<bool> acquire() async {
     try {
-      await _channel.invokeMethod<bool>('acquireWakeLocks');
+      return await _channel.invokeMethod<bool>('acquireWakeLocks') == true;
     } catch (_) {
-      // 原生侧不可用（非 Android/通道未注册）时静默降级。
+      return false;
     }
   }
 
@@ -137,7 +127,7 @@ final class ArbiterSyncKeepAliveBackend implements SyncKeepAliveBackend {
     required String body,
   }) async {
     await _ensureInit();
-    await arbiter.acquire(
+    final result = await arbiter.acquire(
       ForegroundServiceOwner.keepAlive,
       ForegroundServiceRequest(
         notificationId: notificationId,
@@ -156,6 +146,9 @@ final class ArbiterSyncKeepAliveBackend implements SyncKeepAliveBackend {
         },
       ),
     );
+    if (result != ForegroundServiceApplyResult.applied) {
+      throw StateError('Foreground service was not applied');
+    }
   }
 
   @override
@@ -207,7 +200,10 @@ final class FlutterSyncKeepAliveBackend implements SyncKeepAliveBackend {
     await _ensureInit();
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await android?.startForegroundService(
+    if (android == null) {
+      throw StateError('Android foreground service unavailable');
+    }
+    await android.startForegroundService(
       notificationId,
       title,
       body,
@@ -236,10 +232,9 @@ final class FlutterSyncKeepAliveBackend implements SyncKeepAliveBackend {
   }
 }
 
-/// 状态机（C05 加固）：幂等启动/停止；后端失败不抛出（保活是尽力而为，
-/// 绝不阻断会话主流程）。资源清理不依赖 `_running` 单一布尔——服务、
-/// 唤醒锁、看门狗各自跟踪，失败路径与 stop 的 finally 语义中幂等释放；
-/// stop 使在途启动失效（epoch），迟到的启动结果不重新持有资源。
+/// desired 是会话意愿；running/locksAcquired 只代表已确认的原生状态。
+/// stop 递增代数，让迟到的启动/取锁完成失效。原生停止后保留意愿，
+/// 但不自动重启，等待下一次明确的前台恢复请求。
 final class SyncKeepAliveService {
   SyncKeepAliveService({
     SyncKeepAliveBackend? backend,
@@ -251,29 +246,51 @@ final class SyncKeepAliveService {
   final SyncKeepAliveBackend backend;
   final KeepAliveHooks hooks;
 
-  /// 看门狗周期：重申周期不宜过密（耗电），10 分钟可覆盖多数回收场景。
+  /// 保留调用兼容性；R4 不再创建后台重申定时器。
   @visibleForTesting
   final Duration watchdogInterval;
 
+  bool _desired = false;
   bool _serviceRunning = false;
   bool _locksAcquired = false;
   bool _stopping = false;
   bool _startAttempted = false;
-
-  /// 启动代数：stop 递增，使在途 start 的迟到完成失效并回滚。
   int _startEpoch = 0;
+  Future<void>? _starting;
+  int? _startingEpoch;
+  StreamSubscription<String>? _lifecycle;
 
+  bool get isDesired => _desired;
   bool get isRunning => _serviceRunning;
   bool get locksAcquired => _locksAcquired;
 
-  Timer? _watchdog;
+  bool _accepts(int epoch) => epoch == _startEpoch && _desired && !_stopping;
 
-  bool _accepts(int epoch) => epoch == _startEpoch && !_stopping;
+  Future<void> ensureStarted() {
+    if (_stopping) return Future.value();
+    _desired = true;
+    _lifecycle ??= ForegroundServiceLifecycle.events.listen((event) {
+      if (event == 'locksReleased') {
+        _locksAcquired = false;
+        return;
+      }
+      _startEpoch++;
+      _serviceRunning = false;
+      _locksAcquired = false;
+    });
+    final pending = _starting;
+    if (pending != null) {
+      if (_startingEpoch == _startEpoch) return pending;
+      // A new explicit resume waits for the old attempt's rollback first.
+      return pending.then((_) async {
+        if (_desired && !_stopping) await ensureStarted();
+      });
+    }
+    _startingEpoch = _startEpoch;
+    return _starting = _start(_startEpoch).whenComplete(() => _starting = null);
+  }
 
-  Future<void> ensureStarted() async {
-    if (_stopping) return;
-    final epoch = _startEpoch;
-    _watchdog ??= Timer.periodic(watchdogInterval, (_) => runWatchdogTick());
+  Future<void> _start(int epoch) async {
     if (!_serviceRunning) {
       _startAttempted = true;
       try {
@@ -283,76 +300,55 @@ final class SyncKeepAliveService {
           title: '畅聊消息服务运行中',
           body: '保持消息与来电实时到达',
         );
-        if (!_accepts(epoch)) {
-          // stop 已发生：回滚这次迟到的启动，不重新持有资源。
-          try {
-            await backend.stop();
-          } catch (_) {}
-          return;
-        }
-        _serviceRunning = true;
       } catch (_) {
-        // 启动失败（权限/ROM 限制）静默降级；回前台生命周期可重试。
-        // 注意：服务未运行时仍降级持有唤醒锁（弱保活）——但会被跟踪，
-        // stop() 必定释放。
+        return; // 没有合法 FGS 时不取锁。
       }
+      if (!_accepts(epoch)) {
+        try {
+          await backend.stop();
+        } catch (_) {}
+        return;
+      }
+      _serviceRunning = true;
     }
-    await _acquireLocks(epoch);
-  }
-
-  Future<void> _acquireLocks(int epoch) async {
     if (_locksAcquired) return;
-    await hooks.acquire().catchError((_) {});
-    if (!_accepts(epoch)) {
-      await hooks.release().catchError((_) {});
+    var acquired = false;
+    try {
+      acquired = await hooks.acquire();
+    } catch (_) {}
+    if (!_accepts(epoch) || !acquired) {
+      // 原生实现也回滚部分获取；重复释放仍幂等。
+      try {
+        await hooks.release();
+      } catch (_) {}
       return;
     }
     _locksAcquired = true;
   }
 
-  /// 看门狗拍：运行中无条件重申前台服务与唤醒锁（幂等），系统静默
-  /// 回收后自愈；停止后为空操作。测试可直接驱动。
+  /// 兼容既有测试/调用入口；系统生命周期是实际状态的唯一来源。
   @visibleForTesting
-  Future<void> runWatchdogTick() async {
-    if (_stopping) return;
-    if (_serviceRunning) {
-      try {
-        await backend.start(
-          notificationId: FlutterSyncKeepAliveBackend.notificationId,
-          channelTitle: FlutterSyncKeepAliveBackend.channelName,
-          title: '畅聊消息服务运行中',
-          body: '保持消息与来电实时到达',
-        );
-      } catch (_) {
-        // 重申失败保留运行态，下一拍再试。
-      }
-    }
-    if (_locksAcquired) {
-      // 重申锁（部分系统静默释放后自愈）。
-      await hooks.acquire().catchError((_) {});
-    }
-  }
+  Future<void> runWatchdogTick() async {}
 
   Future<void> stop() async {
+    if (_stopping) return;
     _stopping = true;
+    _desired = false;
+    _startEpoch++;
+    _serviceRunning = false;
     try {
-      _startEpoch++; // 在途启动失效。
-      _watchdog?.cancel();
-      _watchdog = null;
-      _serviceRunning = false;
-      // 与 _running 无关：已持有的锁必释放（C05：stop 不得因"服务未
-      // 启动成功"提前返回而漏掉清理）。从未尝试启动时不触达后端（保持
-      // 既有契约）；启动过（即使失败）则尽力停止。
+      await _lifecycle?.cancel();
+      _lifecycle = null;
       if (_locksAcquired) {
         _locksAcquired = false;
-        await hooks.release().catchError((_) {});
+        try {
+          await hooks.release();
+        } catch (_) {}
       }
       if (_startAttempted) {
         try {
           await backend.stop();
-        } catch (_) {
-          // 服务本就未运行时停止失败无害。
-        }
+        } catch (_) {}
       }
       _startAttempted = false;
     } finally {

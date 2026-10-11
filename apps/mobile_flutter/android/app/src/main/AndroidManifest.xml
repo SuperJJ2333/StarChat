@@ -98,7 +98,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- 通话保活：本地通知插件的前台服务，声明麦克风/摄像头类型 -->
+        <!-- 受控19.4.2插件FGS：同步/通话共享；超时原生释放同步锁并stopSelf。 -->
         <service
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
             android:exported="false"

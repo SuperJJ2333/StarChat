@@ -2,7 +2,6 @@ package com.liuhetong.mobile
 
 import android.content.Intent
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -17,8 +16,7 @@ import me.leolin.shortcutbadger.ShortcutBadger
 /// 厂商启动器差异由 ShortcutBadger 适配；不支持时静默降级，不报错。
 class MainActivity : FlutterActivity() {
     private var deltaUpdate: com.liuhetong.mobile.update.AndroidDeltaUpdate? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var wifiLock: WifiManager.WifiLock? = null
+    private val keepAliveOwner by lazy { SyncKeepAliveResourceOwner.get(applicationContext) }
 
     /// FLAG_SECURE lease 计数（闪照查看器持有；> 0 时保持安全窗口）。
     private var secureLeaseCount = 0
@@ -72,6 +70,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        com.dexterous.flutterlocalnotifications.ForegroundService.setResourceOwner(keepAliveOwner)
+        val foregroundLifecycle = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/foreground_service")
+        keepAliveOwner.onEvent = { event -> foregroundLifecycle.invokeMethod(event, null) }
         deltaUpdate = com.liuhetong.mobile.update.AndroidDeltaUpdate(this, flutterEngine.dartExecutor.binaryMessenger)
         com.liuhetong.mobile.push.NativeMessageNotifications.attach(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
         com.liuhetong.mobile.push.NativeMessageNotifications.acceptIntent(applicationContext, intent)
@@ -382,15 +383,14 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "acquireWakeLocks" -> {
                         try {
-                            acquireWakeLocks()
-                            result.success(true)
+                            result.success(keepAliveOwner.acquire())
                         } catch (_: Exception) {
                             result.success(false)
                         }
                     }
                     "releaseWakeLocks" -> {
                         try {
-                            releaseWakeLocks()
+                            keepAliveOwner.release()
                             result.success(true)
                         } catch (_: Exception) {
                             result.success(false)
@@ -422,42 +422,6 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun acquireWakeLocks() {
-        if (wakeLock?.isHeld != true) {
-            val pm = getSystemService(PowerManager::class.java)
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "chatflow:sync").apply {
-                setReferenceCounted(false)
-                // C05：带超时持有（20 分钟）——泄漏时自释放；Dart 看门狗
-                // 每 10 分钟重申，正常运行不会到期。
-                acquire(20 * 60 * 1000L)
-            }
-        }
-        if (wifiLock?.isHeld != true) {
-            val wifi = applicationContext.getSystemService(WifiManager::class.java)
-            // API 34+ 用低时延模式；低版本用高性能模式防 WiFi 息屏休眠。
-            val mode = if (Build.VERSION.SDK_INT >= 34) {
-                WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-            } else {
-                WifiManager.WIFI_MODE_FULL_HIGH_PERF
-            }
-            wifiLock = wifi.createWifiLock(mode, "chatflow:sync").apply {
-                setReferenceCounted(false)
-                acquire()
-            }
-        }
-    }
-
-    private fun releaseWakeLocks() {
-        try {
-            wakeLock?.takeIf { it.isHeld }?.release()
-        } catch (_: Exception) {
-        }
-        try {
-            wifiLock?.takeIf { it.isHeld }?.release()
-        } catch (_: Exception) {
-        }
-    }
-
     // Flutter has already handled child routes before requesting a system pop.
     // Preserve the engine/session when Back reaches the app root (also pre-31).
     override fun popSystemNavigator(): Boolean {
@@ -467,11 +431,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        keepAliveOwner.setForeground(true)
         deltaUpdate?.foreground(true)
         com.liuhetong.mobile.push.NativeMessageNotifications.lifecycle(applicationContext, true)
     }
 
     override fun onPause() {
+        keepAliveOwner.setForeground(false)
         deltaUpdate?.foreground(false)
         com.liuhetong.mobile.push.NativeMessageNotifications.lifecycle(applicationContext, false)
         super.onPause()
@@ -482,11 +448,6 @@ class MainActivity : FlutterActivity() {
         com.liuhetong.mobile.push.NativeMessageNotifications.acceptIntent(applicationContext, intent)
     }
 
-    override fun onDestroy() {
-        releaseWakeLocks()
-        super.onDestroy()
-    }
-
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
@@ -495,6 +456,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        keepAliveOwner.onEvent = null
         deltaUpdate?.close()
         deltaUpdate = null
         // 引擎销毁：移除通道处理器与 CallManager 监听（防泄漏/防重复注册）。

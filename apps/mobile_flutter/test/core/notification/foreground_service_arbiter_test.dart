@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/notification/foreground_service_arbiter.dart';
@@ -9,6 +12,7 @@ import 'package:liuhetong_mobile/features/matrix/call_notifications.dart';
 /// 通话结束的 stopForegroundService 会同时杀掉消息保活（同一 OS 服务）。
 /// 仲裁器必须保证：通话释放后保活被重申而不是被停止。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late _RecordingForegroundBackend backend;
   late NotificationDiagnostics diagnostics;
 
@@ -123,6 +127,8 @@ void main() {
       final arbiter = arbiterInstance();
       await arbiter.acquire(
           ForegroundServiceOwner.keepAlive, keepAliveRequest());
+      expect(arbiter.isActive(ForegroundServiceOwner.keepAlive), isFalse,
+          reason: '启动失败不能虚报实际运行');
       expect(
         diagnostics
             .snapshot()
@@ -131,9 +137,56 @@ void main() {
         reason: '前台服务失败必须留下诊断痕迹（可定位层级）',
       );
     });
+
+    test('R4：迟到start与release串行收敛，不能恢复已释放owner', () async {
+      final gate = Completer<void>();
+      backend.startGate = gate;
+      final arbiter = arbiterInstance();
+      final starting =
+          arbiter.acquire(ForegroundServiceOwner.keepAlive, keepAliveRequest());
+      await Future<void>.delayed(Duration.zero);
+      final stopping = arbiter.release(ForegroundServiceOwner.keepAlive);
+      gate.complete();
+      expect(await starting, ForegroundServiceApplyResult.stopped);
+      await stopping;
+      expect(arbiter.isActive(ForegroundServiceOwner.keepAlive), isFalse);
+      expect(arbiter.isDesired(ForegroundServiceOwner.keepAlive), isFalse);
+      expect(backend.stops, 1);
+    });
+
+    test('R4：共享FGS超时后释放通话owner不能后台重启保活', () async {
+      final arbiter = arbiterInstance();
+      await arbiter.acquire(
+          ForegroundServiceOwner.keepAlive, keepAliveRequest());
+      await arbiter.acquire(ForegroundServiceOwner.ongoingCall, callRequest());
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+              'chatflow/foreground_service',
+              const StandardMethodCodec()
+                  .encodeMethodCall(const MethodCall('stopped', 'timeout')),
+              (_) {});
+      expect(arbiter.isDesired(ForegroundServiceOwner.keepAlive), isTrue);
+      expect(arbiter.isActive(ForegroundServiceOwner.keepAlive), isFalse);
+      expect(arbiter.isActive(ForegroundServiceOwner.ongoingCall), isFalse);
+      await arbiter.release(ForegroundServiceOwner.ongoingCall);
+      await arbiter.reassert();
+      expect(backend.starts, hasLength(2));
+      await arbiter.release(ForegroundServiceOwner.keepAlive);
+    });
   });
 
   group('跨业务集成（keepalive + 通话共用一个仲裁器）', () {
+    test('R4：仲裁器start被拒时保活不虚报成功、不获取锁', () async {
+      backend.failStart = true;
+      final keepAlive = SyncKeepAliveService(
+        backend: ArbiterSyncKeepAliveBackend(arbiter: arbiterInstance()),
+        hooks: const _NoopHooks(),
+      );
+      await keepAlive.ensureStarted();
+      expect(keepAlive.isRunning, isFalse);
+      expect(keepAlive.locksAcquired, isFalse);
+      await keepAlive.stop();
+    });
     test('看门狗重申与通话呈现互不干扰；通话结束回写保活', () async {
       final arbiter = arbiterInstance();
       final keepAlive = SyncKeepAliveService(
@@ -171,11 +224,13 @@ final class _RecordingForegroundBackend implements ForegroundServiceBackend {
   final starts = <ForegroundServiceRequest>[];
   var stops = 0;
   var failStart = false;
+  Completer<void>? startGate;
 
   @override
   Future<void> start(ForegroundServiceRequest request) async {
     if (failStart) throw StateError('foreground service denied');
     starts.add(request);
+    await startGate?.future;
   }
 
   @override
@@ -186,7 +241,7 @@ final class _NoopHooks implements KeepAliveHooks {
   const _NoopHooks();
 
   @override
-  Future<void> acquire() async {}
+  Future<bool> acquire() async => true;
 
   @override
   Future<void> release() async {}
