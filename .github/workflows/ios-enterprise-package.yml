@@ -57,6 +57,8 @@ jobs:
           cp apps/mobile_flutter/pubspec.lock "$RUNNER_TEMP/device-evidence/pubspec.lock.before"
           shasum -a 256 apps/mobile_flutter/pubspec.yaml apps/mobile_flutter/pubspec.lock \
             apps/mobile_flutter/ios/Podfile apps/mobile_flutter/ios/Runner/Runner.entitlements \
+            apps/mobile_flutter/ios/Runner/PrivacyInfo.xcprivacy \
+            apps/mobile_flutter/ios/Runner/IOSMediaStoragePolicy.swift \
             apps/mobile_flutter/assets/html/statistics_tools_combined_v2.html \
             > "$RUNNER_TEMP/device-evidence/source-input-sha256.txt"
       - name: Execute actual Ruby permission hook without skips
@@ -74,6 +76,8 @@ jobs:
                      for s in suites for field in ('skipped', 'failures', 'errors'))
           print('Both permission capability tests executed: 2 PASS / 0 SKIP')
           PY
+          python3 -m pytest tests/mobile/test_ios_storage_privacy.py -q \
+            2>&1 | tee "$RUNNER_TEMP/device-evidence/storage-privacy.log"
       - name: Restore all production plugins with the committed lock
         working-directory: apps/mobile_flutter
         run: |
@@ -89,7 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           flutter build ios --release --no-codesign --no-pub \
-            --build-name=0.4.44 --build-number=2213 --no-tree-shake-icons \
+            --build-name=0.4.45 --build-number=2214 --no-tree-shake-icons \
             --dart-define=CHATFLOW_PERFORMANCE_METRICS=true \
             --dart-define=LIUHETONG_IN_APP_UPDATE=true \
             --dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com \
@@ -117,6 +121,12 @@ jobs:
           target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'device-evidence/permission-usage.json'
           target.write_text(json.dumps({key: built[key] for key in keys}, ensure_ascii=False, indent=2) + '\n')
           print('Built device permission usage descriptions match source: 5 PASS')
+          source_privacy = plistlib.loads((root / 'ios/Runner/PrivacyInfo.xcprivacy').read_bytes())
+          built_privacy = plistlib.loads((root / 'build/ios/iphoneos/Runner.app/PrivacyInfo.xcprivacy').read_bytes())
+          for entry in source_privacy['NSPrivacyAccessedAPITypes']:
+              assert entry in built_privacy['NSPrivacyAccessedAPITypes'], 'Required API reason missing from device app'
+          (target.parent / 'built-storage-privacy.json').write_text(json.dumps(built_privacy, indent=2) + '\n')
+          print('Built device app includes the reviewed storage/privacy reason declarations')
           PY
       - name: Package complete Payload and verify unsigned handoff
         run: |
@@ -126,18 +136,18 @@ jobs:
           ditto --norsrc --noextattr apps/mobile_flutter/build/ios/iphoneos/Runner.app "$stage/Payload/Runner.app"
           export COPYFILE_DISABLE=1
           ditto -c -k --keepParent --norsrc --noextattr "$stage/Payload" \
-            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.44-build2213-unsigned.ipa"
+            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.45-build2214-unsigned.ipa"
           python3 scripts/prepare_ios_unsigned_ipa.py \
             --app apps/mobile_flutter/build/ios/iphoneos/Runner.app \
-            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.44-build2213-unsigned.ipa" \
+            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.45-build2214-unsigned.ipa" \
             --source-root apps/mobile_flutter \
             --output-dir "$RUNNER_TEMP/unsigned-ios" \
             --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" \
-            --version 0.4.44 --build 2213 \
+            --version 0.4.45 --build 2214 \
             --toolchain-report "$RUNNER_TEMP/device-evidence/toolchain.txt" \
             2>&1 | tee "$RUNNER_TEMP/device-evidence/unsigned-package-gate.log"
-          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.44-build2213-unsigned.ipa" \
+          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.45-build2214-unsigned.ipa" \
             > "$RUNNER_TEMP/device-evidence/ipa-sha256.txt"
       - name: Capture generated device inputs even on failure
         if: always()
@@ -170,7 +180,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ChatFlow-0.4.44-build2213-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ChatFlow-0.4.45-build2214-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/unsigned-ios/
           if-no-files-found: error
           retention-days: 14
