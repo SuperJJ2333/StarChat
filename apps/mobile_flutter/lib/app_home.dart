@@ -1644,6 +1644,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       outbox: outbox,
       networkState: network,
       senderFor: OutboxRoomSenderRegistry.shared.senderFor,
+      roomSettlements:
+          OutboxRoomSenderRegistry.shared.pendingRoomTransportSettlements,
       // 房间没有打开时的后台发送路径：临时取租约发送后立即释放，
       // 不导航、不 push 页面（房间打开路径仍然唯一）。
       leaseFactory: _openOutboxLease,
