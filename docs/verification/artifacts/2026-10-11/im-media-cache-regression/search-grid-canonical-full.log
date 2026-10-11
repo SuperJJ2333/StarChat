@@ -1,0 +1,26 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
+00:00 +0: RoomPage current and old media decode and open; late and foreign results are rejected
+Scenario: current image
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+Scenario: old image
+Scenario: old video
+Scenario: late hidden
+Scenario: late disposed
+Scenario: foreign source
+Scenario: retry image
+Scenario: visible grid
+Scenario: late revoked
+Scenario: flash excluded
+02:16 +1: All tests passed!

@@ -1,0 +1,49 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
+00:00 +0: RoomPage current and old media decode and open; late and foreign results are rejected
+Scenario: current image
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+SYNTHETIC_BUBBLE [<'image-$old-image'>] visible=true visible=false generation=0 checking=false started=false loaded=false failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$old-image'>] probe-start visible=true generation=0 checking=true started=false loaded=false failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] visible=true visible=false generation=0 checking=false started=false loaded=false failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] probe-start visible=true generation=0 checking=true started=false loaded=false failed=false scope=null
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+SYNTHETIC_BUBBLE [<'image-$old-image'>] probe-complete captured=0 bytes=null visible=true generation=0 checking=true started=false loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$old-image'>] load-start visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] probe-complete captured=0 bytes=null visible=true generation=0 checking=true started=false loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] load-start visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] source-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] persist-enqueue
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] persist-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] source-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] persist-enqueue
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] persist-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] persist-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] memory-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] memory-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] session-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] session-done
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] load-complete captured=1 bytes=68 visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] persist-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] memory-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] memory-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] session-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] session-done
+SYNTHETIC_BUBBLE [<'image-$old-image'>] load-complete captured=1 bytes=68 visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$old-image'>] visible=false visible=true generation=1 checking=false started=true loaded=true failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$old-image'>] cancel visible=false generation=1 checking=false started=true loaded=true failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] visible=false visible=true generation=1 checking=false started=true loaded=true failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] cancel visible=false generation=1 checking=false started=true loaded=true failed=false scope=true
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+SYNTHETIC_BUBBLE [<'image-$old-image'>] cancel visible=false generation=2 checking=false started=false loaded=true failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] cancel visible=false generation=2 checking=false started=false loaded=true failed=false scope=null
+00:21 +1: All tests passed!

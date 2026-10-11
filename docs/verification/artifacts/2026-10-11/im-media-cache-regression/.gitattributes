@@ -1,0 +1,3 @@
+# Preserve cross-checkout evidence bytes; unified patches require blank context prefixes.
+search-grid-* text eol=lf
+*.patch text eol=lf whitespace=-blank-at-eol

@@ -1,0 +1,69 @@
+diff --git a/apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart b/apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart
+index 7a9f189b..7b5e9aa7 100644
+--- a/apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart
++++ b/apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart
+@@ -99,6 +99,12 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
+   Size? _sourceSize;
+   MediaConsumerScope? _scope;
+ 
++  void _trace(String stage) {
++    if (const bool.fromEnvironment('SEARCH_MEDIA_DIAGNOSTICS')) {
++      debugPrint('SYNTHETIC_BUBBLE ${widget.key} $stage visible=$_visible generation=$_generation checking=$_checkingCache started=$_started loaded=$_sourceLoaded failed=$_failed scope=${_scope?.isActive}');
++    }
++  }
++
+   @override
+   void initState() {
+     super.initState();
+@@ -110,6 +116,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
+   MediaConsumerScope _scopeForWork() => _scope ??= MediaConsumerScope();
+ 
+   void _cancelWork() {
++    _trace('cancel');
+     _generation++;
+     _scope?.cancel();
+     _scope = null;
+@@ -118,6 +125,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
+   }
+ 
+   void _setVisible(bool visible) {
++    _trace('visible=$visible');
+     if (_visible == visible) return;
+     setState(() => _visible = visible);
+     if (!visible) {
+@@ -132,8 +140,10 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
+     final read = widget.loadCached;
+     if (!_visible || _bytes != null || read == null) return;
+     _checkingCache = true;
++    _trace('probe-start');
+     final generation = _generation;
+     void complete(Uint8List? bytes) {
++      _trace('probe-complete captured=$generation bytes=${bytes?.length}');
+       if (!mounted || generation != _generation) return;
+       setState(() {
+         _checkingCache = false;
+@@ -160,6 +170,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
+       widget.isScrolling?.addListener(_startWhenIdle);
+     }
+     if (oldWidget.sourceIdentity != widget.sourceIdentity) {
++      _trace('identity-change');
+       _cancelWork();
+       _sourceSize = widget.sourceSize;
+       _bytes = null;
+@@ -193,13 +204,16 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
+     }
+     _started = true;
+     final generation = ++_generation;
++    _trace('load-start');
+     _scopeForWork().run(widget.load).then((bytes) {
++      _trace('load-complete captured=$generation bytes=${bytes.length}');
+       if (!mounted || generation != _generation) return;
+       setState(() {
+         _sourceLoaded = true;
+         _accept(bytes);
+       });
+     }, onError: (Object _) {
++      _trace('load-error captured=$generation type=${_.runtimeType}');
+       if (!mounted || generation != _generation) return;
+       setState(() => _failed = true);
+     });

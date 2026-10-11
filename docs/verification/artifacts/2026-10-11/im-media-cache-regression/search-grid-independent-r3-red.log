@@ -1,0 +1,72 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r3/milestone_phase_test.dart
+00:00 +0: RoomPage current and old media decode and open; late and foreign results are rejected
+Scenario: current image
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+SYNTHETIC_BUBBLE [<'image-$old-image'>] visible=true visible=false generation=0 checking=false started=false loaded=false failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$old-image'>] probe-start visible=true generation=0 checking=true started=false loaded=false failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] visible=true visible=false generation=0 checking=false started=false loaded=false failed=false scope=null
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] probe-start visible=true generation=0 checking=true started=false loaded=false failed=false scope=null
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] probe-complete captured=0 bytes=null visible=true generation=0 checking=true started=false loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] load-start visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$old-image'>] probe-complete captured=0 bytes=null visible=true generation=0 checking=true started=false loaded=false failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$old-image'>] load-start visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] source-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] persist-enqueue
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] persist-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] source-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] persist-enqueue
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] persist-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] persist-error: PathNotFoundException: Directory listing failed, path = 'C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\apps\mobile_flutter\../../docs/verification/artifacts/2026-10-04/search-media-grid-followup\widget-a976c22a/emoji-previews-v1/8d78235bdc569bf10043315bdd649a5242d837985d399ecf3e834a5608791a9b\*' (OS Error: 系统找不到指定的路径。, errno = 3)
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] memory-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] memory-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] session-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$old-image","preview-v1"] session-done
+SYNTHETIC_BUBBLE [<'image-$old-image'>] load-complete captured=1 bytes=68 visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+BEFORE_DECODE_ASSERT decoded=1 budgetBytes=0 budgetQueued=0 schedulerActive=0 schedulerConsumers=0 downloads=[/_matrix/client/v1/media/download/matrix.test/image-thumbnail]
+TEST_FINALLY_START scenario=current image
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] persist-error: PathNotFoundException: Directory listing failed, path = 'C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\apps\mobile_flutter\../../docs/verification/artifacts/2026-10-04/search-media-grid-followup\widget-a976c22a/emoji-previews-v1/8d78235bdc569bf10043315bdd649a5242d837985d399ecf3e834a5608791a9b\*' (OS Error: 系统找不到指定的路径。, errno = 3)
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] memory-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] memory-done
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] session-start
+SYNTHETIC_PREVIEW ["https://matrix.test|@self-current-image:matrix.test","!search-media-current-image:matrix.test","$current-neighbor","preview-v1"] session-done
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] load-complete captured=1 bytes=68 visible=true generation=1 checking=false started=true loaded=false failed=false scope=true
+TEST_FINALLY_EXTRA_SETTLE_DONE scenario=current image
+SYNTHETIC_BUBBLE [<'image-$old-image'>] cancel visible=true generation=1 checking=false started=true loaded=true failed=false scope=true
+SYNTHETIC_BUBBLE [<'image-$current-neighbor'>] cancel visible=true generation=1 checking=false started=true loaded=true failed=false scope=true
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: <2>
+  Actual: <1>
+Both current messages must finish the shared preview
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r3/milestone_phase_test.dart:319:11)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r3/milestone_phase_test.dart line 319
+The test description was:
+  RoomPage current and old media decode and open; late and foreign results are rejected
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:15 +0 -1: RoomPage current and old media decode and open; late and foreign results are rejected [E]
+  Test failed. See exception logs above.
+  The test description was: RoomPage current and old media decode and open; late and foreign results are rejected
+
+00:15 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r3/milestone_phase_test.dart: RoomPage current and old media decode and open; late and foreign results are rejected

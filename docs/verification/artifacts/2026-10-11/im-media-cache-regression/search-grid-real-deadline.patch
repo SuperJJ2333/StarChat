@@ -1,0 +1,45 @@
+diff --git a/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart b/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
+index ed2121dd..2f691339 100644
+--- a/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
+@@ -180,7 +180,11 @@ void main() {
+         final artifacts = await Directory(
+                 '../../docs/verification/artifacts/2026-10-04/search-media-grid-followup')
+             .create(recursive: true);
+-        directory = await artifacts.createTemp('widget-');
++        // Match native PathProvider's canonical absolute paths. Keeping the
++        // test's ../../ segments can exceed Windows directory-enumeration
++        // limits and silently take the optional preview-write failure path.
++        final artifactRoot = Directory(await artifacts.resolveSymbolicLinks());
++        directory = await artifactRoot.createTemp('widget-');
+         PathProviderPlatform.instance = _Paths(directory.absolute.path);
+         MediaIndex.overrideShared(MediaIndex(
+             databasePath: '${directory.absolute.path}/index.db',
+@@ -306,13 +310,23 @@ void main() {
+           // Complete both current consumers before navigation hides them; an
+           // unfinished last-consumer cancellation intentionally publishes no
+           // cache and cannot establish the cache-reuse assertion below.
+-          for (var attempt = 0;
+-              attempt < 100 && decodedCurrentImages() != 2;
+-              attempt++) {
++          // Real file operations started in the widget zone can require a
++          // pump between successive awaits. Advance I/O and frames together,
++          // under the same ten-second real deadline, instead of allowing only
++          // one pump per 100 ms of idle wall time.
++          final decoding = Stopwatch()..start();
++          var decodePumps = 0;
++          while (decodedCurrentImages() != 2 &&
++              decoding.elapsed < const Duration(seconds: 10)) {
+             await tester.runAsync(
+-                () => Future<void>.delayed(const Duration(milliseconds: 100)));
++                () => Future<void>.delayed(const Duration(milliseconds: 16)));
+             await tester.pump(const Duration(milliseconds: 16));
++            decodePumps++;
+           }
++          decoding.stop();
++          debugPrint(
++              'Initial shared preview: real=${decoding.elapsedMilliseconds}'
++              'ms, pumps=$decodePumps, advancedFakeMs=${decodePumps * 16}');
+           expect(decodedCurrentImages(), 2,
+               reason: 'Both current messages must finish the shared preview');
+           expect(

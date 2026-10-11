@@ -1,0 +1,124 @@
+{
+  "base_runtime": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "predecessor_rejected": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "runtime_lib_git_tree": "88e982c36178b7d9096c581de199e27f6a34febf",
+  "runtime_native_dependencies_diff_empty": true,
+  "recorded_utc": "2026-10-11T09:37:21.4607048Z",
+  "status": "Author final full file PASS and analyzer zero; independent incremental acceptance pending",
+  "sources": [
+    {
+      "path": "apps\\mobile_flutter\\test\\features\\matrix\\room_search_media_grid_test.dart",
+      "raw_sha256": "446dc8f815ab1566528870e2ca9056d447e778fb847db9470f20df35e31545d6",
+      "lf_sha256": "446dc8f815ab1566528870e2ca9056d447e778fb847db9470f20df35e31545d6"
+    },
+    {
+      "path": "apps\\mobile_flutter\\lib\\features\\matrix\\room_image_preview_cache.dart",
+      "raw_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+      "lf_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd"
+    },
+    {
+      "path": "apps\\mobile_flutter\\lib\\ui\\chat\\contain_image_bubble.dart",
+      "raw_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+      "lf_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-preview-phase.log",
+      "raw_sha256": "7b0619692f1c63724c9bab55e17b6db424169bf841f5d0f099ecb6a03d826076",
+      "lf_sha256": "7b0619692f1c63724c9bab55e17b6db424169bf841f5d0f099ecb6a03d826076"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-preview-errors-r2.log",
+      "raw_sha256": "66319380765cb12a1cba237fb1d78f6cf64e5c826a078818f8abed4a7a468598",
+      "lf_sha256": "66319380765cb12a1cba237fb1d78f6cf64e5c826a078818f8abed4a7a468598"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-short-preview-red.log",
+      "raw_sha256": "040f11e58176255905091648b379ba885844dcf93e276edc2f1c818d6466eb4a",
+      "lf_sha256": "040f11e58176255905091648b379ba885844dcf93e276edc2f1c818d6466eb4a"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-canonical-diagnostic.log",
+      "raw_sha256": "9c5f11a495520f11483d56a23ca6b8cf220b833b9aa6409206cbf3d3b7db7ae9",
+      "lf_sha256": "9c5f11a495520f11483d56a23ca6b8cf220b833b9aa6409206cbf3d3b7db7ae9"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-canonical-full.log",
+      "raw_sha256": "79319354d05010a5a65b51da88632e9bcb46ab4640d5abc5bd2033c9a09de662",
+      "lf_sha256": "79319354d05010a5a65b51da88632e9bcb46ab4640d5abc5bd2033c9a09de662"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-independent-r3-red.log",
+      "raw_sha256": "a7ab16aa877e134edbdda09181f04e4256328b563ca0f97975ab4140df7cacc5",
+      "lf_sha256": "a7ab16aa877e134edbdda09181f04e4256328b563ca0f97975ab4140df7cacc5"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-independent-r4-red.log",
+      "raw_sha256": "1f204ea013e5ec55553ea8f7a551893a0a47750c2e7fd86e82fa9220c5819a2a",
+      "lf_sha256": "1f204ea013e5ec55553ea8f7a551893a0a47750c2e7fd86e82fa9220c5819a2a"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-real-deadline-current.log",
+      "raw_sha256": "b9a22603fc524d0c478af227af9cf91654290b3fa7d6f51b24a93ce2cfac9201",
+      "lf_sha256": "b9a22603fc524d0c478af227af9cf91654290b3fa7d6f51b24a93ce2cfac9201"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-final-full.log",
+      "raw_sha256": "d520e40f35c37f655c31e66d16f1deb0fb4e4f12f7a960abead3202ba9164669",
+      "lf_sha256": "d520e40f35c37f655c31e66d16f1deb0fb4e4f12f7a960abead3202ba9164669"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-final-analyze.log",
+      "raw_sha256": "44f9dd50ea9f8d7d027e9a2a2d2de13d57b355801819c436da90493cad891955",
+      "lf_sha256": "44f9dd50ea9f8d7d027e9a2a2d2de13d57b355801819c436da90493cad891955"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\bubble-state-diagnostic.patch",
+      "raw_sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10",
+      "lf_sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\preview-phase-with-errors-diagnostic.patch",
+      "raw_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+      "lf_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-real-deadline.patch",
+      "raw_sha256": "9ab2c60aa89f5b5e7fdb9f5a0b22aa2c609d958075833ed3e9d932e4aede9f46",
+      "lf_sha256": "9ab2c60aa89f5b5e7fdb9f5a0b22aa2c609d958075833ed3e9d932e4aede9f46"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-canonical-full-receipt.json",
+      "raw_sha256": "07bff2de87d3dccb6a0d3d2b8bcf2d8307cc5f68a69e0bd22c73fac5e1c90b4d",
+      "lf_sha256": "c2942a566579f1841e9654f615a1fbfb691d1ec9a8ec8adf4bf2999502fb4d17"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-real-deadline-current-receipt.json",
+      "raw_sha256": "a3e488339833a33dfa7cfc14c55eb49cd55e25a70cf44d3d6bf667a2d67e6125",
+      "lf_sha256": "20fc4a9ac1f2c46cf45c75a33ca585f22bef2230a1f3e77570013db131d3d2ba"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\search-grid-final-full-receipt.json",
+      "raw_sha256": "646a2abba3ae39bad1a1f23355871a3b01b25753b4ea81aaa675c287fc155f69",
+      "lf_sha256": "d17f7828c6bcd9e66e4bb5846918f41efa1f136b0b80b0bfa4f2623fb19d40f4"
+    }
+  ],
+  "author_long_path": {
+    "error": "PathNotFoundException Directory listing failed errno3",
+    "raw_length": 267,
+    "normalized_length": 241
+  },
+  "short_alias": {
+    "identity_verified_released": true,
+    "mapping": "C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat",
+    "verified_free_before": true,
+    "drive": "T"
+  },
+  "independent_evidence_origin": "im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r3 and state-trace-r4/phase-trace.log",
+  "commands": [
+    "flutter test --no-pub --dart-define=SEARCH_MEDIA_SCENARIO=current image test/features/matrix/room_search_media_grid_test.dart --reporter expanded",
+    "flutter test --no-pub test/features/matrix/room_search_media_grid_test.dart --reporter expanded",
+    "flutter analyze --no-pub test/features/matrix/room_search_media_grid_test.dart"
+  ]
+}
