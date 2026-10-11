@@ -21,6 +21,14 @@ import 'media_index.dart';
 import 'media_disk_quota_index.dart';
 import 'media_cache_storage_policy.dart';
 
+// Source lifetime and publication demand are different: a canceled observer
+// may rejoin real work before it settles. Query current demand at publication
+// boundaries rather than canceling the scope that owns that work's resources.
+final _mediaPublicationGuardKey = Object();
+
+void _checkMediaPublication() =>
+    (Zone.current[_mediaPublicationGuardKey] as VoidCallback?)?.call();
+
 /// 本地媒体磁盘配额策略（Phase 2：账号内软配额 + 设备硬上限）。
 @immutable
 final class MediaQuotaPolicy {
@@ -444,6 +452,7 @@ final class MediaCache {
       return;
     }
     if (size <= 0) return;
+    _checkMediaPublication();
     final now = DateTime.now().millisecondsSinceEpoch;
     await MediaIndex.shared.put(MediaIndexEntry(
       accountNamespace: MediaIndex.shared.namespaceFor(accountId),
@@ -533,12 +542,17 @@ final class MediaCache {
 
   static Future<void> _atomicBytes(File file, List<int> bytes,
       {int? generation}) async {
-    if (generation != null && generation != _mediaGeneration) {
-      throw StateError('Media cache session changed');
+    void checkPublication() {
+      if (generation != null && generation != _mediaGeneration) {
+        throw StateError('Media cache session changed');
+      }
+      if (_clearingRoots.any((root) => file.path.startsWith('$root/'))) {
+        throw StateError('Media cache is being cleared');
+      }
+      _checkMediaPublication();
     }
-    if (_clearingRoots.any((root) => file.path.startsWith('$root/'))) {
-      throw StateError('Media cache is being cleared');
-    }
+
+    checkPublication();
     final previous = _atomicWrites[file.path];
     final flight = (() async {
       if (previous != null) {
@@ -546,13 +560,8 @@ final class MediaCache {
           await previous;
         } catch (_) {/* A failed reference can retry. */}
       }
-      if (generation != null && generation != _mediaGeneration) {
-        throw StateError('Media cache session changed');
-      }
-      if (_clearingRoots.any((root) => file.path.startsWith('$root/'))) {
-        throw StateError('Media cache is being cleared');
-      }
-      await _writeAtomicBytes(file, bytes);
+      checkPublication();
+      await _writeAtomicBytes(file, bytes, beforePublish: checkPublication);
     })();
     _atomicWrites[file.path] = flight;
     try {
@@ -564,11 +573,14 @@ final class MediaCache {
     }
   }
 
-  static Future<void> _writeAtomicBytes(File file, List<int> bytes) async {
+  static Future<void> _writeAtomicBytes(File file, List<int> bytes,
+      {VoidCallback? beforePublish}) async {
     final tmp = File('${file.path}.${const Uuid().v4()}.tmp');
     try {
       await tmp.writeAsBytes(bytes, flush: true);
-      if (await file.exists()) await file.delete();
+      beforePublish?.call();
+      // Rename replaces an existing file. Do not delete the old publication
+      // before the final demand check or while a cancel can interleave.
       await tmp.rename(file.path);
     } finally {
       await _deleteQuietly(tmp);
@@ -640,13 +652,15 @@ final class MediaCache {
     final existing = _storeFlights[flightKey];
     if (existing != null) return existing;
     final flight = _root(accountId).then((root) {
-      if (generation != _mediaGeneration) {
+      if (generation != _mediaGeneration ||
+          accountEpoch != accountGeneration(accountId)) {
         throw StateError('Media cache session changed');
       }
       if (expectedAccountGeneration != null &&
           expectedAccountGeneration != accountGeneration(accountId)) {
         throw StateError('Media cache account was cleared');
       }
+      _checkMediaPublication();
       return _store(root, accountId, roomId, eventId, verified,
           variant: variant,
           familyId: familyId,
@@ -1372,6 +1386,7 @@ final class MediaMemoryCache {
       if (!flight.isActive) throw MediaLoadCanceled();
       final owned = await _ownVerifiedBytesAsync(eventId, bytes);
       if (!flight.isActive) throw MediaLoadCanceled();
+      _checkMediaPublication();
       if (generation == _generation && flight.isActive) _store(eventId, owned);
       return owned;
     });
@@ -1527,6 +1542,7 @@ Future<Uint8List> _loadMediaWithCache(
   final scope = MediaConsumerScope.current;
   if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   final generation = _mediaGeneration;
+  final accountEpoch = MediaCache.accountGeneration(key.accountId);
   final root = await MediaCache._root(key.accountId);
   if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   if (generation != _mediaGeneration) {
@@ -1587,6 +1603,14 @@ Future<Uint8List> _loadMediaWithCache(
         bool hasConsumer() => scheduled
             ? mediaLoadScheduler.hasConsumers(taskKey)
             : child.isActive;
+        void checkPublication() {
+          if (generation != _mediaGeneration ||
+              accountEpoch != MediaCache.accountGeneration(key.accountId)) {
+            throw StateError('Media cache session changed');
+          }
+          if (!hasConsumer()) throw MediaLoadCanceled();
+        }
+
         Future<Uint8List> loadAdmitted() => sharedMediaTransferBudget
                 .run(MediaTransferPlan.download(limit), () async {
               if (!hasConsumer()) throw MediaLoadCanceled();
@@ -1695,17 +1719,20 @@ Future<Uint8List> _loadMediaWithCache(
                 return result;
               });
             });
+        Future<Uint8List> loadWithPublication() => runZoned(loadAdmitted,
+            zoneValues: {_mediaPublicationGuardKey: checkPublication});
         // Disk hits and already admitted outgoing bytes never wait on network
         // slots. Cold work queues by priority before reserving its entire peak.
-        if (!scheduled) return loadAdmitted();
+        if (!scheduled) return loadWithPublication();
         final sourceZone = Zone.current;
         final lease = mediaLoadScheduler.request(taskKey, () {
           // This scope belongs to the real source, not its first observer.
           // A new observer may join after the first leaves. Keep the budget
           // through verify/store; publish only while the task has consumers.
           final sourceScope = MediaConsumerScope(priority: child.priority);
-          return sourceZone.run(() =>
-              sourceScope.run(loadAdmitted).whenComplete(sourceScope.dispose));
+          return sourceZone.run(() => sourceScope
+              .run(loadWithPublication)
+              .whenComplete(sourceScope.dispose));
         },
             priority: child.priority,
             isVideo: isVideo ?? currentMediaLoadIsVideo,

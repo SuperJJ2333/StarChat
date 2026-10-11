@@ -1,0 +1,71 @@
+{
+  "commands": [
+    "flutter test --no-pub test/features/matrix/media_cache_publication_test.dart ../../docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart --reporter expanded",
+    "flutter test --no-pub test/features/matrix/media_cache_publication_test.dart test/features/matrix/media_consumer_integration_test.dart test/features/matrix/media_transfer_integrity_test.dart test/features/matrix/media_index_phase2_test.dart test/features/matrix/media_cache_clear_test.dart test/features/matrix/media_load_scheduler_test.dart test/ui/chat/contain_image_bubble_lifecycle_test.dart test/features/matrix/media_download_budget_test.dart test/features/matrix/media_audit_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/incoming_media_prefetch_test.dart --reporter expanded",
+    "flutter analyze --no-pub lib/features/matrix/media_cache.dart test/features/matrix/media_cache_publication_test.dart"
+  ],
+  "source_inputs": [
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_cache.dart",
+      "lf_sha256": "94e9cecf512b5e3f28c26fc87725580e5eb1fd266e4dc1d63db69a8780b7eff0",
+      "raw_sha256": "94e9cecf512b5e3f28c26fc87725580e5eb1fd266e4dc1d63db69a8780b7eff0"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart",
+      "lf_sha256": "34c988781be7ae39ed3623de507f57080a75322ebbbf9bbcc96cf6a3c01ed53e",
+      "raw_sha256": "34c988781be7ae39ed3623de507f57080a75322ebbbf9bbcc96cf6a3c01ed53e"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart",
+      "lf_sha256": "981b7a8dd15c517a6ffc0542fe97a23b32de3f32c16147f04fac9fe5fa06ceca",
+      "raw_sha256": "981b7a8dd15c517a6ffc0542fe97a23b32de3f32c16147f04fac9fe5fa06ceca"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "lf_sha256": "b552a7f5184b438d1487dc6168ccc984f43e03050ab51e306748ad9d957c4439",
+      "raw_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+    }
+  ],
+  "logs": [
+    {
+      "run_first_write_utc": "2026-10-11T07:10:04.4748383Z",
+      "stored_lf_sha256": "1ad5bc4c04db5e1954f49b139724e65a590b7c34fc97bec162078d5506a2140f",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\late-store-red.log",
+      "run_last_write_utc": "2026-10-11T07:10:11.8719201Z",
+      "raw_sha256": "f45538a0abadde40e99066d64bf652d61b919800a9ae16e0909007ec4d2069f7"
+    },
+    {
+      "run_first_write_utc": "2026-10-11T07:18:57.3806498Z",
+      "stored_lf_sha256": "d49e13da8ef64fa7f51f1fc80814b27c8dd0d4bcee61b0ceded8a60839fadffd",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\publication-red.log",
+      "run_last_write_utc": "2026-10-11T07:19:23.3511839Z",
+      "raw_sha256": "0c6082dfe79ed115be6805a47f9e0c2d658ec4903f11598908c75b4ca9d0f9b0"
+    },
+    {
+      "run_first_write_utc": "2026-10-11T07:20:11.6355645Z",
+      "stored_lf_sha256": "8ab37c0bbc2bdf323a0a4fb4da40ef5c6647134aa0a12faa4439b8fd48613d4d",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\publication-green.log",
+      "run_last_write_utc": "2026-10-11T07:23:39.1367695Z",
+      "raw_sha256": "fe9b4b1acc237f74afd4dc0df7c81a9464806b64c68fbeddf64d185a558022af"
+    },
+    {
+      "run_first_write_utc": "2026-10-11T07:21:52.7865989Z",
+      "stored_lf_sha256": "a952a66b33d80ccd1a2a7a47cf92dcbf0b605678b26b3e1d08a09b37dc35d9af",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\publication-impact.log",
+      "run_last_write_utc": "2026-10-11T07:22:14.4427408Z",
+      "raw_sha256": "f4f5141f7345f96006459701a43b773feb74144613a2cc362f59d9f0a72ecf0c"
+    },
+    {
+      "run_first_write_utc": "2026-10-11T07:22:27.4227738Z",
+      "stored_lf_sha256": "db41a9ab8bbff26f69e697256d684254a90450aedeb9872103066c2b53f7b9da",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-cache-regression\\publication-analyze.log",
+      "run_last_write_utc": "2026-10-11T07:22:51.4094766Z",
+      "raw_sha256": "f844a84a1ed57e84d265c230c4f43832f44d385bbbb977abc64fd782017aacfd"
+    }
+  ],
+  "working_directory": "apps/mobile_flutter",
+  "toolchain": "Flutter 3.44.9 / Dart 3.12.2",
+  "base": "44dabcc9d6428e38adfe93f572deeec0c64e8653",
+  "recorded_utc": "2026-10-11T07:24:57.5080009Z",
+  "reuse": "No full suite or release gate rerun; parent owns those. Log SHA distinguishes raw Windows bytes from LF-normalized archived bytes."
+}

@@ -2,6 +2,8 @@
 
 Base: 9902d35079e9cb051125808a251ae479b06893cb. Worktree: im-media-cache-regression/StarChat, branch codex/im-media-cache-regression. Parent assigned the shared full-gate media failures under approved remediation R7b/R8; the parent owns shared integration, platform and release gates. No Matrix client, RoomPage, quota implementation, native code or deployment was changed.
 
+Review follow-up: the no-late-publication statement below was incomplete at commit 44dabcc9. Independent review reproduced a pre-existing cancellation gap during store preparation, also present at base 9902d350. See [publication-followup.md](publication-followup.md) for the RED, minimal correction, exact publication boundaries and new focused gates. The original run history below is retained, not retroactively relabeled as independent acceptance.
+
 ## Failure classification and correction
 
 | Failure | Finding | Correction / retained assertion |

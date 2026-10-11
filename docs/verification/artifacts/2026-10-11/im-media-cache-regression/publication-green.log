@@ -1,0 +1,14 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: control
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: cancel
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (false)
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (false)
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (false)
+synthetic_cancel=false cache_published=true
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: cancel after reference temp flush preserves existing publications
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (true)
+synthetic_cancel=true cache_published=false
+00:00 +7: All tests passed!

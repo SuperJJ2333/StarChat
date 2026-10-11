@@ -1,0 +1,48 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart
+00:00 +0: store root wait checks current publication demand: control
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: store root wait checks current publication demand: cancel
+00:00 +1 -1: store root wait checks current publication demand: cancel [E]
+  Expected: null
+    Actual: _File:<File: 'C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\apps\mobile_flutter\../../docs/verification/artifacts/2026-10-11/im-media-cache-regression/fixtures\publication-15706f7e/chat-media/v2/8b8ec792c976879e0f692f5cf3cae7891beef18a7c3c976c961445d8ce47f01e/objects/d4ffe8e9ee0b48eba716706123a7187f32eae3bdcb0e7763e41e533267bd8a53'>
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\media_cache_publication_test.dart 79:11  main.<fn>
+
+00:00 +1 -1: store root wait checks current publication demand: rejoin
+00:00 +2 -1: cancel after object temp flush preserves existing publications
+00:00 +2 -2: cancel after object temp flush preserves existing publications [E]
+  Expected: '95cee872c44c906ec46f0fad618cd7c8c601651be78e6f9d7d2ffe745e910ef9'
+    Actual: '722c8c993fd75a7627d69ed941344fe2a1423a3e75efd3e6778a142884227104'
+     Which: is different.
+            Expected: 95cee872c4 ...
+              Actual: 722c8c993f ...
+                      ^
+             Differ at offset 0
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\media_cache_publication_test.dart 128:9  main.<fn>
+
+00:00 +2 -2: cancel after reference temp flush preserves existing publications
+00:00 +2 -3: cancel after reference temp flush preserves existing publications [E]
+  Expected: '95cee872c44c906ec46f0fad618cd7c8c601651be78e6f9d7d2ffe745e910ef9'
+    Actual: '722c8c993fd75a7627d69ed941344fe2a1423a3e75efd3e6778a142884227104'
+     Which: is different.
+            Expected: 95cee872c4 ...
+              Actual: 722c8c993f ...
+                      ^
+             Differ at offset 0
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\media_cache_publication_test.dart 128:9  main.<fn>
+
+00:00 +2 -3: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: cancel after object temp flush preserves existing publications
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: cancel after reference temp flush preserves existing publications
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: cancel

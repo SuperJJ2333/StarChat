@@ -1,0 +1,109 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: control
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: cancel
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: rejoin
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: cancel after object temp flush preserves existing publications
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: scoped preview callers share one source while one cancels
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: scoped preview callers share one source while one cancels
+00:01 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+[chatflow/mediaindex] degraded: UnimplementedError
+00:01 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: cancel after reference temp flush preserves existing publications
+00:01 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: cancel after reference temp flush preserves existing publications
+00:01 +7: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+00:01 +8: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:01 +9: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-hevc.mp4 transport resolves exact bytes to one MP4 cache
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +12: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +13: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +14: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +14: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: video miss cannot cross a clear boundary (cached=false)
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +15: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +16: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +17: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +18: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +19: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +20: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +21: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +22: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +23: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +24: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +25: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +26: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +27: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +28: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +29: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +30: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +31: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +32: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +33: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +34: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:03 +35: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +36: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +37: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +38: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +39: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +40: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +41: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +42: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:04 +43: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +44: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +45: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +46: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +47: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +48: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +49: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +50: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:06 +51: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +51: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: MP4 playback receives container suffix and keeps one governed file
+[chatflow/mediaindex] degraded: UnimplementedError
+00:07 +52: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +53: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +54: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +55: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +56: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +57: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +58: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:07 +58: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: forwarded pending and completed content still writes each page preview alias
+[chatflow/mediaindex] degraded: UnimplementedError
+00:08 +59: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +60: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +61: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +62: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +63: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +64: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +65: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +66: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:08 +67: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:09 +68: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:13 +69: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 命中某对象不会扫描/校验同账号的其它对象（无启动全量扫描）
+[chatflow/mediaindex] degraded: SqfliteFfiException
+00:13 +70: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 小对象（< 1 MiB）命中仍做完整校验：同尺寸原地篡改必被发现
+00:13 +71: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 去重与变体 同字节两个房间：1 个对象 + 2 个引用
+00:13 +72: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 去重与变体 不同压缩版本（q80/q70）字节不同：2 个对象，且媒体族只是 metadata 关联
+00:14 +73: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 去重与变体 聊天与朋友圈同字节：1 个对象 + 2 个引用；不同字节则 2 个对象
+00:14 +74: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 账号隔离与两级配额 账号 A 触发淘汰不会影响账号 B（设备硬上限未达）
+00:14 +75: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 账号隔离与两级配额 设备硬上限是唯一会跨账号淘汰的场景
+00:14 +76: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: LRU 与访问时间 访问过的对象不会被优先淘汰（批量 touch 生效）
+00:14 +77: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: LRU 与访问时间 命中路径只登记内存 pending，不产生逐次落库
+00:14 +78: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 删引用不删对象；最后一个引用消失后才可回收
+00:14 +79: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 引用计数由 refs 重算（不依赖计数器，崩溃不漂移）
+00:14 +80: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 保护期内（对象刚写、ref 未写）不回收
+00:15 +81: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 并发读（pin）期间 GC 不得删除对象
+00:15 +82: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC dryRun 只报告不删除
+00:15 +83: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 对象已写、索引缺失 → 首次访问完整校验后回填（lazy rebuild）
+00:15 +84: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 索引存在、对象缺失 → 失效索引并回退（不永久打不开）
+00:15 +85: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 索引存在、对象被截断 → 廉价校验发现尺寸不符并失效
+00:15 +86: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 索引损坏（降级）时仍可读写媒体（失败降级）
+[chatflow/mediaindex] degraded: UnsupportedError
+00:15 +87: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 并发 并发写同一个 hash：1 个对象、无损坏
+00:15 +88: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 并发 并发读 + GC：pin 保护生效
+00:15 +89: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 索引只存摘要：数据库文件中不含 roomId/eventId/accountId 明文
+00:15 +90: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 指标快照字段齐备且可重置
+00:15 +91: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 索引懒打开：构造时不创建数据库文件，首次查询才落盘
+00:15 +92: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 索引按账号清理（clearAccount 同时清索引行）
+00:15 +93: All tests passed!

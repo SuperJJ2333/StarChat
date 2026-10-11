@@ -8,6 +8,14 @@
 - Status: implementation and focused validation complete; frozen source awaits non-author SPEC/domain -> quality/security review and parent integration. Parent retains full project/platform/package acceptance.
 - Next executable step: review the frozen commit and docs/verification/artifacts/2026-10-11/im-media-cache-regression/README.md, then integrate into the shared candidate and run parent-owned gates.
 
+## Independent review follow-up
+
+The 44dabcc9 review found a real, pre-existing late-store publication gap: the last observer could leave while store awaited its path provider and still publish afterward. Parent authorized this bounded follow-up in the same isolated tree. It changes only media_cache.dart, adds media_cache_publication_test.dart and records evidence. Scheduler, Matrix, RoomPage, native code and quota implementation are untouched.
+
+The unchanged reviewer probe is reproduced RED (1 PASS / 1 FAIL); new root/flush probes are RED (2 PASS / 3 FAIL). Current private publication guards dynamically check current consumers and captured global/account generations after path preparation, after queued atomic writes and temporary flush, and before index/memory publication. A rename already submitted with live demand is allowed to settle; previously published objects/sidecars are not rolled back. No resource is released early and cancellation does not permanently prevent rejoining the real source.
+
+New gates: 7 publication tests PASS (including two unchanged independent probes), 93 impacted tests PASS in one run, two-file analyze zero issues. Counts overlap and are not added as unique tests. See publication-followup.md and publication-input-identities.json in the existing artifact directory for exact boundaries, inputs and timing. Next step: backend_review independently reviews this follow-up SPEC/domain then quality/security, then parent integrates the accepted SHA. These implementer gates are not independent approval or device/platform acceptance.
+
 ## Evidence and decisions
 
 The artifact README maps each reported failure to its demonstrated cause and correction. Baseline five-file run was 20 PASS/14 FAIL; the dedicated priority RED observed 192 MiB reserved before source scheduling. Final impact suite is 87 PASS; separate chain suite is 111 PASS with six overlapping consumer tests; eight-file analysis has zero issues. Failed intermediate lifecycle output is retained, followed by its real-settlement GREEN.
