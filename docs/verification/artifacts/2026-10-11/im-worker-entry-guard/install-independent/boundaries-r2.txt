@@ -1,0 +1,30 @@
+.................F.                                                      [100%]
+================================== FAILURES ===================================
+____ test_backup_drift_between_two_restores_never_writes_unverified_bytes _____
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu...between_two_0\\ops\\business_refresh_image_probe.py.entry-gate-install.tmp', 0, 0)], proofs=[], directory_fd=123456789)
+
+    def test_backup_drift_between_two_restores_never_writes_unverified_bytes(install):
+        m = install.module
+        atomic = m.atomic_bytes
+        def restore_then_drift(path, data, original):
+            atomic(path, data, original)
+            if path.name == install.names[1] and data == install.before[path.name]:
+                (m.ROOT / 'private-guard-before' / install.names[0]).write_bytes(b'LATER_BACKUP_DRIFT')
+        m.atomic_bytes = restore_then_drift
+        m.runpy.run_path = lambda _: (_ for _ in ()).throw(ValueError('proof rejected'))
+        with pytest.raises(ValueError):
+            m.main()
+>       assert (m.TARGET / install.names[0]).read_bytes() in (
+            install.before[install.names[0]], install.after[install.names[0]])
+E       assert b'LATER_BACKUP_DRIFT' in (b"VERSION = 'old-business_refresh_image_probe.py'\n", b"VERSION = 'new-business_refresh_image_probe.py'\n")
+E        +  where b'LATER_BACKUP_DRIFT' = read_bytes()
+E        +    where read_bytes = (WindowsPath('C:/Users/Administrator/.codex/worktrees/im-worker-entry-guard/StarChat/docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/tmp-r2/test_backup_drift_between_two_0/ops') / 'business_refresh_image_probe.py').read_bytes
+E        +      where WindowsPath('C:/Users/Administrator/.codex/worktrees/im-worker-entry-guard/StarChat/docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/tmp-r2/test_backup_drift_between_two_0/ops') = <module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-guard\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-worker-entry-guard\\install-independent\\install_pair_r2.py'>.TARGET
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries_r2.py:238: AssertionError
+---------------------------- Captured stdout call -----------------------------
+{"after_sha256": {"business_refresh_image_probe.py": "e6b58b69bb70a55d96c639ee77d2bb670539520f823eb62231ced79a210e6244", "business_release_guard.py": "331ab3fcf2af4c8a29ad70fecfdfdc4768026711dc5dc2d09da1c8f4304148f1"}, "before_sha256": {"business_refresh_image_probe.py": "a62eac5c366386f7879d0306304b0779118718fd1adf0d0f3a2621585aa7a389", "business_release_guard.py": "990a1c82b042390af764554b64b5363f6eb457111e9a95fc13ae7e385e5e1b8e"}, "ended_utc": "2026-10-11T07:53:24.083055+00:00", "failure_type": "ValueError", "restored_old_pair": false, "stage": "FAILED", "started_utc": "2026-10-11T07:53:24.069845+00:00"}
+=========================== short test summary info ===========================
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries_r2.py::test_backup_drift_between_two_restores_never_writes_unverified_bytes
+1 failed, 18 passed in 0.95s
