@@ -132,3 +132,13 @@ Android r3实际3用例通过（Flutter+4含tearDownAll），源码0fc080e5、AP
 ## 15:55+08 永久发布检查已安装
 
 07:54:59.806–07:55:11.325Z永久ops pair安装PASS，probe SHA2a6de21d、guard SHA46d98c6e。源码bd3ab547经root独立SPEC→QUALITY；安装器独立初审及增量19真实临时文件/mock边界最终PASS，精确installer SHA cc9b1de8。已保留旧字节/权限/uid/gid于`/opt/starchat/releases/im-worker-entry-guard-20261011-2a6de21d/private-guard-before`；校验后固定bytes替换、失败仅恢复本次精确身份，不读未验新source或损坏backup。actual installed guard验证线上bfde、回退18a各九项Worker与APIa935九项全部通过；全体业务容器ID保持，无服务切换/重启。历史部署脚本中的旧guard SHA是当时证据，不回写；未来部署预检使用本次新SHA。receipt在im-worker-entry-guard/installation.json。
+
+## 16:28+08 缓存及发布独立复审的增量发现
+
+缓存44dab/c3/34d已在root集成为8dd1fa87/36ace392/89243647，但未构建或发布；34d共享对象需求聚合独立13边界及4公共播放场景通过。随后实际公共播放入口复现A仍卡在store-root准备且被取消、B独立有效缓存已完成、B等待准备集合时被A取消异常误伤，1 PASS/1 FAIL；最终候选未批准。审查d111a295集成30e31d16，作者最小修复及104影响组通过，待独立增量复核；不将此前局部通过当作整体通过。
+
+Android发布准备4341d844被独立审查拒绝：静态捕获CRLF被Git归一化导致跨工作树SHA不匹配；自动回退重读未验backup可能写回损坏内容。71748829保留原live SHA并恢复Git原始捕获字节，自动回退只用预先校验的原始buffer，91a5f9f5存30项原始Git blob导出PASS证据；仍待独立复验。没有上传、云操作或生产配置写入。真实APK及最终三组门禁尚缺，准备审批不能替代成品审批。
+
+root另外对本地2213成品SHA08a74481进行14个ARM64 ELF静态检查，libcrypto四个PT_LOAD仍4KiB，NDK readelf独立确认；候选仍选flutter_openssl_crypto0.5.0/预编译OpenSSL1.1.1q-beta-1。新增P1兼容性风险与受控源码重建/双页大小已知向量修复门禁见[原生页大小记录](../../verification/2026-10-11-android-native-page-alignment.md)。未据此宣称已有16KiB设备故障，亦未更换加密库；不属于已完成修复或API28存储验收。最终2214也须记录实际ELF结果，ZIP对齐不可替代。
+
+08:26:10.958Z只读版本复核：两端仍0.4.44+2213，下载目录无2214文件，version-preflight-4.json保存。下一步：两个独立增量审查收束、root冻结新共享输入，完整Flutter/静态/边界门禁与最终固定签名ARM64重建；同源iOS完整插件候选重建。外部签名/真机/OEM及长期容量缺口继续保留。
