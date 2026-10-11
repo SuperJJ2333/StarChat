@@ -9508,13 +9508,15 @@ final class MatrixSdkE2eeClient
   }
 
   Future<void> scanMentions() => _withClient((client) async {
-        await Future.wait([
-          for (final room in client.rooms)
-            if (!room.isDirectChat && room.membership == Membership.join)
-              RoomMentionStore.shared.scan(room,
-                  shouldContinue: () =>
-                      !_accessRevoked && identical(client, _client))
-        ]);
+        // One room's fixed ID interval at a time. The body reader acquires the
+        // shared maintenance permit per page and releases consumed bodies.
+        for (final room in client.rooms.toList(growable: false)) {
+          if (_accessRevoked || !identical(client, _client)) return;
+          if (room.isDirectChat || room.membership != Membership.join) continue;
+          await RoomMentionStore.shared.scan(room,
+              shouldContinue: () =>
+                  !_accessRevoked && identical(client, _client));
+        }
       });
 
   Future<DirectChatRoom> openCanonicalDirectRoom(String id,

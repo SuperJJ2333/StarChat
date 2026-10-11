@@ -4,6 +4,7 @@ import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'unread_mention_tracker.dart';
 import 'local_hidden_events.dart';
+import 'mention_history_scan.dart';
 
 /// Device-local event identities only; never stores message content.
 final class RoomMentionStore extends ChangeNotifier {
@@ -72,7 +73,9 @@ final class RoomMentionStore extends ChangeNotifier {
   }
 
   Future<void> ingest(Room room, Iterable<Event> events,
-      {bool Function()? shouldContinue, Set<String>? changedEventIds}) async {
+      {bool Function()? shouldContinue,
+      Set<String>? changedEventIds,
+      bool persist = true}) async {
     try {
       _check(shouldContinue);
       if (room.isDirectChat) return;
@@ -168,7 +171,7 @@ final class RoomMentionStore extends ChangeNotifier {
                 mentionedUserIds: targets) ||
             changed;
       }
-      if (changed) {
+      if (changed && persist) {
         await save(room, shouldContinue: shouldContinue);
       }
       if (versions.length > ordered.length) {
@@ -214,51 +217,60 @@ final class RoomMentionStore extends ChangeNotifier {
   Future<void> scan(Room room, {bool Function()? shouldContinue}) async {
     if (shouldContinue != null && !shouldContinue()) return;
     if (room.isDirectChat || !_scanning.add(_key(room))) return;
-    Timeline? timeline;
+    MentionHistoryScan? history;
+    UnreadMentionTracker? scanState;
+    String? previousCheckpoint, candidateCheckpoint;
+    var checkpointAssigned = false;
+    var checkpointSaved = false;
     try {
       final state = await open(room, shouldContinue: shouldContinue);
+      scanState = state;
+      previousCheckpoint = state.completedScanHead;
       _check(shouldContinue);
       final target = state.completedScanHead ?? state.boundaryEventId;
       _check(shouldContinue);
-      timeline = await room.getTimeline();
+      history = await MentionHistoryScan.open(room,
+          targetEventId: target, shouldContinue: shouldContinue);
       _check(shouldContinue);
-      await ingest(room, timeline.events, shouldContinue: shouldContinue);
+      // All pages share stable ranks; metadata registration is also gated and
+      // chunked before the fixed read boundary classifies any mention bodies.
+      await history.registerOrder(state);
       _check(shouldContinue);
-      // Complete the unread interval, including mentions outside the first page.
-      while ((target == null ||
-              target.isEmpty ||
-              !timeline.events.any((e) => e.eventId == target)) &&
-          timeline.canRequestHistory) {
-        final oldest = timeline.events.lastOrNull?.eventId;
-        final token = room.prev_batch;
-        _check(shouldContinue);
-        await timeline.requestHistory(historyCount: 60);
-        _check(shouldContinue);
-        await ingest(room, timeline.events, shouldContinue: shouldContinue);
-        _check(shouldContinue);
-        if (oldest == timeline.events.lastOrNull?.eventId &&
-            token == room.prev_batch) {
-          break;
-        }
-      }
-      if (!timeline.canRequestHistory && !state.hasKnownBoundary) {
+      if (history.exhausted && !state.hasKnownBoundary) {
         // A deleted/inaccessible read marker cannot suppress accessible messages forever.
         state.boundaryEventId = '';
-        await ingest(room, timeline.events, shouldContinue: shouldContinue);
-        _check(shouldContinue);
       }
-      if (!timeline.canRequestHistory ||
-          (target != null &&
-              timeline.events.any((event) => event.eventId == target))) {
-        _check(shouldContinue);
-        state.completedScanHead = timeline.events.firstOrNull?.eventId;
-        await save(room, shouldContinue: shouldContinue);
-        _check(shouldContinue);
+      while (true) {
+        final page = await history.next();
+        try {
+          _check(shouldContinue);
+          await ingest(room, page.events,
+              shouldContinue: shouldContinue, persist: false);
+          _check(shouldContinue);
+          if (!page.hasMore) break;
+        } finally {
+          page.release();
+        }
       }
+      if (history.complete && state.completedScanHead == previousCheckpoint) {
+        _check(shouldContinue);
+        candidateCheckpoint = history.headEventId;
+        state.completedScanHead = candidateCheckpoint;
+        checkpointAssigned = true;
+      }
+      // One metadata write, not growing JSON serialization for every body page.
+      await save(room, shouldContinue: shouldContinue);
+      _check(shouldContinue);
+      checkpointSaved = true;
     } catch (_) {
       // Preserve pending reminders; next sync retries without logging content.
     } finally {
-      timeline?.cancelSubscriptions();
+      if (checkpointAssigned &&
+          !checkpointSaved &&
+          scanState?.completedScanHead == candidateCheckpoint) {
+        scanState!.completedScanHead = previousCheckpoint;
+      }
+      await history?.close();
       _scanning.remove(_key(room));
     }
   }

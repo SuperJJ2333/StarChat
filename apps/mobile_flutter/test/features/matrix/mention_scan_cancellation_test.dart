@@ -4,49 +4,70 @@ import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/room_mention_store.dart';
 import 'package:liuhetong_mobile/features/matrix/unread_mention_tracker.dart';
+import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 
 class _Client extends Client {
-  _Client() : super('mention-cancel');
+  _Client(this.store) : super('mention-cancel');
+  final DatabaseApi store;
+  @override
+  DatabaseApi get database => store;
   @override
   String? get userID => '@me:test';
 }
 
 class _Room extends Room {
-  _Room(this.history) : super(id: '!room:test', client: _Client());
-  final _Timeline history;
+  _Room(this.history) : super(id: '!room:test', client: _Client(history)) {
+    prev_batch = 'older';
+  }
+  final _History history;
   @override
   bool get isDirectChat => false;
   @override
   String get fullyRead => '';
   @override
-  Future<Timeline> getTimeline(
-          {void Function(int)? onChange,
-          void Function(int)? onRemove,
-          void Function(int)? onInsert,
-          void Function()? onNewEvent,
-          void Function()? onUpdate,
-          String? eventContextId}) async =>
-      history;
+  Future<int> requestHistory(
+      {int historyCount = Room.defaultHistoryCount,
+      void Function()? onHistoryReceived,
+      direction = Direction.b}) async {
+    await history.requestHistory();
+    prev_batch = null;
+    return 1;
+  }
+
+  @override
+  Future<Event?> getLocalEventById(String id,
+          {bool Function()? shouldContinue}) async =>
+      history.events.firstWhere((event) => event.eventId == id);
 }
 
-class _Timeline extends Fake implements Timeline {
+class _Snapshot extends ListTimelineIdSnapshot {
+  _Snapshot(super.ids, this.closed);
+  final void Function() closed;
+  @override
+  void dispose() {
+    closed();
+    super.dispose();
+  }
+}
+
+class _History extends Fake implements DatabaseApi {
   final requested = Completer<void>();
   final release = Completer<void>();
-  @override
   final events = <Event>[];
   int requests = 0;
   bool canceled = false;
   @override
-  bool get canRequestHistory => true;
-  @override
-  Future<void> requestHistory({int historyCount = 30}) async {
+  Future<TimelineIdSnapshot> openTimelineIdSnapshot(Room room,
+          {String? afterEventId,
+          bool includeSending = false,
+          TimelineIdDirection direction = TimelineIdDirection.older}) async =>
+      _Snapshot(
+          events.map((event) => event.eventId).toList(), () => canceled = true);
+  Future<void> requestHistory() async {
     requests++;
     if (!requested.isCompleted) requested.complete();
     await release.future;
   }
-
-  @override
-  void cancelSubscriptions() => canceled = true;
 }
 
 void main() {
@@ -55,7 +76,8 @@ void main() {
       'revocation after in-flight history stops scan without saving page or checkpoint',
       () async {
     SharedPreferences.setMockInitialValues({});
-    final history = _Timeline();
+    MaintenanceActivity.instance.resetForTesting();
+    final history = _History();
     final room = _Room(history);
     history.events.add(Event(
         room: room,

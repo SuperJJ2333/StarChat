@@ -38,6 +38,8 @@ final class UnreadMentionTracker {
   String? boundaryEventId;
   String? completedScanHead;
   final Map<String, int> _timelineOrders = {};
+  int _newestTimelineOrder = 0;
+  int get newestTimelineOrder => _newestTimelineOrder;
 
   void initializeEventBoundary(String eventId) {
     if (_initialized) return;
@@ -53,24 +55,28 @@ final class UnreadMentionTracker {
           .key;
 
   /// Stable relative ranks from Matrix's event order, independent of clocks.
-  bool registerTimeline(List<String> newestFirst) {
+  bool registerTimeline(List<String> newestFirst, {int? newestOrder}) {
     if (newestFirst.isEmpty) return false;
-    int? newestRank;
-    for (var i = 0; i < newestFirst.length; i++) {
-      final known = _timelineOrders[newestFirst[i]];
-      if (known != null) {
-        newestRank = known + i;
-        break;
+    int? newestRank = newestOrder;
+    if (newestRank == null) {
+      for (var i = 0; i < newestFirst.length; i++) {
+        final known = _timelineOrders[newestFirst[i]];
+        if (known != null) {
+          newestRank = known + i;
+          break;
+        }
       }
     }
-    newestRank ??=
-        (_timelineOrders.values.fold<int>(0, (a, b) => a > b ? a : b)) +
-            newestFirst.length;
+    newestRank ??= _newestTimelineOrder + newestFirst.length;
+    if (newestRank > _newestTimelineOrder) _newestTimelineOrder = newestRank;
     var changed = false;
     for (var i = 0; i < newestFirst.length; i++) {
       final rank = newestRank - i;
       if (_timelineOrders[newestFirst[i]] != rank) {
         _timelineOrders[newestFirst[i]] = rank;
+        if (_orderByEventId.containsKey(newestFirst[i])) {
+          _orderByEventId[newestFirst[i]] = rank;
+        }
         changed = true;
       }
     }
@@ -202,8 +208,13 @@ final class UnreadMentionTracker {
     tracker.completedScanHead = json['completedScanHead'] as String?;
     final timelineOrders =
         json['timelineOrders'] as Map<String, dynamic>? ?? {};
-    tracker._timelineOrders.addAll(timelineOrders
-        .map((key, value) => MapEntry(key, (value as num).toInt())));
+    for (final entry in timelineOrders.entries) {
+      final order = (entry.value as num).toInt();
+      tracker._timelineOrders[entry.key] = order;
+      if (order > tracker._newestTimelineOrder) {
+        tracker._newestTimelineOrder = order;
+      }
+    }
     return tracker;
   }
 

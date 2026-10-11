@@ -1,0 +1,20 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart
+00:00 +0: revocation before checkpoint persistence cannot move in-memory head
+00:00 +0 -1: revocation before checkpoint persistence cannot move in-memory head [E]
+  Expected: null
+    Actual: 'e0'
+
+  package:matcher                                            expect
+  package:flutter_test/src/widget_tester.dart 473:18         expect
+  test\features\matrix\mention_history_scan_test.dart 198:5  main.<fn>
+
+Warning: At least one test in this suite creates an HttpClient. When running a test suite that uses
+TestWidgetsFlutterBinding, all HTTP requests will return status code 400, and no network request
+will actually be made. Any test expecting a real network connection and status code will fail.
+To test code that needs an HttpClient, provide your own HttpClient implementation to the code under
+test, so that your test can consistently provide a testable response to the code under test.
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: revocation before checkpoint persistence cannot move in-memory head

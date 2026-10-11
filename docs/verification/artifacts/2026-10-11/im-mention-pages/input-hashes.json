@@ -1,0 +1,38 @@
+{
+  "base": "b611c1ba546d8a87d3419b4bbd446bce3e6b9daf",
+  "frozenAt": "2026-10-11T12:03:09.3958694+08:00",
+  "files": [
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/mention_history_scan.dart",
+      "sha256": "929b57e7ad4fbabf07a790f1babe8aee405623833f012ec143316f3a076416ff"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/room_mention_store.dart",
+      "sha256": "97affc96c42546daee1322a3f2bef064765cc763b45cf33539e5338414cf9d56"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/unread_mention_tracker.dart",
+      "sha256": "f044e6a423ea8697050b1466188ec07bdfa13a2151996de90a8097f6fa047a69"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "sha256": "d425fbbcc152f30cc953c3fdd3ebcc6a2c9b9257d83fa169df772423c28895a6"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart",
+      "sha256": "b68376ab503e505af7b5183999f25f023fcb82e59c89e40110d2bec57cdf44e1"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/mention_scan_cancellation_test.dart",
+      "sha256": "d70aa680730c7c0ed2742ca4b8943fdcc8bdbb199d194554d5dd0b274bf1b472"
+    },
+    {
+      "path": "apps/mobile_flutter/integration_test/cache_first_fast_history_test.dart",
+      "sha256": "fcbe0b2acbfcdc033ee899020ceb4decc6f2e73aaccbab1d09cd39b37ee99b63"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+    }
+  ]
+}
