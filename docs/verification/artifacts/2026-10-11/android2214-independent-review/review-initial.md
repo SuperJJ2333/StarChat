@@ -1,6 +1,6 @@
 # Android 2214 preparation independent review — two blocking findings
 
-Review of author commits `b9f96f4fc69fbe226bcf8cd9e03444455eee829b` → `80954f9be3064c47d9b760501456c67bc4d37f9a` → `4341d84451d632988921fad627d237ad56000ef8`, 2026-10-11 approximately 16:00–16:10 +08. No deployment, APK creation, SSH, cloud write, server inspection or root/author source edit by reviewer. Subject bytes were exported using `git show` from the final commit into this reviewer's own artifact directory. `review-inputs.json` distinguishes those Git bytes from author workspace bytes.
+Review of author commits `b9f96f4fc69fbe226bcf8cd9e03444455eee829b` → `80954f9be3064c47d9b760501456c67bc4d37f9a` → `4341d84451d632988921fad627d237ad56000ef8`, 2026-10-11 +08. The initial reading start was not timestamped; artifact modification times establish exact Git export at 16:14:01, original-suite RED at 16:14:19, and expanded independent RED at 16:17:31. No deployment, APK creation, SSH, cloud write, server inspection or root/author source edit by reviewer. Subject bytes were exported using `git show` from the final commit into this reviewer's own artifact directory. `review-inputs.json` distinguishes those Git bytes from author workspace bytes.
 
 ## SPEC/domain first
 

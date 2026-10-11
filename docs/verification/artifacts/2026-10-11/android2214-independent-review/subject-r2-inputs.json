@@ -1,0 +1,269 @@
+{
+  "commit": "91a5f9f50b6a232686b34adb72e8095954494260",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "git_bytes_sha256": "a6d2c6f6f38426ba6a51e9f1765ac7ce1046b864a7f88ca39a9fff75224ad173"
+    },
+    {
+      "path": "README.md",
+      "git_bytes_sha256": "96e23d6431c6635ad7d5977608087df3d00e10332653a20abc6efe2b0a0f4741"
+    },
+    {
+      "path": "baseline/bucket-policy-before.json",
+      "git_bytes_sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561"
+    },
+    {
+      "path": "baseline/cloudfront-before.json",
+      "git_bytes_sha256": "2d253b366439943fd03a1a6b5006045647e3e92ba96b33382fe3bd52681bd504"
+    },
+    {
+      "path": "baseline/freeze_current.py",
+      "git_bytes_sha256": "de972095e967ee18b8b7166ea2d39c632881e3bdc2121e2c424cdcebfbc99fa2"
+    },
+    {
+      "path": "baseline/hk-live-snapshot.json",
+      "git_bytes_sha256": "ef5c478e4bd261c31c78fad7acb1e2d9bf3e62224c2804979a3597f9ca758232"
+    },
+    {
+      "path": "baseline/hk-projection-metadata.json",
+      "git_bytes_sha256": "a557f7389d4eda5e08da00abc954be2bdde8181fe780eb9429b7356c48189a25"
+    },
+    {
+      "path": "baseline/hk-projection-source.py",
+      "git_bytes_sha256": "b18b88019df7adc4c89fe4a709ed8690d02c2da0293bfb17a9a48e9448d93df2"
+    },
+    {
+      "path": "baseline/hk-snapshot/download.html",
+      "git_bytes_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff"
+    },
+    {
+      "path": "baseline/hk-snapshot/downloads/android-release.json",
+      "git_bytes_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf"
+    },
+    {
+      "path": "baseline/hk-snapshot/downloads/ios/manifest.plist",
+      "git_bytes_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/admin-home.js",
+      "git_bytes_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-network-selector.js",
+      "git_bytes_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-network.js",
+      "git_bytes_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-redirect.js",
+      "git_bytes_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+    },
+    {
+      "path": "baseline/settings-before.json",
+      "git_bytes_sha256": "4ff4d1e0088ee14c690f7b55443660db8417a119b62dc0499f51f9e68744d190"
+    },
+    {
+      "path": "baseline/sg-live-snapshot.json",
+      "git_bytes_sha256": "c361bad4851244e8efe13b1f84752ea06f04c81e6cbf14aaf4f25b74b7b610f6"
+    },
+    {
+      "path": "baseline/sg-projection-metadata.json",
+      "git_bytes_sha256": "3627c4e8b13ad143d4efc82bc525ab9ef665e6c3ef90692a2f00be203f726f35"
+    },
+    {
+      "path": "baseline/sg-projection-source.py",
+      "git_bytes_sha256": "2f868f1e62b5593dd3c462f187b086de4d2845db584b4eaa2e70613aa411838e"
+    },
+    {
+      "path": "baseline/static-baseline.json",
+      "git_bytes_sha256": "e3a65e5c075c17c961675502b6a3141c3610e6142cdc251f867c9246c448245c"
+    },
+    {
+      "path": "captured-static-git-binding.json",
+      "git_bytes_sha256": "b4fa0805071ea7a53a4ec5c32bfacf1a04dcece982a731a7e906cce83c4bc88a"
+    },
+    {
+      "path": "contracts-green.log",
+      "git_bytes_sha256": "ba145d5ebc2d785ac6f179b4ad146bf0945288c0db826c210d7b495062f6a7cd"
+    },
+    {
+      "path": "contracts-red.log",
+      "git_bytes_sha256": "2b87da8f285511cb0a82abd54d6c01ce8d05b93a2a4473e3af878452583b90e0"
+    },
+    {
+      "path": "execute_release.py",
+      "git_bytes_sha256": "1285d349d6bedcfb3144034db7e445c1ea790ab17e59730e3f7970760bb30d51"
+    },
+    {
+      "path": "execution-red.log",
+      "git_bytes_sha256": "8705dc16b74fb462089276a2b359ab249a976b122735dc385dda71240a65fe01"
+    },
+    {
+      "path": "git-export-review-green.log",
+      "git_bytes_sha256": "e717084f5547801eb85f97a46a2dd0d556efa21c7282b59c7107cbba8b7f326d"
+    },
+    {
+      "path": "git-export-review-red.log",
+      "git_bytes_sha256": "e8b07f4d115bf67847fb30e0e2a3338d219af065d9b00c61dd44a665e715806d"
+    },
+    {
+      "path": "git-export-review-result.json",
+      "git_bytes_sha256": "00cbbf0c12f523c7aeb01f85e3ed2b21b0363d54f86524083a0a67d9b7cc04ca"
+    },
+    {
+      "path": "git-raw-export-review-green.log",
+      "git_bytes_sha256": "c4ac4f7da682cc34c0e9f4167a960d65b30bc93490444455447ee8f040ef799c"
+    },
+    {
+      "path": "git-snapshot-review-red.json",
+      "git_bytes_sha256": "d40502c8355cada22bb02d6fb7079d61c84fd2dcb4e04b3e0b71be6c8eb2d05c"
+    },
+    {
+      "path": "package-execution-expanded.log",
+      "git_bytes_sha256": "029ae614b45ef581e373322c58838a7263195f41b2723000f6e3f68ab3ad2199"
+    },
+    {
+      "path": "package-execution-first-green.log",
+      "git_bytes_sha256": "65d56e1132b6503f5391d410fec81bdf2c41d6806b44f9d851a42dae799b8fd8"
+    },
+    {
+      "path": "package-red.log",
+      "git_bytes_sha256": "efa924ade1bd6e3d6d0671a1923edd2d2993cc41a03c18c5156dfdcd428551a2"
+    },
+    {
+      "path": "package-takeover-red.log",
+      "git_bytes_sha256": "3c958f69148be7a25e28945fe43ae6342419793af6f273a078bb23de86a42e2a"
+    },
+    {
+      "path": "package_release.py",
+      "git_bytes_sha256": "841f748f91881749c214833e80728b3f110758b691a634faa337ce18d34aaa12"
+    },
+    {
+      "path": "payload/bucket-policy-before.json",
+      "git_bytes_sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561"
+    },
+    {
+      "path": "payload/cloudfront-before.json",
+      "git_bytes_sha256": "2d253b366439943fd03a1a6b5006045647e3e92ba96b33382fe3bd52681bd504"
+    },
+    {
+      "path": "payload/delivery_2214.py",
+      "git_bytes_sha256": "0697a59e026c40d2ca42bf48870314f4444d1f0b86064ee5804d5dc4d89266cf"
+    },
+    {
+      "path": "payload/hk-live-snapshot.json",
+      "git_bytes_sha256": "ef5c478e4bd261c31c78fad7acb1e2d9bf3e62224c2804979a3597f9ca758232"
+    },
+    {
+      "path": "payload/hk-snapshot/download.html",
+      "git_bytes_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff"
+    },
+    {
+      "path": "payload/hk-snapshot/downloads/android-release.json",
+      "git_bytes_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf"
+    },
+    {
+      "path": "payload/hk-snapshot/downloads/ios/manifest.plist",
+      "git_bytes_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9"
+    },
+    {
+      "path": "payload/hk-snapshot/src/admin-home.js",
+      "git_bytes_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27"
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-network-selector.js",
+      "git_bytes_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232"
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-network.js",
+      "git_bytes_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154"
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-redirect.js",
+      "git_bytes_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+    },
+    {
+      "path": "payload/release_2214.py",
+      "git_bytes_sha256": "24275770c0948d25b30e4633c0d5301f0897393d8095af32290a8783aaeca0bf"
+    },
+    {
+      "path": "payload/settings-before.json",
+      "git_bytes_sha256": "4ff4d1e0088ee14c690f7b55443660db8417a119b62dc0499f51f9e68744d190"
+    },
+    {
+      "path": "payload/settings_2214.py",
+      "git_bytes_sha256": "2ce834bb06ef59ce3a30e54894859f2a5f2ebb21dafa1ee4c13c260fd9741734"
+    },
+    {
+      "path": "payload/sg-live-snapshot.json",
+      "git_bytes_sha256": "c361bad4851244e8efe13b1f84752ea06f04c81e6cbf14aaf4f25b74b7b610f6"
+    },
+    {
+      "path": "payload/static-baseline.json",
+      "git_bytes_sha256": "e3a65e5c075c17c961675502b6a3141c3610e6142cdc251f867c9246c448245c"
+    },
+    {
+      "path": "payload/test_settings_postgres_2214.py",
+      "git_bytes_sha256": "6db36c515389fc26471dbb78ac0a7080a0ad7143419c9c8bbf43e3670031c075"
+    },
+    {
+      "path": "payload/verify_production_2214.py",
+      "git_bytes_sha256": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14"
+    },
+    {
+      "path": "postgres.log",
+      "git_bytes_sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966"
+    },
+    {
+      "path": "preparation-green.log",
+      "git_bytes_sha256": "dc376900dc2be5c61dbc75b187283e7cb7bdeea05cb737a780272e85e4ae5f5e"
+    },
+    {
+      "path": "preparation-input-hashes-original.json",
+      "git_bytes_sha256": "71e33594accae24023ff60a0bca5c5aa96cf5fdf5ecbbb5ca252289100c6f962"
+    },
+    {
+      "path": "preparation-input-hashes.json",
+      "git_bytes_sha256": "65c90f973afcd206b7248cfee054d61f6a01af4c374bc4d5457e473cef74df76"
+    },
+    {
+      "path": "preparation-review.md",
+      "git_bytes_sha256": "d51b3c9f09f8413aa861e52c2eb19a81b7adc613f0c63a27f59a7281acb5821a"
+    },
+    {
+      "path": "review-repair-export-ref.txt",
+      "git_bytes_sha256": "093a78561cb678c24e5712b008175b19bb7e9af3fc83374ea379532eb6318436"
+    },
+    {
+      "path": "review-repair-working-green.log",
+      "git_bytes_sha256": "718b492e1decbe8eba48de966789a13bfef738a18c660b1bac923eec1cae4f27"
+    },
+    {
+      "path": "rollback-review-red.log",
+      "git_bytes_sha256": "1aba25cf163895ea9036d9b648ef76ec641814b0be8b4558c239113aeccd1007"
+    },
+    {
+      "path": "test_execution_gate.py",
+      "git_bytes_sha256": "3de9e7c3f5fc79f1326722d4a673914c27265ffc64386d1c1bf925f2a3b8412a"
+    },
+    {
+      "path": "test_package_gate.py",
+      "git_bytes_sha256": "0317213fe44e6277c18923862d3f34ad4d108d73ce62289ec744a4736ecc6136"
+    },
+    {
+      "path": "test_release_contract.py",
+      "git_bytes_sha256": "71caf059eb8ded84284065070e2974fd35b296ae7bf66e8a0c4060eafbb7902b"
+    },
+    {
+      "path": "test_static_rollback.py",
+      "git_bytes_sha256": "271b1ab6ebd302d695f59d025d7b1ff32a45e68b2a24520b7cf5b8841c15ede8"
+    },
+    {
+      "path": "usage.md",
+      "git_bytes_sha256": "c2f22c807f1538240b837a6647902d61209b7ff6edcf631c41d7bd2d5a6ad666"
+    }
+  ]
+}

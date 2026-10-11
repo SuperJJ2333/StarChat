@@ -1,0 +1,10 @@
+{
+  "subject_commit": "91a5f9f50b6a232686b34adb72e8095954494260",
+  "source_sha_pass": 11,
+  "captured_static_sha_length_blob_pass": 14,
+  "live_static_baseline_unchanged": true,
+  "canonical_evidence_sha_pass": 5,
+  "settings_source_same_after_newline_normalization": true,
+  "apk_status": "NOT_READY_NO_ACTUAL_APK",
+  "network_actions": "NONE"
+}
