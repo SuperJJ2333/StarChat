@@ -1,0 +1,25 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_object_join_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_object_join_test.dart: independent legacy sources sharing verified object: cancelFirst=false cancelSecond=false sameReference=false
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: control
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: control
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: control
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_object_join_test.dart: independent legacy sources sharing verified object: cancelFirst=true cancelSecond=false sameReference=true
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: cancel
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_publication_test.dart: store root wait checks current publication demand: rejoin
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (false)
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (false)
+00:00 +9: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (false)
+synthetic_cancel=false cache_published=true
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-object-join-probe_test.dart: independent legacy sources sharing verified object: cancelFirst=false
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-publication-probe_test.dart: store preparation observer cancellation (true)
+synthetic_cancel=true cache_published=false
+00:01 +11: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-object-join-probe_test.dart: independent legacy sources sharing verified object: cancelFirst=false
+[chatflow/mediaindex] degraded: UnimplementedError
+synthetic_first_cancel=false second_active=true second_error=null object_published=true
+00:01 +12: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-object-join-probe_test.dart: independent legacy sources sharing verified object: cancelFirst=true
+synthetic_first_cancel=true second_active=true second_error=null object_published=true
+00:01 +13: All tests passed!

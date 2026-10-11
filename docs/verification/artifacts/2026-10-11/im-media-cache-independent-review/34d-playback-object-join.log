@@ -1,0 +1,8 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/playback-object-join_test.dart
+00:00 +0: public playback path with shared verified object: cancelFirst=false cancelSecond=false sameReference=false
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: public playback path with shared verified object: cancelFirst=true cancelSecond=false sameReference=false
+00:00 +2: public playback path with shared verified object: cancelFirst=true cancelSecond=true sameReference=false
+00:00 +3: public playback path with shared verified object: cancelFirst=true cancelSecond=false sameReference=true
+00:00 +4: All tests passed!
