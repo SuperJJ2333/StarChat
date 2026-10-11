@@ -1,0 +1,216 @@
+{
+  "report": {
+    "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-regression\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\native-static-final.json",
+    "bytes": 975917,
+    "sha256": "af71ccf314c352c779ea5ae44b38e3acb1245e21a9752270006b4977299fc7c9"
+  },
+  "rows": [
+    {
+      "name": "lib/arm64-v8a/libapp.so",
+      "source_final_sha256": "a30a2a0d7a201b57b609fff0939ff64b7eaf72519c638460057a9c3926ac5070",
+      "same_as_2213": false,
+      "load_alignments": [
+        65536
+      ],
+      "relro_end_mod_16k": [],
+      "baseline_relro_end_mod_16k": [],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libbarhopper_v3.so",
+      "source_final_sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        0
+      ],
+      "baseline_relro_end_mod_16k": [
+        0
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libc++_shared.so",
+      "source_final_sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        8192
+      ],
+      "baseline_relro_end_mod_16k": [
+        8192
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libcrypto.so",
+      "source_final_sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+      "same_as_2213": true,
+      "load_alignments": [
+        4096
+      ],
+      "relro_end_mod_16k": [
+        8192
+      ],
+      "baseline_relro_end_mod_16k": [
+        8192
+      ],
+      "writable_overlap_after_relro_end": true
+    },
+    {
+      "name": "lib/arm64-v8a/libdartjni.so",
+      "source_final_sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        0
+      ],
+      "baseline_relro_end_mod_16k": [
+        0
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libdatastore_shared_counter.so",
+      "source_final_sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        8192
+      ],
+      "baseline_relro_end_mod_16k": [
+        8192
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libflutter.so",
+      "source_final_sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+      "same_as_2213": true,
+      "load_alignments": [
+        65536
+      ],
+      "relro_end_mod_16k": [
+        4096
+      ],
+      "baseline_relro_end_mod_16k": [
+        4096
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libflutter_openssl_crypto.so",
+      "source_final_sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        4096
+      ],
+      "baseline_relro_end_mod_16k": [
+        4096
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libimage_processing_util_jni.so",
+      "source_final_sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        0
+      ],
+      "baseline_relro_end_mod_16k": [
+        0
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libjingle_peerconnection_so.so",
+      "source_final_sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        4096
+      ],
+      "baseline_relro_end_mod_16k": [
+        4096
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libolm.so",
+      "source_final_sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        8192
+      ],
+      "baseline_relro_end_mod_16k": [
+        8192
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libsqlcipher.so",
+      "source_final_sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        4096
+      ],
+      "baseline_relro_end_mod_16k": [
+        4096
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libsurface_util_jni.so",
+      "source_final_sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        4096
+      ],
+      "baseline_relro_end_mod_16k": [
+        4096
+      ],
+      "writable_overlap_after_relro_end": false
+    },
+    {
+      "name": "lib/arm64-v8a/libzxprotect.so",
+      "source_final_sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+      "same_as_2213": true,
+      "load_alignments": [
+        16384
+      ],
+      "relro_end_mod_16k": [
+        12288
+      ],
+      "baseline_relro_end_mod_16k": [
+        12288
+      ],
+      "writable_overlap_after_relro_end": false
+    }
+  ],
+  "limits": "RELRO geometry is an observation, not a reproduced device/loader failure."
+}

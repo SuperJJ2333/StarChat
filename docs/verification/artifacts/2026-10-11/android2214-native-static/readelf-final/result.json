@@ -1,0 +1,514 @@
+{
+  "started_utc": "2026-10-11T10:07:12.916519+00:00",
+  "report": {
+    "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-regression\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\native-static-final.json",
+    "bytes": 975917,
+    "sha256": "af71ccf314c352c779ea5ae44b38e3acb1245e21a9752270006b4977299fc7c9"
+  },
+  "tool": {
+    "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-readelf.exe",
+    "bytes": 8428128,
+    "sha256": "2646e382d8b2559b5c4ae91e9a98e187ed9bd59f23936054d424049ef795ba5e"
+  },
+  "libraries": {
+    "lib/arm64-v8a/libapp.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 7494786,
+          "memsz": 7494786,
+          "align": 65536
+        },
+        {
+          "offset": 7536640,
+          "vaddr": 7536640,
+          "filesz": 11700992,
+          "memsz": 11700992,
+          "align": 65536
+        },
+        {
+          "offset": 19267584,
+          "vaddr": 19267584,
+          "filesz": 112,
+          "memsz": 112,
+          "align": 65536
+        }
+      ],
+      "GNU_RELRO": []
+    },
+    "lib/arm64-v8a/libbarhopper_v3.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 4859168,
+          "memsz": 4859168,
+          "align": 16384
+        },
+        {
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 16384
+        },
+        {
+          "offset": 4911488,
+          "vaddr": 4927872,
+          "filesz": 33000,
+          "memsz": 294192,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libc++_shared.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 624800,
+          "memsz": 624800,
+          "align": 16384
+        },
+        {
+          "offset": 624800,
+          "vaddr": 641184,
+          "filesz": 585720,
+          "memsz": 585720,
+          "align": 16384
+        },
+        {
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 16384
+        },
+        {
+          "offset": 1250352,
+          "vaddr": 1299504,
+          "filesz": 568,
+          "memsz": 32032,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libcrypto.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 1036532,
+          "memsz": 1036532,
+          "align": 4096
+        },
+        {
+          "offset": 1040384,
+          "vaddr": 1044480,
+          "filesz": 1379680,
+          "memsz": 1379680,
+          "align": 4096
+        },
+        {
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "filesz": 166112,
+          "memsz": 166112,
+          "align": 4096
+        },
+        {
+          "offset": 2586176,
+          "vaddr": 2598464,
+          "filesz": 5928,
+          "memsz": 19569,
+          "align": 4096
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "filesz": 166112,
+          "memsz": 168608,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libdartjni.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 125968,
+          "memsz": 125968,
+          "align": 16384
+        },
+        {
+          "offset": 125968,
+          "vaddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 16384
+        },
+        {
+          "offset": 127344,
+          "vaddr": 160112,
+          "filesz": 1784,
+          "memsz": 2424,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 125968,
+          "vaddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libdatastore_shared_counter.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 4544,
+          "memsz": 4544,
+          "align": 16384
+        },
+        {
+          "offset": 4544,
+          "vaddr": 20928,
+          "filesz": 616,
+          "memsz": 616,
+          "align": 16384
+        },
+        {
+          "offset": 5160,
+          "vaddr": 37928,
+          "filesz": 0,
+          "memsz": 1,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 4544,
+          "vaddr": 20928,
+          "filesz": 616,
+          "memsz": 3648,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libflutter.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 11186288,
+          "memsz": 11186288,
+          "align": 65536
+        },
+        {
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 65536
+        },
+        {
+          "offset": 11554224,
+          "vaddr": 11685296,
+          "filesz": 25256,
+          "memsz": 102232,
+          "align": 65536
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libflutter_openssl_crypto.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 1440,
+          "memsz": 1440,
+          "align": 16384
+        },
+        {
+          "offset": 1440,
+          "vaddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 1440,
+          "vaddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libimage_processing_util_jni.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 29488,
+          "memsz": 29488,
+          "align": 16384
+        },
+        {
+          "offset": 29488,
+          "vaddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 16384
+        },
+        {
+          "offset": 30480,
+          "vaddr": 63248,
+          "filesz": 0,
+          "memsz": 4,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 29488,
+          "vaddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libjingle_peerconnection_so.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 11199600,
+          "memsz": 11199600,
+          "align": 16384
+        },
+        {
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 16384
+        },
+        {
+          "offset": 11372528,
+          "vaddr": 11405296,
+          "filesz": 3256,
+          "memsz": 568944,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libolm.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 119280,
+          "memsz": 119280,
+          "align": 16384
+        },
+        {
+          "offset": 119280,
+          "vaddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 16384
+        },
+        {
+          "offset": 120456,
+          "vaddr": 153224,
+          "filesz": 31732,
+          "memsz": 31732,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 119280,
+          "vaddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libsqlcipher.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 4816064,
+          "memsz": 4816064,
+          "align": 16384
+        },
+        {
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "filesz": 347904,
+          "memsz": 347904,
+          "align": 16384
+        },
+        {
+          "offset": 5163968,
+          "vaddr": 5196736,
+          "filesz": 21248,
+          "memsz": 34865,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "filesz": 347904,
+          "memsz": 348992,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libsurface_util_jni.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 2480,
+          "memsz": 2480,
+          "align": 16384
+        },
+        {
+          "offset": 2480,
+          "vaddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 2480,
+          "vaddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 1
+        }
+      ]
+    },
+    "lib/arm64-v8a/libzxprotect.so": {
+      "matches": true,
+      "LOAD": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "filesz": 522176,
+          "memsz": 522176,
+          "align": 16384
+        },
+        {
+          "offset": 522176,
+          "vaddr": 538560,
+          "filesz": 14144,
+          "memsz": 14144,
+          "align": 16384
+        },
+        {
+          "offset": 536320,
+          "vaddr": 569088,
+          "filesz": 88,
+          "memsz": 3120,
+          "align": 16384
+        }
+      ],
+      "GNU_RELRO": [
+        {
+          "offset": 522176,
+          "vaddr": 538560,
+          "filesz": 14144,
+          "memsz": 14400,
+          "align": 1
+        }
+      ]
+    }
+  },
+  "required_function_exports_confirmed": [
+    "EVP_CIPHER_CTX_free",
+    "EVP_CIPHER_CTX_new",
+    "EVP_Digest",
+    "EVP_EncryptFinal_ex",
+    "EVP_EncryptInit_ex",
+    "EVP_EncryptUpdate",
+    "EVP_MD_size",
+    "EVP_aes_128_ctr",
+    "EVP_aes_256_ctr",
+    "EVP_sha1",
+    "EVP_sha256",
+    "EVP_sha512",
+    "PKCS5_PBKDF2_HMAC"
+  ],
+  "ended_utc": "2026-10-11T10:07:13.700188+00:00",
+  "pass": true
+}

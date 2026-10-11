@@ -1,0 +1,15 @@
+test_relro_rounding_reports_actual_writable_load_intersection (test_inspect_native.NativeInspectionTests.test_relro_rounding_reports_actual_writable_load_intersection) ... ERROR
+
+======================================================================
+ERROR: test_relro_rounding_reports_actual_writable_load_intersection (test_inspect_native.NativeInspectionTests.test_relro_rounding_reports_actual_writable_load_intersection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 84, in test_relro_rounding_reports_actual_writable_load_intersection
+    self.assertEqual(relro["page_end_16k"], 16384)
+                     ~~~~~^^^^^^^^^^^^^^^^
+KeyError: 'page_end_16k'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (errors=1)

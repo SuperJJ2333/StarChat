@@ -1,0 +1,18 @@
+test_byte_comparison_does_not_ignore_changed_or_missing_library (test_inspect_native.NativeInspectionTests.test_byte_comparison_does_not_ignore_changed_or_missing_library) ... ok
+test_compressed_native_zip_is_not_direct_mmap_alignment_pass (test_inspect_native.NativeInspectionTests.test_compressed_native_zip_is_not_direct_mmap_alignment_pass) ... ok
+test_duplicate_native_zip_is_rejected (test_inspect_native.NativeInspectionTests.test_duplicate_native_zip_is_rejected) ... C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\zipfile\__init__.py:1611: UserWarning: Duplicate name: 'lib/arm64-v8a/libcrypto.so'
+  return self._open_to_write(zinfo, force_zip64=force_zip64)
+ok
+test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required (test_inspect_native.NativeInspectionTests.test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required) ... ok
+test_missing_input_never_creates_success_report (test_inspect_native.NativeInspectionTests.test_missing_input_never_creates_success_report) ... INSPECTION_INCOMPLETE: required input missing: C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\tmpvu16x9_e\fixture.apk
+ok
+test_nonallocated_strip_difference_is_not_runtime_section_difference (test_inspect_native.NativeInspectionTests.test_nonallocated_strip_difference_is_not_runtime_section_difference) ... ok
+test_relro_failure_is_independent_of_load_alignment (test_inspect_native.NativeInspectionTests.test_relro_failure_is_independent_of_load_alignment) ... ok
+test_truncated_and_wrong_machine_elf_are_rejected (test_inspect_native.NativeInspectionTests.test_truncated_and_wrong_machine_elf_are_rejected) ... ok
+test_undefined_symbol_is_not_an_export (test_inspect_native.NativeInspectionTests.test_undefined_symbol_is_not_an_export) ... ok
+test_zip_16k_never_hides_elf_4k_and_relro_failure (test_inspect_native.NativeInspectionTests.test_zip_16k_never_hides_elf_4k_and_relro_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.025s
+
+OK

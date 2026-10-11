@@ -1,0 +1,125 @@
+test_byte_comparison_does_not_ignore_changed_or_missing_library (test_inspect_native.NativeInspectionTests.test_byte_comparison_does_not_ignore_changed_or_missing_library) ... ERROR
+test_compressed_native_zip_is_not_direct_mmap_alignment_pass (test_inspect_native.NativeInspectionTests.test_compressed_native_zip_is_not_direct_mmap_alignment_pass) ... ERROR
+test_duplicate_native_zip_is_rejected (test_inspect_native.NativeInspectionTests.test_duplicate_native_zip_is_rejected) ... C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\zipfile\__init__.py:1611: UserWarning: Duplicate name: 'lib/arm64-v8a/libcrypto.so'
+  return self._open_to_write(zinfo, force_zip64=force_zip64)
+ERROR
+test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required (test_inspect_native.NativeInspectionTests.test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required) ... ERROR
+test_missing_input_never_creates_success_report (test_inspect_native.NativeInspectionTests.test_missing_input_never_creates_success_report) ... ERROR
+test_nonallocated_strip_difference_is_not_runtime_section_difference (test_inspect_native.NativeInspectionTests.test_nonallocated_strip_difference_is_not_runtime_section_difference) ... ERROR
+test_relro_failure_is_independent_of_load_alignment (test_inspect_native.NativeInspectionTests.test_relro_failure_is_independent_of_load_alignment) ... ERROR
+test_truncated_and_wrong_machine_elf_are_rejected (test_inspect_native.NativeInspectionTests.test_truncated_and_wrong_machine_elf_are_rejected) ... ERROR
+test_undefined_symbol_is_not_an_export (test_inspect_native.NativeInspectionTests.test_undefined_symbol_is_not_an_export) ... ERROR
+test_zip_16k_never_hides_elf_4k_and_relro_failure (test_inspect_native.NativeInspectionTests.test_zip_16k_never_hides_elf_4k_and_relro_failure) ... ERROR
+
+======================================================================
+ERROR: test_byte_comparison_does_not_ignore_changed_or_missing_library (test_inspect_native.NativeInspectionTests.test_byte_comparison_does_not_ignore_changed_or_missing_library)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 99, in test_byte_comparison_does_not_ignore_changed_or_missing_library
+    comparison = subject.compare_libraries(left, right)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 13, in compare_libraries
+    raise NotImplementedError("comparison not implemented")
+NotImplementedError: comparison not implemented
+
+======================================================================
+ERROR: test_compressed_native_zip_is_not_direct_mmap_alignment_pass (test_inspect_native.NativeInspectionTests.test_compressed_native_zip_is_not_direct_mmap_alignment_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 83, in test_compressed_native_zip_is_not_direct_mmap_alignment_pass
+    native = subject.inspect_apk(self.path)["libraries"]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 9, in inspect_apk
+    raise NotImplementedError("APK inspection not implemented")
+NotImplementedError: APK inspection not implemented
+
+======================================================================
+ERROR: test_duplicate_native_zip_is_rejected (test_inspect_native.NativeInspectionTests.test_duplicate_native_zip_is_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 89, in test_duplicate_native_zip_is_rejected
+    subject.inspect_apk(self.path)
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 9, in inspect_apk
+    raise NotImplementedError("APK inspection not implemented")
+NotImplementedError: APK inspection not implemented
+
+======================================================================
+ERROR: test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required (test_inspect_native.NativeInspectionTests.test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 120, in test_matrix_fallback_accepts_one_size_symbol_but_not_missing_required
+    self.assertTrue(subject.symbol_contract(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 17, in symbol_contract
+    raise NotImplementedError("symbol contract not implemented")
+NotImplementedError: symbol contract not implemented
+
+======================================================================
+ERROR: test_missing_input_never_creates_success_report (test_inspect_native.NativeInspectionTests.test_missing_input_never_creates_success_report)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 131, in test_missing_input_never_creates_success_report
+    result = subject.main(["--source", str(self.path), "--final",
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 21, in main
+    raise NotImplementedError("input validation not implemented")
+NotImplementedError: input validation not implemented
+
+======================================================================
+ERROR: test_nonallocated_strip_difference_is_not_runtime_section_difference (test_inspect_native.NativeInspectionTests.test_nonallocated_strip_difference_is_not_runtime_section_difference)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 106, in test_nonallocated_strip_difference_is_not_runtime_section_difference
+    first = subject.inspect_elf(elf(debug=b"symbols"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 5, in inspect_elf
+    raise NotImplementedError("ELF inspection not implemented")
+NotImplementedError: ELF inspection not implemented
+
+======================================================================
+ERROR: test_relro_failure_is_independent_of_load_alignment (test_inspect_native.NativeInspectionTests.test_relro_failure_is_independent_of_load_alignment)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 77, in test_relro_failure_is_independent_of_load_alignment
+    result = subject.inspect_elf(elf(relro_end=12288))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 5, in inspect_elf
+    raise NotImplementedError("ELF inspection not implemented")
+NotImplementedError: ELF inspection not implemented
+
+======================================================================
+ERROR: test_truncated_and_wrong_machine_elf_are_rejected (test_inspect_native.NativeInspectionTests.test_truncated_and_wrong_machine_elf_are_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 94, in test_truncated_and_wrong_machine_elf_are_rejected
+    subject.inspect_elf(data)
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 5, in inspect_elf
+    raise NotImplementedError("ELF inspection not implemented")
+NotImplementedError: ELF inspection not implemented
+
+======================================================================
+ERROR: test_undefined_symbol_is_not_an_export (test_inspect_native.NativeInspectionTests.test_undefined_symbol_is_not_an_export)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 113, in test_undefined_symbol_is_not_an_export
+    result = subject.inspect_elf(elf(exports=("EVP_Digest",),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 5, in inspect_elf
+    raise NotImplementedError("ELF inspection not implemented")
+NotImplementedError: ELF inspection not implemented
+
+======================================================================
+ERROR: test_zip_16k_never_hides_elf_4k_and_relro_failure (test_inspect_native.NativeInspectionTests.test_zip_16k_never_hides_elf_4k_and_relro_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\test_inspect_native.py", line 69, in test_zip_16k_never_hides_elf_4k_and_relro_failure
+    result = subject.inspect_apk(self.path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\android2214-native-static\inspect_native.py", line 9, in inspect_apk
+    raise NotImplementedError("APK inspection not implemented")
+NotImplementedError: APK inspection not implemented
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.036s
+
+FAILED (errors=10)
