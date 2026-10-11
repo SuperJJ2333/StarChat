@@ -32,6 +32,16 @@ commit/release. A later distributed revocation cannot retract already released
 bytes. No positive authorization cache is maintained. An unavailable authority,
 schema, keyring or corrupted envelope returns503, never an absent/replacement vault.
 
+The internal authority endpoint is fixed to
+`http://business-api:8082/api/v1/auth/matrix-recovery-authorize`, matching the
+business container listener and Compose healthcheck. The host-published port does
+not change this internal destination. Release checks must exercise the actual
+Twisted HTTP authority against an isolated listener on8082, including denial,
+dependency failure and final native revocation; a TCP handshake alone is not an
+authorization test. Never use production recovery material for these fixtures.
+An endpoint-only repair preserves both credentials, the5-second dependency timeout,
+final revocation checks, fixed error mapping and all existing data/key providers.
+
 The vault has a separate namespace. Native room_keys/version, SSSS, cross-signing,
 existing device policy and MobileLoginModule remain unchanged. Server code never
 decrypts session archives, room messages or attachments. Custody means the operator

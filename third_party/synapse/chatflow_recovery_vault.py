@@ -19,7 +19,7 @@ from chatflow_recovery_store import VaultError, VaultStore, descriptor, digest
 
 BASE = '/_matrix/client/unstable/com.starchat.recovery/v1'
 PRIVATE_BASE = '/_synapse/client/chatflow/recovery/v1'
-AUTHORITY = 'http://business-api:8000/api/v1/auth/matrix-recovery-authorize'
+AUTHORITY = 'http://business-api:8082/api/v1/auth/matrix-recovery-authorize'
 LIMIT = 1024 * 1024
 
 
