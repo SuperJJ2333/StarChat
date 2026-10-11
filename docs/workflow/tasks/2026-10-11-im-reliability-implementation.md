@@ -129,3 +129,6 @@ Android原生fixture追加两种全新isolate冷启动顺序、真实channel/文
 Android r3实际3用例通过（Flutter+4含tearDownAll），源码0fc080e5、APK0c0fbd6b，完整固定重建/签名门禁通过；5558专用包及W映射已按身份清理。见原生报告。缓存c3取消修复独立审查新增cross-source同digest共享flight回归：parent44dab两例PASS，c3控制PASS/取消FAIL，已阻止集成并交owner按聚合有效消费者修正。原7边界全部PASS也不能掩盖新增失败。
 
 永久worker组合guard 7407f374→bd3ab547已root独立SPEC→QUALITY通过：40专项、915 infra PASS/20显式PG-DSN skip；现在线上bfde、回退18a与APIa935均通过新检查，首次坏候选13f3精确因入口构造缺接口被拒绝。原八项worker协议及九项API协议全部保留。安装器单独独立审查发现预检后source再读、恢复backup未验hash、失败临时文件残留三个边界，已RED→修源码，等待同组增量验证；未在审查通过前安装，也没有业务服务重启。Android2214分发准备已分离委派，不含虚构APK SHA或未通过门禁的发布动作。
+## 15:55+08 永久发布检查已安装
+
+07:54:59.806–07:55:11.325Z永久ops pair安装PASS，probe SHA2a6de21d、guard SHA46d98c6e。源码bd3ab547经root独立SPEC→QUALITY；安装器独立初审及增量19真实临时文件/mock边界最终PASS，精确installer SHA cc9b1de8。已保留旧字节/权限/uid/gid于`/opt/starchat/releases/im-worker-entry-guard-20261011-2a6de21d/private-guard-before`；校验后固定bytes替换、失败仅恢复本次精确身份，不读未验新source或损坏backup。actual installed guard验证线上bfde、回退18a各九项Worker与APIa935九项全部通过；全体业务容器ID保持，无服务切换/重启。历史部署脚本中的旧guard SHA是当时证据，不回写；未来部署预检使用本次新SHA。receipt在im-worker-entry-guard/installation.json。
