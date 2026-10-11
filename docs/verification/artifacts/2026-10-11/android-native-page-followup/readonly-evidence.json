@@ -1,0 +1,731 @@
+{
+  "observed_at_utc": "2026-10-11T08:34:22.337573+00:00",
+  "scope": "readonly existing files; LOAD/RELRO arithmetic and extra-page writable LOAD overlap screening only; official RELRO arithmetic flags are not proof of load failure; no rebuild/device execution",
+  "aar": {
+    "path": "C:\\Users\\Administrator\\.gradle\\caches\\modules-2\\files-2.1\\com.android.ndk.thirdparty\\openssl\\1.1.1q-beta-1\\658128e1c37d6b12a55fb4e8717bb00313177b69\\openssl-1.1.1q-beta-1.aar",
+    "sha256": "a5b05c4b362d35c022238ef9b2e4e2196248adea3bac9dd683845ee75a3a8d66",
+    "bytes": 6778965,
+    "prefab": {
+      "name": "openssl",
+      "schema_version": 1,
+      "dependencies": [],
+      "version": "1.1.1.17"
+    },
+    "crypto_arm64_abi": {
+      "abi": "arm64-v8a",
+      "api": 21,
+      "ndk": 25,
+      "stl": "c++_shared"
+    },
+    "libcrypto_unstripped_sha256": "ab0bf08aa5400fe2e7825ffdd746176dfc3502b77fce5086627844437e661554",
+    "compiled_metadata": [
+      "OpenSSL 1.1.1q  5 Jul 2022",
+      "OPENSSLDIR: \"/src/openssl/build/port/install/Arm64\"",
+      "ENGINESDIR: \"/src/openssl/build/port/install/Arm64/lib/engines-1.1\"",
+      "compiler: aarch64-linux-android21-clang -fPIC -pthread -Wa,--noexecstack -Qunused-arguments -Wall -O3 -DOPENSSL_USE_NODELETE -DOPENSSL_PIC -DOPENSSL_CPUID_OBJ -DOPENSSL_BN_ASM_MONT -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DKECCAK1600_ASM -DVPAES_ASM -DECP_NISTZ256_ASM -DPOLY1305_ASM -DNDEBUG -D__ANDROID_API__=21"
+    ]
+  },
+  "apk": {
+    "path": "D:\\pythonProject\\outsource\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\android2213-release\\delivery\\ChatFlow-0.4.44-build2213-arm64.apk",
+    "sha256": "08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271",
+    "libraries": [
+      {
+        "name": "lib/arm64-v8a/libapp.so",
+        "sha256": "3564b40d26aa3625301ee788a630b2a699cc9cc7e1529ccd044306b1153f5d14",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 7413906,
+            "align": 65536,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 7471104,
+            "vaddr": 7471104,
+            "memsz": 11551328,
+            "align": 65536,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 19070976,
+            "vaddr": 19070976,
+            "memsz": 112,
+            "align": 65536,
+            "aligned_16k": true
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [],
+        "passes_literal_load_relro_arithmetic_screen": true
+      },
+      {
+        "name": "lib/arm64-v8a/libbarhopper_v3.so",
+        "sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 4859168,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 4866048,
+            "vaddr": 4866048,
+            "memsz": 49152,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 4911488,
+            "vaddr": 4927872,
+            "memsz": 294192,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 4866048,
+            "vaddr": 4866048,
+            "memsz": 49152,
+            "align": 1,
+            "aligned_16k": true
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 4915200,
+            "rounded_end": 4915200,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": true
+      },
+      {
+        "name": "lib/arm64-v8a/libc++_shared.so",
+        "sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 624800,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 624800,
+            "vaddr": 641184,
+            "memsz": 585720,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 1210520,
+            "vaddr": 1243288,
+            "memsz": 42856,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 1250352,
+            "vaddr": 1299504,
+            "memsz": 32032,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 1210520,
+            "vaddr": 1243288,
+            "memsz": 42856,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 1286144,
+            "rounded_end": 1294336,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libcrypto.so",
+        "sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 1036532,
+            "align": 4096,
+            "aligned_16k": false
+          },
+          {
+            "type": "LOAD",
+            "offset": 1040384,
+            "vaddr": 1044480,
+            "memsz": 1379680,
+            "align": 4096,
+            "aligned_16k": false
+          },
+          {
+            "type": "LOAD",
+            "offset": 2420064,
+            "vaddr": 2428256,
+            "memsz": 166112,
+            "align": 4096,
+            "aligned_16k": false
+          },
+          {
+            "type": "LOAD",
+            "offset": 2586176,
+            "vaddr": 2598464,
+            "memsz": 19569,
+            "align": 4096,
+            "aligned_16k": false
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 2420064,
+            "vaddr": 2428256,
+            "memsz": 168608,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 2596864,
+            "rounded_end": 2605056,
+            "writable_load_overlaps": [
+              {
+                "start": 2598464,
+                "end": 2618033
+              }
+            ]
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libdartjni.so",
+        "sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 125968,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 125968,
+            "vaddr": 142352,
+            "memsz": 5104,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 127344,
+            "vaddr": 160112,
+            "memsz": 2424,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 125968,
+            "vaddr": 142352,
+            "memsz": 5104,
+            "align": 1,
+            "aligned_16k": true
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 147456,
+            "rounded_end": 147456,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": true
+      },
+      {
+        "name": "lib/arm64-v8a/libdatastore_shared_counter.so",
+        "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 4544,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 4544,
+            "vaddr": 20928,
+            "memsz": 616,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 5160,
+            "vaddr": 37928,
+            "memsz": 1,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 4544,
+            "vaddr": 20928,
+            "memsz": 3648,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 24576,
+            "rounded_end": 32768,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libflutter.so",
+        "sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 11186288,
+            "align": 65536,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 11186288,
+            "vaddr": 11251824,
+            "memsz": 368528,
+            "align": 65536,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 11554224,
+            "vaddr": 11685296,
+            "memsz": 102232,
+            "align": 65536,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 11186288,
+            "vaddr": 11251824,
+            "memsz": 368528,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 11620352,
+            "rounded_end": 11632640,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libflutter_openssl_crypto.so",
+        "sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 1440,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 1440,
+            "vaddr": 17824,
+            "memsz": 2656,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 1440,
+            "vaddr": 17824,
+            "memsz": 2656,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 20480,
+            "rounded_end": 32768,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libimage_processing_util_jni.so",
+        "sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 29488,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 29488,
+            "vaddr": 45872,
+            "memsz": 3280,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 30480,
+            "vaddr": 63248,
+            "memsz": 4,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 29488,
+            "vaddr": 45872,
+            "memsz": 3280,
+            "align": 1,
+            "aligned_16k": true
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 49152,
+            "rounded_end": 49152,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": true
+      },
+      {
+        "name": "lib/arm64-v8a/libjingle_peerconnection_so.so",
+        "sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 11199600,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 11199600,
+            "vaddr": 11215984,
+            "memsz": 174992,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 11372528,
+            "vaddr": 11405296,
+            "memsz": 568944,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 11199600,
+            "vaddr": 11215984,
+            "memsz": 174992,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 11390976,
+            "rounded_end": 11403264,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libolm.so",
+        "sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 119280,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 119280,
+            "vaddr": 135664,
+            "memsz": 3600,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 120456,
+            "vaddr": 153224,
+            "memsz": 31732,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 119280,
+            "vaddr": 135664,
+            "memsz": 3600,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 139264,
+            "rounded_end": 147456,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libsqlcipher.so",
+        "sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 4816064,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 4816064,
+            "vaddr": 4832448,
+            "memsz": 347904,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 5163968,
+            "vaddr": 5196736,
+            "memsz": 34865,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 4816064,
+            "vaddr": 4832448,
+            "memsz": 348992,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 5181440,
+            "rounded_end": 5193728,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libsurface_util_jni.so",
+        "sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 2480,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 2480,
+            "vaddr": 18864,
+            "memsz": 1616,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 2480,
+            "vaddr": 18864,
+            "memsz": 1616,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 20480,
+            "rounded_end": 32768,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      },
+      {
+        "name": "lib/arm64-v8a/libzxprotect.so",
+        "sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+        "headers": [
+          {
+            "type": "LOAD",
+            "offset": 0,
+            "vaddr": 0,
+            "memsz": 522176,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 522176,
+            "vaddr": 538560,
+            "memsz": 14144,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "LOAD",
+            "offset": 536320,
+            "vaddr": 569088,
+            "memsz": 3120,
+            "align": 16384,
+            "aligned_16k": true
+          },
+          {
+            "type": "GNU_RELRO",
+            "offset": 522176,
+            "vaddr": 538560,
+            "memsz": 14400,
+            "align": 1,
+            "aligned_16k": false
+          }
+        ],
+        "relro_extra_page_writable_overlap_screen": [
+          {
+            "end": 552960,
+            "rounded_end": 557056,
+            "writable_load_overlaps": []
+          }
+        ],
+        "passes_literal_load_relro_arithmetic_screen": false
+      }
+    ],
+    "load_alignment_failures": [
+      "lib/arm64-v8a/libcrypto.so"
+    ],
+    "relro_roundup_overlap_screen": [
+      "lib/arm64-v8a/libcrypto.so"
+    ],
+    "literal_load_relro_arithmetic_flags": [
+      "lib/arm64-v8a/libc++_shared.so",
+      "lib/arm64-v8a/libcrypto.so",
+      "lib/arm64-v8a/libdatastore_shared_counter.so",
+      "lib/arm64-v8a/libflutter.so",
+      "lib/arm64-v8a/libflutter_openssl_crypto.so",
+      "lib/arm64-v8a/libjingle_peerconnection_so.so",
+      "lib/arm64-v8a/libolm.so",
+      "lib/arm64-v8a/libsqlcipher.so",
+      "lib/arm64-v8a/libsurface_util_jni.so",
+      "lib/arm64-v8a/libzxprotect.so"
+    ]
+  },
+  "tools": {
+    "ndk_make": {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\prebuilt\\windows-x86_64\\bin\\make.exe",
+      "sha256": "0399888d520b66cd75e9bf3abc8453af188a5a51484326730b58bfd675cb373c",
+      "exit_code": 0,
+      "version": [
+        "GNU Make 4.3",
+        "Built for Windows32",
+        "Copyright (C) 1988-2020 Free Software Foundation, Inc.",
+        "License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>"
+      ]
+    },
+    "msys_perl": {
+      "path": "C:\\Program Files\\Git\\usr\\bin\\perl.exe",
+      "sha256": "ba92b05b95b2a8c70534b7517d23623332e15b3395641c30ecc1deffc1ed5f27",
+      "exit_code": 0,
+      "version": [
+        "This is perl 5, version 38, subversion 2 (v5.38.2) built for x86_64-msys-thread-multi",
+        "",
+        "Copyright 1987-2023, Larry Wall",
+        ""
+      ]
+    },
+    "ndk_clang": {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "sha256": "7d31c6f6fad98987b6c9d21b800afaa8b3e37f052e94aaddc941d42ff2a35579",
+      "exit_code": 0,
+      "version": [
+        "Android (13624864, based on r530567e) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project 97a699bf4812a18fb657c2779f5296a4ab2694d2)",
+        "Target: x86_64-w64-windows-gnu",
+        "Thread model: posix",
+        "InstalledDir: C:/Users/Administrator/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin"
+      ]
+    },
+    "linux_ndk_prebuilt_present": false,
+    "ndk_revision": "Pkg.Desc = Android NDK\nPkg.Revision = 28.2.13676358\nPkg.BaseRevision = 28.2.13676358\nPkg.ReleaseName = r28c"
+  },
+  "official_1_1_1q_archive": {
+    "url": "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1q/openssl-1.1.1q.tar.gz",
+    "sha256_url": "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1q/openssl-1.1.1q.tar.gz.sha256",
+    "sha256_observed_from_official_file": "d7939ce614029cdff0b6c20f0e2e5703158a489a72b2507b8bd51bf8c8fd10ca",
+    "archive_downloaded": false,
+    "historical_ndkports_1_1_1q_recipe_pin": "UNRESOLVED: official history endpoint inaccessible; do not substitute current 3.2.1 recipe"
+  }
+}

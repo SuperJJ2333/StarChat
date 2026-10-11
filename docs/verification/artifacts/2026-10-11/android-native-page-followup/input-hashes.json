@@ -1,0 +1,5 @@
+{
+  "README.md": "18bc54129aceff080dac511c29e97719e131c58705edbfe9fc090f1a8c86f699",
+  "readonly-evidence.json": "633dddc1d663ed8d965575a1315dc97de993e48ee97a3751a01671546439c98a",
+  "verification": "Documentation/read-only metadata only; no source build, binary alteration or native runtime test"
+}

@@ -1,0 +1,56 @@
+# Android libcrypto 16 KiB — read-only feasibility handoff
+
+Owner: review_r1_r2. Scope authorized by root: independent inspection and minimum executable repair plan only. No client, Pub cache, Maven cache, native source/library, release-preparation file, deployment or service was changed. No OpenSSL archive, NDK, emulator image or other large package was downloaded. Only official documentation/small metadata and existing local artifacts were read. This is not an implementation, protected-change approval, rebuilt library or device PASS.
+
+## Decision
+
+The narrow repair candidate is **source-rebuild the same OpenSSL 1.1.1q with a pinned NDK28 toolchain and explicit 16 KiB link layout**, then substitute only its Android Prefab AAR through a project-scoped, fixed-version dependency. This is technically supported by the upstream build interface, but **not yet demonstrated on this host**. Keeping the version alone is not proof of identical configuration: the historical ndkports recipe/patch provenance must be pinned and compared before calling the result a same-configuration rebuild.
+
+There is no evidence for a ready compatible Maven upgrade. Current ndkports main is OpenSSL3.2.1, whereas the locked AAR is1.1.1q; using main would be a cryptography dependency upgrade and requires its own ADR/domain/vector/native acceptance. A failed metadata fetch must not be interpreted as “no newer version exists.”
+
+## Verified local inputs
+
+`readonly-evidence.json` records exact hashes and metadata; it contains no private keys, tokens or application data.
+
+| Input | Observed identity / implication |
+| --- | --- |
+| Existing final2213 APK | SHA `08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271`; 14 ARM64 libraries inspected |
+| OpenSSL AAR | `com.android.ndk.thirdparty:openssl:1.1.1q-beta-1`; SHA `a5b05c4b362d35c022238ef9b2e4e2196248adea3bac9dd683845ee75a3a8d66`, 6,778,965 bytes |
+| ARM64 AAR metadata | Prefab version `1.1.1.17`, NDK25, API21, `c++_shared`; headers identify OpenSSL1.1.1q, 5 July2022 |
+| ARM64 AAR libcrypto | Unstripped SHA `ab0bf08aa5400fe2e7825ffdd746176dfc3502b77fce5086627844437e661554`; SONAME `libcrypto.so`, NEEDED `libdl.so`, `libc.so` |
+| Existing final2213 libcrypto | Stripped SHA `13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831`; four PT_LOAD align4096; 16KiB offset/address congruence fails |
+| NDK | `28.2.13676358` / r28c; Clang19.0.1; installed host toolchain is Windows only |
+| Make / Perl | NDK's `prebuilt/windows-x86_64/bin/make.exe` executes as GNU Make4.3. Git's `usr/bin/perl.exe` executes as MSYS Perl5.38.2; Git `sh.exe` exists. Absence from PATH was not absence from disk. |
+
+The AAR's embedded compiler metadata includes Android21, PIC, O3, pthread and ARM64 SHA/AES/BN assembly features. Do not introduce `no-asm`, cipher removal, a different API floor or changed FFI semantics to get an easy build. AAR and APK libcrypto hashes differ because the latter is stripped; no unsupported byte-equivalence claim is made.
+
+The current plugin is `flutter_openssl_crypto0.5.0`. Its Android Gradle dependency is the exact AAR above; CMake links `openssl::crypto` via Prefab. Matrix loads `libcrypto.so` and looks up PBKDF2, SHA1/256/512, AES128/256-CTR, cipher-context and digest functions. Raising the app's NDK or running ZIP alignment does not relink this prebuilt library. Existing project Gradle already supplies its own AGP resolution, so changing AGP alone is not this repair.
+
+## Official source findings and remaining input
+
+- [Android page-size guidance](https://developer.android.com/guide/practices/page-sizes): prebuilt shared objects must be rebuilt/reimported; r28 defaults to16KiB alignment. Explicit `-Wl,-z,max-page-size=16384` and `-Wl,-z,common-page-size=16384` remove ambiguity in a non-CMake upstream build. ELF layout, ZIP alignment and execution are separate checks.
+- [OpenSSL1.1.1q Android build notes](https://github.com/openssl/openssl/blob/OpenSSL_1_1_1q/NOTES.ANDROID) and [Android target configuration](https://github.com/openssl/openssl/blob/OpenSSL_1_1_1q/Configurations/15-android.conf): use Configure with `android-arm64`, explicit API, NDK environment and toolchain PATH; Perl and make are required. Upstream states only Linux was actually tested, and Windows/MSYS2 suitability was uncertain. Tool availability is therefore not build proof.
+- [Official old-release index](https://openssl-library.org/source/old/1.1.1/index.html) links the9.4MiB source archive and [official SHA256 file](https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1q/openssl-1.1.1q.tar.gz.sha256). The small checksum file was fetched successfully: `d7939ce614029cdff0b6c20f0e2e5703158a489a72b2507b8bd51bf8c8fd10ca`. The archive itself was not fetched or verified in this task.
+- [Current official ndkports recipe](https://android.googlesource.com/platform/tools/ndkports/+/refs/heads/main/openssl/build.gradle.kts) is3.2.1, not1.1.1q. It demonstrates a Configure/shared, make `SHLIB_EXT=.so`, install and Prefab pipeline; its immutable displayed blob is `d4b0c4689311c67de75251a09b53ee6e6bb65dd8`. It is reference material, not the proposed source pin. The official history endpoint and historical recipe requests were inaccessible here, so **the exact1.1.1q ndkports commit/patch list remains unresolved**.
+- [NDK other-build-system guidance](https://developer.android.com/ndk/guides/other_build_systems) distinguishes Windows and Linux host binaries and recommends a Linux NDK in a Linux environment for affected third-party build systems. Mounting this Windows NDK into Linux Docker does not provide a Linux compiler. Docker is available locally, but the required Linux NDK was not found in the inspected installation and was not downloaded.
+
+AgentKey MCP query tools were not exposed in this session; existing web tools were used for official primary sources, with small direct HTTPS reads for checksum metadata. No connector setup or environment configuration was changed.
+
+## Minimum implementation sequence — proposed, not executed
+
+1. **Pin and review inputs.** Resolve the historical1.1.1q ndkports recipe/patch list and verify its source against the official release archive/SHA. Preserve OpenSSL/SSLeay licenses and build notices. Record source tree/archive, toolchain executables, build image and output hashes. Domain/security review must confirm this is a build-layout change without algorithm/key/protocol changes; if exact configuration cannot be established, explicitly review that difference instead of claiming equivalence.
+2. **Choose one isolated build environment.** The lowest-download experiment can use existing Windows NDK+Make+MSYS Perl in a new owned artifact directory; set only process-local NDK/PATH/SHELL and record all versions. It still needs a coherent shell/path/compiler-wrapper trial and may fail; do not mutate Pubcache to compensate. The reproducibility-preferred route is Linux Docker/CI with a fixed image digest, make/Perl and Linux-host NDK28.2. It needs that distinct NDK input or a verified existing builder. Do not silently pull a large SDK or use an unpinned “latest” image.
+3. **Rebuild the same implementation.** In a clean build directory use the pinned recipe's original options and target `android-arm64`, API21, shared libraries. Add the two linker page-size options and RELRO protection; retain assembly/features and exported ABI. Preserve `SHLIB_EXT=.so`/SONAME, include metadata and source license. Build ARM64 for this release; a separate x86_64 test library is needed if the only16KiB test environment is x86_64, and it cannot prove the ARM64 artifact's actual execution.
+4. **Integrate one exact AAR dependency.** Preferred minimal source change is a project-scoped Gradle dependency substitution from the exact current Maven coordinate to a uniquely versioned, source-built local Maven/Prefab artifact with locked SHA. Preserve module name `openssl`, exported `crypto` module, header layout and SONAME. Verify the Gradle resolution graph contains one libcrypto provider and packaged bytes match the built/stripped output. Keep flutter_openssl_crypto0.5.0, Dart FFI and iOS unchanged. Do not overwrite Maven/Pub caches, replace binaries after signing, add `pickFirst`, remove the library or edit ELF headers. If dependency substitution proves incompatible, a repository-owned plugin fork is the next explicitly reviewed option.
+5. **Prove equivalence before rebuilding the app.** Diff exported symbols and dynamic dependencies; compare generated `opensslconf.h`, feature flags and API floor against baseline. Verify SHA1/256/512, PBKDF2-HMAC-SHA1/SHA256 and AES128/256-CTR known-answer outputs, zero/partial/multiblock inputs, SDK encrypted-attachment round trips and old recovery/database fixtures using synthetic keys only. Ciphertext, KDF parameters, verification failures and key-handling contracts must stay unchanged. Do not accept a symbol-list-only test.
+6. **Run actual native controls and final packaging.** Load and execute the rebuilt ARM64 library and the actual final app on a4KiB control and an ARM64 environment reporting `getconf PAGE_SIZE=16384`. Disable/identify compatibility mode when assessing native16KiB support. Cover startup, real Matrix FFI encrypt/decrypt/KDF, attachment round trip and existing-data/key recovery. Run all-library ELF checks plus official final `zipalign -c -P 16 -v 4`, fixed signer/rebuild semantic checks and exact final2214 library hashes. The real final artifact is not available yet and must be inspected independently of2213.
+
+No ETA or immediate-release success is implied: source/recipe provenance, Linux toolchain or Windows-shell validation, and a genuine ARM64 16KiB execution environment are separate prerequisites. A maintained OpenSSL major/minor upgrade would expand scope to a protected dependency migration and requires ADR, domain/quality review and the same vector/native/data gates before integration.
+
+## RELRO interpretation limit
+
+The new read-only program-header scan also evaluates the official literal `(VirtAddr + MemSiz) % 16384` RELRO formula. It flags10 of14 existing libraries, including libcrypto. This does **not** establish10 runtime failures: nine flagged layouts have no writable PT_LOAD content in the extra interval created by rounding the RELRO end to16KiB. Only libcrypto has both the known4KiB LOAD problem and such an additional writable-load overlap in this screen. Its RELRO ends at0x27a000, rounds to0x27c000, while the next writable LOAD starts0x27a640. Independent NDK readelf confirmed sample headers, including the wrapper and libc++ `.relro_padding` layouts.
+
+These are raw layout facts and a conservative overlap screen, not a substitute for Android-linker/native execution. Do not mark the other13 libraries “fully compatible” based on PT_LOAD alone, or automatically expand the repair to nine unrelated libraries based only on the literal RELRO formula. Record any remaining official-check discrepancy and resolve it with actual16KiB loader behavior before a whole-app compatibility claim.
+
+Next executable step for root: obtain/pin the historical1.1.1q recipe and choose the isolated build host, then authorize the narrow source-build candidate plus its domain review and dual-page native gates. No product patch is attached to this read-only handoff.
