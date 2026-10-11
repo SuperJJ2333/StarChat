@@ -275,6 +275,25 @@ def test_image_probe_rejects_missing_worker_assertion(monkeypatch):
         guard.verify_image(image, 'worker')
 
 
+def test_image_probe_rejects_legacy_proof_without_entry_composition(monkeypatch):
+    guard = load('business_release_guard')
+
+    def run(command, **_kwargs):
+        if command[:3] == ['docker', 'rm', '-f']:
+            return SimpleNamespace(returncode=0, stdout='')
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            'protocol': 'worker-runtime-refresh-v1', 'role': 'worker', 'passed': True,
+            'checks': [
+                'worker_runtime_imports', 'worker_event_wiring', 'worker_credential_event_boundary',
+                'worker_t2_manual_source_advisory',
+                'worker_refresh_same_result_no_expiry_extension', 'worker_refresh_superseded_result',
+                'worker_refresh_mismatched_replay_revokes', 'worker_refresh_legacy_rotation']}) + '\n')
+
+    monkeypatch.setattr(guard.subprocess, 'run', run)
+    with pytest.raises(ValueError, match='Incomplete'):
+        guard.verify_image('sha256:' + 'a' * 64, 'worker')
+
+
 def test_freeze_checks_api_and_worker_even_with_same_digest(tmp_path, monkeypatch):
     guard = load('business_release_guard')
     image = 'sha256:' + 'a' * 64
@@ -332,21 +351,61 @@ def test_switch_rejects_missing_worker_compose_before_up(monkeypatch):
         guard.switch(['candidate-api.json'], ['business-api'], 'deploy')
 
 
-def test_worker_probe_runs_runtime_event_and_refresh_checks_locally():
+def run_worker_probe(setup=''):
     probe = ROOT / 'scripts' / 'business_refresh_image_probe.py'
     worker = ROOT / 'services' / 'business-worker' / 'app'
     package = ROOT / 'services' / 'business-api' / 'app'
     code = ('import json, runpy, sys; '
+            'sys.path[:0] = [sys.argv[2], str(__import__("pathlib").Path(sys.argv[3]).parent)]; '
+            'import main, worker; import app.core.outbox as outbox; '
+            'exec(sys.argv[4]); '
             'probe=runpy.run_path(sys.argv[1]); '
             'print(json.dumps(probe["verify_worker"](sys.argv[2],sys.argv[3])))')
     environment = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
-    result = subprocess.run([sys.executable, '-c', code, str(probe), str(worker), str(package)],
-                            capture_output=True, text=True, timeout=60, env=environment)
+    return subprocess.run([sys.executable, '-c', code, str(probe), str(worker), str(package), setup],
+                          capture_output=True, text=True, timeout=60, env=environment)
+
+
+def test_worker_probe_rejects_new_worker_with_old_consumer_contract():
+    result = run_worker_probe('''
+for name in ('mark_claim_succeeded', 'mark_claim_failed', 'mark_claim_dead'):
+    delattr(outbox.OutboxConsumer, name)
+''')
+    assert result.returncode != 0, result.stdout
+    assert 'consumer requires generation-fenced claim completion' in result.stderr
+
+
+@pytest.mark.parametrize('setup, reason', [
+    ('main.OutboxConsumer = object', 'worker entry class binding'),
+    ('main.Worker = object', 'worker entry class binding'),
+    ("outbox.__file__ = '/stale-source/app/core/outbox.py'", 'worker import origin'),
+    ("worker.__file__ = '/stale-source/worker.py'", 'worker import origin'),
+])
+def test_worker_probe_rejects_entry_binding_or_origin_drift(setup, reason):
+    result = run_worker_probe(setup)
+    assert result.returncode != 0, result.stdout
+    assert reason in result.stderr
+
+
+def test_worker_probe_runs_runtime_event_and_refresh_checks_locally():
+    result = run_worker_probe('''
+def reject_execution(*args, **kwargs):
+    raise AssertionError('probe must not run worker or claim events')
+worker.Worker.run_once = reject_execution
+worker.Worker.run_forever = reject_execution
+outbox.OutboxConsumer.claim_batch = reject_execution
+original_init = outbox.OutboxConsumer.__init__
+def isolated_init(self, session_factory, *args, **kwargs):
+    assert session_factory is None, 'composition must not connect to a database'
+    original_init(self, session_factory, *args, **kwargs)
+outbox.OutboxConsumer.__init__ = isolated_init
+''')
     assert result.returncode == 0, result.stderr[-2000:]
     proof = json.loads(result.stdout.splitlines()[-1])
     assert proof['passed'] is True and proof['role'] == 'worker'
     assert proof['checks'] == [
-        'worker_runtime_imports', 'worker_event_wiring', 'worker_credential_event_boundary',
+        'worker_runtime_imports', 'worker_entry_composition',
+        'worker_event_wiring', 'worker_credential_event_boundary',
         'worker_t2_manual_source_advisory',
         'worker_refresh_same_result_no_expiry_extension', 'worker_refresh_superseded_result',
         'worker_refresh_mismatched_replay_revokes', 'worker_refresh_legacy_rotation']

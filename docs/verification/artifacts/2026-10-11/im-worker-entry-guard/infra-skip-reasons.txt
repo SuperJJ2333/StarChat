@@ -1,0 +1,12 @@
+ssssssssssssssssssss                                                     [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:61: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:76: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:91: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:111: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:138: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:152: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:174: explicit isolated PostgreSQL DSN required
+SKIPPED [1] tests\infra\test_synapse_recovery_postgres.py:192: explicit isolated PostgreSQL DSN required
+SKIPPED [12] tests\infra\test_synapse_recovery_postgres.py:206: explicit isolated PostgreSQL DSN required
+20 skipped in 0.32s

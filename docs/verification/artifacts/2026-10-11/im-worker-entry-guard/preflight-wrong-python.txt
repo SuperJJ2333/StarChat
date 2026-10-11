@@ -1,0 +1,157 @@
+FFFFFFF                                                                  [100%]
+================================== FAILURES ===================================
+_______ test_image_probe_rejects_legacy_proof_without_entry_composition _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000022165932610>
+
+    def test_image_probe_rejects_legacy_proof_without_entry_composition(monkeypatch):
+        guard = load('business_release_guard')
+    
+        def run(command, **_kwargs):
+            if command[:3] == ['docker', 'rm', '-f']:
+                return SimpleNamespace(returncode=0, stdout='')
+            return SimpleNamespace(returncode=0, stdout=json.dumps({
+                'protocol': 'worker-runtime-refresh-v1', 'role': 'worker', 'passed': True,
+                'checks': [
+                    'worker_runtime_imports', 'worker_event_wiring', 'worker_credential_event_boundary',
+                    'worker_t2_manual_source_advisory',
+                    'worker_refresh_same_result_no_expiry_extension', 'worker_refresh_superseded_result',
+                    'worker_refresh_mismatched_replay_revokes', 'worker_refresh_legacy_rotation']}) + '\n')
+    
+        monkeypatch.setattr(guard.subprocess, 'run', run)
+>       with pytest.raises(ValueError, match='Incomplete'):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests\infra\test_refresh_release_guards.py:293: Failed
+_______ test_worker_probe_rejects_new_worker_with_old_consumer_contract _______
+
+    def test_worker_probe_rejects_new_worker_with_old_consumer_contract():
+        result = run_worker_probe('''
+    for name in ('mark_claim_succeeded', 'mark_claim_failed', 'mark_claim_dead'):
+        delattr(outbox.OutboxConsumer, name)
+    ''')
+        assert result.returncode != 0, result.stdout
+>       assert 'consumer requires generation-fenced claim completion' in result.stderr
+E       assert 'consumer requires generation-fenced claim completion' in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n'
+E        +  where 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n' = CompletedProcess(args=['D:\\python\\python.exe', '-c', 'import json, runpy, sys; sys.path[:0] = [sys.argv[2], str(__im...e.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n').stderr
+
+tests\infra\test_refresh_release_guards.py:375: AssertionError
+_ test_worker_probe_rejects_entry_binding_or_origin_drift[main.OutboxConsumer = object-worker entry class binding] _
+
+setup = 'main.OutboxConsumer = object', reason = 'worker entry class binding'
+
+    @pytest.mark.parametrize('setup, reason', [
+        ('main.OutboxConsumer = object', 'worker entry class binding'),
+        ('main.Worker = object', 'worker entry class binding'),
+        ("outbox.__file__ = '/stale-source/app/core/outbox.py'", 'worker import origin'),
+        ("worker.__file__ = '/stale-source/worker.py'", 'worker import origin'),
+    ])
+    def test_worker_probe_rejects_entry_binding_or_origin_drift(setup, reason):
+        result = run_worker_probe(setup)
+        assert result.returncode != 0, result.stdout
+>       assert reason in result.stderr
+E       assert 'worker entry class binding' in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n'
+E        +  where 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n' = CompletedProcess(args=['D:\\python\\python.exe', '-c', 'import json, runpy, sys; sys.path[:0] = [sys.argv[2], str(__im...e.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n').stderr
+
+tests\infra\test_refresh_release_guards.py:387: AssertionError
+_ test_worker_probe_rejects_entry_binding_or_origin_drift[main.Worker = object-worker entry class binding] _
+
+setup = 'main.Worker = object', reason = 'worker entry class binding'
+
+    @pytest.mark.parametrize('setup, reason', [
+        ('main.OutboxConsumer = object', 'worker entry class binding'),
+        ('main.Worker = object', 'worker entry class binding'),
+        ("outbox.__file__ = '/stale-source/app/core/outbox.py'", 'worker import origin'),
+        ("worker.__file__ = '/stale-source/worker.py'", 'worker import origin'),
+    ])
+    def test_worker_probe_rejects_entry_binding_or_origin_drift(setup, reason):
+        result = run_worker_probe(setup)
+        assert result.returncode != 0, result.stdout
+>       assert reason in result.stderr
+E       assert 'worker entry class binding' in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n'
+E        +  where 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n' = CompletedProcess(args=['D:\\python\\python.exe', '-c', 'import json, runpy, sys; sys.path[:0] = [sys.argv[2], str(__im...e.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n').stderr
+
+tests\infra\test_refresh_release_guards.py:387: AssertionError
+_ test_worker_probe_rejects_entry_binding_or_origin_drift[outbox.__file__ = '/stale-source/app/core/outbox.py'-worker import origin] _
+
+setup = "outbox.__file__ = '/stale-source/app/core/outbox.py'"
+reason = 'worker import origin'
+
+    @pytest.mark.parametrize('setup, reason', [
+        ('main.OutboxConsumer = object', 'worker entry class binding'),
+        ('main.Worker = object', 'worker entry class binding'),
+        ("outbox.__file__ = '/stale-source/app/core/outbox.py'", 'worker import origin'),
+        ("worker.__file__ = '/stale-source/worker.py'", 'worker import origin'),
+    ])
+    def test_worker_probe_rejects_entry_binding_or_origin_drift(setup, reason):
+        result = run_worker_probe(setup)
+        assert result.returncode != 0, result.stdout
+>       assert reason in result.stderr
+E       assert 'worker import origin' in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n'
+E        +  where 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n' = CompletedProcess(args=['D:\\python\\python.exe', '-c', 'import json, runpy, sys; sys.path[:0] = [sys.argv[2], str(__im...e.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n').stderr
+
+tests\infra\test_refresh_release_guards.py:387: AssertionError
+_ test_worker_probe_rejects_entry_binding_or_origin_drift[worker.__file__ = '/stale-source/worker.py'-worker import origin] _
+
+setup = "worker.__file__ = '/stale-source/worker.py'"
+reason = 'worker import origin'
+
+    @pytest.mark.parametrize('setup, reason', [
+        ('main.OutboxConsumer = object', 'worker entry class binding'),
+        ('main.Worker = object', 'worker entry class binding'),
+        ("outbox.__file__ = '/stale-source/app/core/outbox.py'", 'worker import origin'),
+        ("worker.__file__ = '/stale-source/worker.py'", 'worker import origin'),
+    ])
+    def test_worker_probe_rejects_entry_binding_or_origin_drift(setup, reason):
+        result = run_worker_probe(setup)
+        assert result.returncode != 0, result.stdout
+>       assert reason in result.stderr
+E       assert 'worker import origin' in 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n'
+E        +  where 'Traceback (most recent call last):\n  File "<string>", line 1, in <module>\n  File "C:\\Users\\Administrator\\.codex\...re.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n' = CompletedProcess(args=['D:\\python\\python.exe', '-c', 'import json, runpy, sys; sys.path[:0] = [sys.argv[2], str(__im...e.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n').stderr
+
+tests\infra\test_refresh_release_guards.py:387: AssertionError
+_______ test_worker_probe_runs_runtime_event_and_refresh_checks_locally _______
+
+    def test_worker_probe_runs_runtime_event_and_refresh_checks_locally():
+        result = run_worker_probe('''
+    def reject_execution(*args, **kwargs):
+        raise AssertionError('probe must not run worker or claim events')
+    worker.Worker.run_once = reject_execution
+    worker.Worker.run_forever = reject_execution
+    outbox.OutboxConsumer.claim_batch = reject_execution
+    original_init = outbox.OutboxConsumer.__init__
+    def isolated_init(self, session_factory, *args, **kwargs):
+        assert session_factory is None, 'composition must not connect to a database'
+        original_init(self, session_factory, *args, **kwargs)
+    outbox.OutboxConsumer.__init__ = isolated_init
+    ''')
+>       assert result.returncode == 0, result.stderr[-2000:]
+E       AssertionError: Traceback (most recent call last):
+E           File "<string>", line 1, in <module>
+E           File "C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\services\business-worker\app\main.py", line 33, in <module>
+E             from tasks.recharge_registration import RechargeRegistrationTask
+E           File "C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\services\business-worker\app\tasks\recharge_registration.py", line 2, in <module>
+E             from app.modules.recharge.service import RechargeService
+E           File "C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\services\business-api\app\modules\recharge\service.py", line 29, in <module>
+E             from app.modules.recharge.matching import AutomaticRechargeMatching
+E           File "C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\services\business-api\app\modules\recharge\matching.py", line 9, in <module>
+E             from app.integrations.tron.finality import TronEvidenceUnavailable
+E           File "C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\services\business-api\app\integrations\tron\finality.py", line 19, in <module>
+E             from .message_signature import canonical_address
+E           File "C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\services\business-api\app\integrations\tron\message_signature.py", line 5, in <module>
+E             from coincurve import PublicKey
+E         ModuleNotFoundError: No module named 'coincurve'
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['D:\\python\\python.exe', '-c', 'import json, runpy, sys; sys.path[:0] = [sys.argv[2], str(__im...e.py", line 5, in <module>\n    from coincurve import PublicKey\nModuleNotFoundError: No module named \'coincurve\'\n').returncode
+
+tests\infra\test_refresh_release_guards.py:403: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/infra/test_refresh_release_guards.py::test_image_probe_rejects_legacy_proof_without_entry_composition
+FAILED tests/infra/test_refresh_release_guards.py::test_worker_probe_rejects_new_worker_with_old_consumer_contract
+FAILED tests/infra/test_refresh_release_guards.py::test_worker_probe_rejects_entry_binding_or_origin_drift[main.OutboxConsumer = object-worker entry class binding]
+FAILED tests/infra/test_refresh_release_guards.py::test_worker_probe_rejects_entry_binding_or_origin_drift[main.Worker = object-worker entry class binding]
+FAILED tests/infra/test_refresh_release_guards.py::test_worker_probe_rejects_entry_binding_or_origin_drift[outbox.__file__ = '/stale-source/app/core/outbox.py'-worker import origin]
+FAILED tests/infra/test_refresh_release_guards.py::test_worker_probe_rejects_entry_binding_or_origin_drift[worker.__file__ = '/stale-source/worker.py'-worker import origin]
+FAILED tests/infra/test_refresh_release_guards.py::test_worker_probe_runs_runtime_event_and_refresh_checks_locally
+7 failed, 33 deselected in 8.56s

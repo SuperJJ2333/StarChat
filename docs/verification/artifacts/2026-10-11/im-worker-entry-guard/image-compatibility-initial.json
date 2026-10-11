@@ -1,0 +1,196 @@
+{
+  "input_sha256": {
+    "business_refresh_image_probe.py": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15",
+    "business_release_guard.py": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b"
+  },
+  "results": [
+    {
+      "label": "old_old",
+      "image": "sha256:18a88c4dde6e09fb75122aef1f011fd11c7a0421e61559b0548ed78c1b8b3ecf",
+      "expected_passed": true,
+      "actual_guard": {
+        "image": "sha256:18a88c4dde6e09fb75122aef1f011fd11c7a0421e61559b0548ed78c1b8b3ecf",
+        "protocol": "worker-runtime-refresh-v1",
+        "role": "worker",
+        "passed": true,
+        "checks": [
+          "worker_runtime_imports",
+          "worker_entry_composition",
+          "worker_event_wiring",
+          "worker_credential_event_boundary",
+          "worker_t2_manual_source_advisory",
+          "worker_refresh_same_result_no_expiry_extension",
+          "worker_refresh_superseded_result",
+          "worker_refresh_mismatched_replay_revokes",
+          "worker_refresh_legacy_rotation"
+        ]
+      }
+    },
+    {
+      "label": "new_new",
+      "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+      "expected_passed": true,
+      "actual_guard": {
+        "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+        "protocol": "worker-runtime-refresh-v1",
+        "role": "worker",
+        "passed": true,
+        "checks": [
+          "worker_runtime_imports",
+          "worker_entry_composition",
+          "worker_event_wiring",
+          "worker_credential_event_boundary",
+          "worker_t2_manual_source_advisory",
+          "worker_refresh_same_result_no_expiry_extension",
+          "worker_refresh_superseded_result",
+          "worker_refresh_mismatched_replay_revokes",
+          "worker_refresh_legacy_rotation"
+        ]
+      }
+    },
+    {
+      "label": "new_old",
+      "image": "sha256:13f3c67b2f84b09a659af16a5308917c3358071f1fada9cb66e7c9af6b2d9cd7",
+      "expected_passed": false,
+      "actual_guard": {
+        "passed": false
+      }
+    },
+    {
+      "label": "api",
+      "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+      "expected_passed": true,
+      "actual_guard": {
+        "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+        "protocol": "mobile-refresh-recovery-v1",
+        "role": "api",
+        "passed": true,
+        "checks": [
+          "expired_access_then_refresh",
+          "safe_validation",
+          "same_result_no_expiry_extension",
+          "business_access",
+          "superseded_result",
+          "logout_isolation_and_revocation",
+          "mismatched_replay_revokes",
+          "legacy_rotation",
+          "admin_domain_and_cookie_boundary"
+        ]
+      }
+    },
+    {
+      "label": "default_old_old",
+      "image": "sha256:18a88c4dde6e09fb75122aef1f011fd11c7a0421e61559b0548ed78c1b8b3ecf",
+      "argv": [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        "starchat-entry-proof-6604799e241a49b9977f330ba6b5ec26",
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--memory",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "128",
+        "--tmpfs",
+        "/tmp:rw,nosuid,size=32m",
+        "-e",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "--entrypoint",
+        "python",
+        "sha256:18a88c4dde6e09fb75122aef1f011fd11c7a0421e61559b0548ed78c1b8b3ecf",
+        "-c",
+        "import json, os, main, worker\nimport app.core.outbox as outbox\nassert not os.environ.get('PYTHONPATH')\nassert os.getcwd() == '/opt/business-worker/app'\nassert main.__file__ == '/opt/business-worker/app/main.py'\nassert worker.__file__ == '/opt/business-worker/app/worker.py'\nassert outbox.__file__ == '/usr/local/lib/python3.12/site-packages/app/core/outbox.py'\nassert main.Worker is worker.Worker and main.OutboxConsumer is outbox.OutboxConsumer\ntry:\n    main.Worker(consumer=main.OutboxConsumer(None), handlers={}, worker_id='isolated-default-entry')\nexcept TypeError:\n    print(json.dumps({'passed': False, 'reason': 'INCOMPATIBLE_ENTRY_COMPOSITION'}))\n    raise SystemExit(1)\nprint(json.dumps({'passed': True, 'default_imports': True}))\n"
+      ],
+      "exit_code": 0,
+      "proof": {
+        "passed": true,
+        "default_imports": true
+      }
+    },
+    {
+      "label": "default_new_new",
+      "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+      "argv": [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        "starchat-entry-proof-94af3a07e20144e4bc33420c40021966",
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--memory",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "128",
+        "--tmpfs",
+        "/tmp:rw,nosuid,size=32m",
+        "-e",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "--entrypoint",
+        "python",
+        "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+        "-c",
+        "import json, os, main, worker\nimport app.core.outbox as outbox\nassert not os.environ.get('PYTHONPATH')\nassert os.getcwd() == '/opt/business-worker/app'\nassert main.__file__ == '/opt/business-worker/app/main.py'\nassert worker.__file__ == '/opt/business-worker/app/worker.py'\nassert outbox.__file__ == '/usr/local/lib/python3.12/site-packages/app/core/outbox.py'\nassert main.Worker is worker.Worker and main.OutboxConsumer is outbox.OutboxConsumer\ntry:\n    main.Worker(consumer=main.OutboxConsumer(None), handlers={}, worker_id='isolated-default-entry')\nexcept TypeError:\n    print(json.dumps({'passed': False, 'reason': 'INCOMPATIBLE_ENTRY_COMPOSITION'}))\n    raise SystemExit(1)\nprint(json.dumps({'passed': True, 'default_imports': True}))\n"
+      ],
+      "exit_code": 0,
+      "proof": {
+        "passed": true,
+        "default_imports": true
+      }
+    },
+    {
+      "label": "default_new_old",
+      "image": "sha256:13f3c67b2f84b09a659af16a5308917c3358071f1fada9cb66e7c9af6b2d9cd7",
+      "argv": [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        "starchat-entry-proof-6821d3b84df84ca98b4f941503137ee1",
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--memory",
+        "512m",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "128",
+        "--tmpfs",
+        "/tmp:rw,nosuid,size=32m",
+        "-e",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "--entrypoint",
+        "python",
+        "sha256:13f3c67b2f84b09a659af16a5308917c3358071f1fada9cb66e7c9af6b2d9cd7",
+        "-c",
+        "import json, os, main, worker\nimport app.core.outbox as outbox\nassert not os.environ.get('PYTHONPATH')\nassert os.getcwd() == '/opt/business-worker/app'\nassert main.__file__ == '/opt/business-worker/app/main.py'\nassert worker.__file__ == '/opt/business-worker/app/worker.py'\nassert outbox.__file__ == '/usr/local/lib/python3.12/site-packages/app/core/outbox.py'\nassert main.Worker is worker.Worker and main.OutboxConsumer is outbox.OutboxConsumer\ntry:\n    main.Worker(consumer=main.OutboxConsumer(None), handlers={}, worker_id='isolated-default-entry')\nexcept TypeError:\n    print(json.dumps({'passed': False, 'reason': 'INCOMPATIBLE_ENTRY_COMPOSITION'}))\n    raise SystemExit(1)\nprint(json.dumps({'passed': True, 'default_imports': True}))\n"
+      ],
+      "exit_code": 1,
+      "proof": {
+        "passed": false,
+        "reason": "INCOMPATIBLE_ENTRY_COMPOSITION"
+      }
+    }
+  ]
+}

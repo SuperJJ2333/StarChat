@@ -1,0 +1,115 @@
+{
+  "base": "8134d9592cc133edf2d0f0d9e5a287ecb36b13c6",
+  "note": "Workspace and staged Git bytes are separate because text EOL normalization can change SHA256. Remote uploaded guard/probe identity uses workspace bytes. Manifest excludes itself.",
+  "files": [
+    {
+      "path": "scripts/business_refresh_image_probe.py",
+      "workspace_bytes_sha256": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15",
+      "git_index_bytes_sha256": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15",
+      "workspace_mtime": "2026-10-11T15:35:22.283689+08:00",
+      "baseline_git_bytes_sha256": "a2a740124c9a9348e2871e731ea46465b2abf7cb9ea6291771b7a0cfa198658f"
+    },
+    {
+      "path": "scripts/business_release_guard.py",
+      "workspace_bytes_sha256": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b",
+      "git_index_bytes_sha256": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b",
+      "workspace_mtime": "2026-10-11T15:35:22.284665+08:00",
+      "baseline_git_bytes_sha256": "78b2beb6c20484cea04fa8e77c1dd23b9a3e401af9d6fafd3e4b7d316d07beec"
+    },
+    {
+      "path": "tests/infra/test_refresh_release_guards.py",
+      "workspace_bytes_sha256": "b984bbce321c48cce8955078b83de6be2d916dc8bdb903e23a2fbc28c6d49321",
+      "git_index_bytes_sha256": "b984bbce321c48cce8955078b83de6be2d916dc8bdb903e23a2fbc28c6d49321",
+      "workspace_mtime": "2026-10-11T15:34:10.362088+08:00",
+      "baseline_git_bytes_sha256": "503d0e5643ede9846eb7c20dec858e19cec306e500ef05a100a2cd07220e48f1"
+    },
+    {
+      "path": "services/business-worker/app/main.py",
+      "workspace_bytes_sha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1",
+      "git_index_bytes_sha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1",
+      "workspace_mtime": "2026-10-11T15:32:57.522340+08:00",
+      "baseline_git_bytes_sha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1"
+    },
+    {
+      "path": "services/business-worker/app/worker.py",
+      "workspace_bytes_sha256": "f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299",
+      "git_index_bytes_sha256": "f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299",
+      "workspace_mtime": "2026-10-11T15:32:57.531130+08:00",
+      "baseline_git_bytes_sha256": "f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299"
+    },
+    {
+      "path": "services/business-api/app/core/outbox.py",
+      "workspace_bytes_sha256": "a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680",
+      "git_index_bytes_sha256": "a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680",
+      "workspace_mtime": "2026-10-11T15:32:57.333475+08:00",
+      "baseline_git_bytes_sha256": "a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680"
+    },
+    {
+      "path": "services/business-api/requirements.lock",
+      "workspace_bytes_sha256": "f64b119c66265cb59b3272d074afe32b4560da1715f30499580c3a046346bf8f",
+      "git_index_bytes_sha256": "f64b119c66265cb59b3272d074afe32b4560da1715f30499580c3a046346bf8f",
+      "workspace_mtime": "2026-10-11T15:32:57.518894+08:00",
+      "baseline_git_bytes_sha256": "f64b119c66265cb59b3272d074afe32b4560da1715f30499580c3a046346bf8f"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/environment.json",
+      "workspace_bytes_sha256": "6510c061f8798f7121ff043b24924ac3b87f0360b64bd14c7d4a3ebe0bbd8f64",
+      "git_index_bytes_sha256": "259cc2cc58277255ac75aae2f5e0a1198c9607121c4df305baa4812fb3e5d26c",
+      "workspace_mtime": "2026-10-11T15:39:10.872549+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/green-focused.txt",
+      "workspace_bytes_sha256": "bede44f1382dbd1a931a7a5ebaf7b2a5efa0e1e3b7ba7f8bcd4f2950749656d8",
+      "git_index_bytes_sha256": "4d619622b1d57a10d0ccbd982fa96c59f188a35500bb9d653f92718e4cb27a2f",
+      "workspace_mtime": "2026-10-11T15:35:36.422515+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/green-infra.txt",
+      "workspace_bytes_sha256": "928c598d7e55b9cb35acde1eb4b3d346d6c6eb933e77a79e1ab4231a24056b2d",
+      "git_index_bytes_sha256": "f045f2992a6295d28c65074487d4e6201ccb1d1db931c1b1ee75f4ad1bfeec94",
+      "workspace_mtime": "2026-10-11T15:37:36.335172+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/image-compatibility-initial.json",
+      "workspace_bytes_sha256": "57d356dea06a6784836d727c3a28caafcf9763982e61c92794c77ad89a3d26f4",
+      "git_index_bytes_sha256": "557af4349332cf830686bcc5810bdc6c9a39f93015f804428c8bba99f3da8080",
+      "workspace_mtime": "2026-10-11T15:37:43.865595+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/image-compatibility.json",
+      "workspace_bytes_sha256": "1803d8b1bab28e632bdbde1bbed34e5d54e3c796b5294ef2cf0e9b4222112b71",
+      "git_index_bytes_sha256": "c2178abe552c2c661b082520e61b43899db971cceb329bfcc43822a6409c059e",
+      "workspace_mtime": "2026-10-11T15:39:07.589522+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/infra-skip-reasons.txt",
+      "workspace_bytes_sha256": "cb16de2fa4b77bea3c71aea8422acc7cf67c3b14c0cb4ce4ca0a1a12392ae1b3",
+      "git_index_bytes_sha256": "b3662678d9785686e26ce6bc7abe3f459788ceb2f6a0ec1f3317c9d4cda38f40",
+      "workspace_mtime": "2026-10-11T15:40:20.404522+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/preflight-wrong-python.txt",
+      "workspace_bytes_sha256": "df6574278141fd77823c986f218debdeb1d4af8f959dd4e450a459a0047dc2ba",
+      "git_index_bytes_sha256": "b1d44b91539cfbb96e299ae92f1eca0a49031ffa3a7ee7cd12c015023fc52106",
+      "workspace_mtime": "2026-10-11T15:34:20.231351+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/red.txt",
+      "workspace_bytes_sha256": "0fb60a992ec2adfbcbb611e516360b38ff454a2c71acf39a81b7d02cbb26e8b6",
+      "git_index_bytes_sha256": "5cade32c016f45ea1973dd199eed2f693e0baa6e3e75b92ffd6e2a614df130e8",
+      "workspace_mtime": "2026-10-11T15:34:44.640086+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/report.md",
+      "workspace_bytes_sha256": "d3214672e018d82e6523ed30858c3f683651f47edfc1f761a89a8c2782002146",
+      "git_index_bytes_sha256": "d3214672e018d82e6523ed30858c3f683651f47edfc1f761a89a8c2782002146",
+      "workspace_mtime": "2026-10-11T15:41:31.401491+08:00"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-entry-guard/run_image_compatibility.py",
+      "workspace_bytes_sha256": "c427c10cb03f678df49fa7b13f9bc648324567f79540c5528137b740b92ed43b",
+      "git_index_bytes_sha256": "c427c10cb03f678df49fa7b13f9bc648324567f79540c5528137b740b92ed43b",
+      "workspace_mtime": "2026-10-11T15:38:43.573436+08:00"
+    }
+  ]
+}

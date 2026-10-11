@@ -1,0 +1,8 @@
+{
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "executable": "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+  "pytest": "8.4.2",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "env_exists": false,
+  "verify_prerequisite": "scripts/init_matrix.ps1 requires .env"
+}

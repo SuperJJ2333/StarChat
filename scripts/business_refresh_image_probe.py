@@ -13,7 +13,8 @@ EXPECTED_CHECKS = {
     'api': ['expired_access_then_refresh', 'safe_validation', 'same_result_no_expiry_extension',
         'business_access', 'superseded_result', 'logout_isolation_and_revocation',
         'mismatched_replay_revokes', 'legacy_rotation', 'admin_domain_and_cookie_boundary'],
-    'worker': ['worker_runtime_imports', 'worker_event_wiring', 'worker_credential_event_boundary',
+    'worker': ['worker_runtime_imports', 'worker_entry_composition',
+        'worker_event_wiring', 'worker_credential_event_boundary',
         'worker_t2_manual_source_advisory',
         'worker_refresh_same_result_no_expiry_extension', 'worker_refresh_superseded_result',
         'worker_refresh_mismatched_replay_revokes', 'worker_refresh_legacy_rotation'],
@@ -134,6 +135,8 @@ def verify_worker(worker_root='/opt/business-worker/app',
 
     import app
     import main
+    import worker
+    import app.core.outbox as outbox_module
     from app.core.database import Base, create_session_factory
     from app.core.errors import AppError
     from app.core.outbox import OutboxMessage
@@ -153,12 +156,24 @@ def verify_worker(worker_root='/opt/business-worker/app',
 
     origin(app, package_root / '__init__.py')
     origin(main, worker_root / 'main.py')
+    origin(worker, worker_root / 'worker.py')
+    origin(outbox_module, package_root / 'core' / 'outbox.py')
     origin(identity, worker_root / 'tasks' / 'identity.py')
     import app.modules.identity.tokens as token_module
     origin(token_module, package_root / 'modules' / 'identity' / 'tokens.py')
     origin(reserve_module, package_root / 'modules' / 'wallet' / 'manual_reserve_monitor.py')
     origin(wallet_alert_email, worker_root / 'tasks' / 'wallet_alert_email.py')
     checks = ['worker_runtime_imports']
+
+    if (main.OutboxConsumer is not outbox_module.OutboxConsumer or
+            main.Worker is not worker.Worker):
+        raise AssertionError('worker entry class binding')
+    # Construct the entrypoint's actual pair, without running its loop, claiming
+    # events or connecting to a database. Each Worker's own constructor decides
+    # compatibility, so a valid older Worker/Consumer rollback remains supported.
+    main.Worker(consumer=main.OutboxConsumer(None), handlers={},
+                worker_id='isolated-entry-composition')
+    checks.append('worker_entry_composition')
 
     handlers = main.build_identity_handlers(session_factory=None,
         verification_secret='isolated-verification-secret',
