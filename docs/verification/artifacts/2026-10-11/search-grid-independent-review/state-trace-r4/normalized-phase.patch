@@ -1,0 +1,46 @@
+--- apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
++++ docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r4/normalized_phase_test.dart
+@@ -1,4 +1,6 @@
+ import 'dart:async';
++import 'package:liuhetong_mobile/features/matrix/media_transfer_budget.dart';
++import 'package:liuhetong_mobile/features/matrix/media_load_scheduler.dart';
+ import 'dart:convert';
+ import 'dart:io';
+ import 'dart:ui' as ui;
+@@ -24,7 +26,7 @@
+ import 'package:shared_preferences/shared_preferences.dart';
+ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+ 
+-import 'profile_repository_test.dart' show MemoryProfileStore;
++import 'file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/profile_repository_test.dart' show MemoryProfileStore;
+ 
+ final _png = base64Decode(
+     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+@@ -180,7 +182,8 @@
+         final artifacts = await Directory(
+                 '../../docs/verification/artifacts/2026-10-04/search-media-grid-followup')
+             .create(recursive: true);
+-        directory = await artifacts.createTemp('widget-');
++        final artifactRoot = Directory(await artifacts.resolveSymbolicLinks());
++        directory = await artifactRoot.createTemp('widget-');
+         PathProviderPlatform.instance = _Paths(directory.absolute.path);
+         MediaIndex.overrideShared(MediaIndex(
+             databasePath: '${directory.absolute.path}/index.db',
+@@ -313,6 +316,7 @@
+                 () => Future<void>.delayed(const Duration(milliseconds: 100)));
+             await tester.pump(const Duration(milliseconds: 16));
+           }
++          debugPrint('BEFORE_DECODE_ASSERT decoded=${decodedCurrentImages()} budgetBytes=${sharedMediaTransferBudget.activeBytes} budgetQueued=${sharedMediaTransferBudget.queuedCount} schedulerActive=${mediaLoadScheduler.debugActiveCount} schedulerConsumers=${mediaLoadScheduler.debugConsumerCount} downloads=$downloads');
+           expect(decodedCurrentImages(), 2,
+               reason: 'Both current messages must finish the shared preview');
+           expect(
+@@ -482,6 +486,9 @@
+         }
+         expect(client.room.live.length, current ? 2 : 0);
+       } finally {
++        debugPrint('TEST_FINALLY_START scenario=$scenario');
++        await _settle(tester);
++        debugPrint('TEST_FINALLY_EXTRA_SETTLE_DONE scenario=$scenario');
+         if (client.room.lookupGate?.isCompleted == false) {
+           client.room.lookupGate!.complete();
+         }

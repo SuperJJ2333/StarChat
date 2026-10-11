@@ -1,0 +1,27 @@
+{
+  "base": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "command": "flutter test --no-pub --dart-define=SEARCH_MEDIA_SCENARIO=current image --dart-define=SEARCH_MEDIA_DIAGNOSTICS=true ../../docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r4/normalized_phase_test.dart --reporter expanded",
+  "candidate_gate": false,
+  "exit_code": 1,
+  "elapsed_seconds": 22.7239908,
+  "sources": [
+    {
+      "restored_source_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+      "restoration_match": true,
+      "path": "apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart",
+      "before_source_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+      "diagnostic_source_sha256": "06d90e54ff578b52d9b6b99761416db81519e6df96e708bb03d9d5d5021ddcd7"
+    },
+    {
+      "restored_source_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+      "restoration_match": true,
+      "path": "apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart",
+      "before_source_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+      "diagnostic_source_sha256": "98d02fd854b119e42e7c209d051e949edda9d7174c8c7e40b92717e17dee2ca7"
+    }
+  ],
+  "started_utc": "2026-10-11T09:30:26.8320866Z",
+  "phase_patch_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+  "ended_utc": "2026-10-11T09:30:49.5560774Z",
+  "probe_sha256": "68e3463e8141c95f05cd21ff2fd1f885d1dfe8a7aa5bac5b5123b82f952ff394"
+}

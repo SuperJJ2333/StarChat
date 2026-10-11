@@ -1,0 +1,26 @@
+{
+  "base": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "candidate_gate": false,
+  "files": [
+    {
+      "path": "normalized-phase.patch",
+      "sha256": "9fc85c0fefd4062e347416cabb259cffffaebdc0eed8763fbe2ca28a548c17f7",
+      "bytes": 2604
+    },
+    {
+      "path": "phase-trace.log",
+      "sha256": "cccd6d3f68c155535e0f823bf9082b68c55e271e45f0f6e293bc843444779c60",
+      "bytes": 8042
+    },
+    {
+      "path": "receipt.json",
+      "sha256": "b87df199e826fcf60854f665fbca162e453a9cb24cfe3ab35f7e1f18e4df1ae2",
+      "bytes": 1550
+    },
+    {
+      "path": "review.md",
+      "sha256": "c5d284df7139508e6dbc8dce81d49748ce5245c1ff39d16146d721963ea6d0ec",
+      "bytes": 1352
+    }
+  ]
+}
