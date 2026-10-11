@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import '../../core/local_database_factory.dart';
 
 /// Capacity metadata only. This never authenticates media or supplies a path
 /// outside `v2/<account digest>/objects/<content digest>[.mp4|.mov]`.
@@ -26,7 +27,7 @@ final class MediaDiskObject {
 final class MediaDiskQuotaIndex {
   MediaDiskQuotaIndex(Directory root, {DatabaseFactory? factory})
       : root = Directory(p.normalize(p.absolute(root.path))),
-        _factory = factory ?? databaseFactoryFfi;
+        _factory = factory ?? localMetadataDatabaseFactory;
 
   final Directory root;
   final DatabaseFactory _factory;

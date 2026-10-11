@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import '../local_database_factory.dart';
 
 /// Account-scoped feed metadata. Images remain in the shared media cache.
 /// Each append writes only its own page and entities, never the entire history.
@@ -12,7 +13,7 @@ final class MomentsPageStore {
       DatabaseFactory? factory,
       Future<String> Function()? supportDirectory})
       : _path = databasePath,
-        _factory = factory ?? databaseFactoryFfi,
+        _factory = factory ?? localMetadataDatabaseFactory,
         _directory = supportDirectory ?? _defaultDirectory;
 
   static Future<String> _defaultDirectory() async =>

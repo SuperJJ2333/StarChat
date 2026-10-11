@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/local_database_factory.dart';
 import '../../ui/foundation/avatar_cache.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/user_identity.dart';
@@ -151,7 +152,7 @@ final class SqliteProfileStore implements ProfileStore {
     DatabaseFactory? factory,
     Future<String> Function()? supportDirectory,
   })  : _databasePath = databasePath,
-        _factory = factory ?? databaseFactoryFfi,
+        _factory = factory ?? localMetadataDatabaseFactory,
         _supportDirectory = supportDirectory ?? _defaultSupportDirectory;
 
   static const _databaseName = 'chatflow_profile_v1.db';

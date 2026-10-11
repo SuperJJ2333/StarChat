@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'media_cache_metrics.dart';
+import '../../core/local_database_factory.dart';
 import '../../core/performance_trace.dart';
 
 /// 媒体变体（同一原始媒体不同字节 → 不同 object_hash，属正常现象）。
@@ -120,15 +121,14 @@ final class MediaIndex {
     DateTime Function()? clock,
     PerformanceTraceRecorder? performanceRecorder,
   })  : _path = databasePath,
-        _factory = factory ?? databaseFactoryFfi,
+        _factory = factory ?? localMetadataDatabaseFactory,
         _directory = supportDirectory ?? _defaultDirectory,
         _now = clock ?? DateTime.now,
         _performanceRecorder =
             performanceRecorder ?? PerformanceTraceRecorder.instance;
 
-  /// 进程级单例。生产依赖矩阵 SDK 在初始化本地库时对 `sqlite3` 的全局
-  /// `open` 覆盖（`SQfLiteEncryptionHelper.ffiInit`）；索引若在覆盖之前
-  /// 打开失败会**降级为 legacy 行为**并在 [retryAfterDegrade] 后自动重试。
+  /// 进程级单例。默认工厂显式加载已打包的 SQLCipher，与 Matrix 开库
+  /// 顺序无关；其他打开失败仍降级并在 [retryAfterDegrade] 后自动重试。
   static MediaIndex? _shared;
 
   static MediaIndex get shared => _shared ??= MediaIndex();

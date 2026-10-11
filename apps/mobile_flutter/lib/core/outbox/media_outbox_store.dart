@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../matrix_local_binding.dart';
+import '../local_database_factory.dart';
 
 /// Persistent identity, independent of a route and of device-id rotation.
 final class MediaOutboxOwner {
@@ -151,7 +152,7 @@ final class SqliteMediaOutboxStore {
         _availableBytes =
             availableBytes ?? PendingMediaDirectory.availableBytes,
         _seal = seal ?? PendingMediaDirectory.seal,
-        _factory = factory ?? databaseFactoryFfi;
+        _factory = factory ?? localMetadataDatabaseFactory;
   final MediaOutboxOwner owner;
   final Future<Directory> Function() _directory;
   final Future<int> Function() _availableBytes;

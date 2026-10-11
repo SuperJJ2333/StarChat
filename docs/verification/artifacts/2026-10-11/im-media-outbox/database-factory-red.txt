@@ -1,0 +1,19 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/local_database_factory_test.dart
+00:00 +0: cold metadata first shares the packaged SQLCipher library without changing formats
+00:00 +0 -1: cold metadata first shares the packaged SQLCipher library without changing formats [E]
+  SqfliteFfiException(sqlite_error: 14, , open_failed: SqliteException(14): while opening the database, unable to open database file, unable to open database file (code 14)}) DatabaseException(open_failed: SqliteException(14): while opening the database, unable to open database file, unable to open database file (code 14))
+  package:sqflite_common_ffi/src/method_call.dart 125:9  responseToResultOrThrow
+  package:sqflite_common_ffi/src/isolate.dart 35:12      SqfliteIsolate.handle
+  
+00:00 +0 -1: cold Matrix cipher first shares the packaged SQLCipher library without changing formats
+00:00 +0 -2: cold Matrix cipher first shares the packaged SQLCipher library without changing formats [E]
+  SqfliteFfiException(sqlite_error: 14, , open_failed: SqliteException(14): while opening the database, unable to open database file, unable to open database file (code 14)}) DatabaseException(open_failed: SqliteException(14): while opening the database, unable to open database file, unable to open database file (code 14))
+  package:sqflite_common_ffi/src/method_call.dart 125:9  responseToResultOrThrow
+  package:sqflite_common_ffi/src/isolate.dart 35:12      SqfliteIsolate.handle
+  
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/local_database_factory_test.dart: cold Matrix cipher first shares the packaged SQLCipher library without changing formats
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/local_database_factory_test.dart: cold metadata first shares the packaged SQLCipher library without changing formats

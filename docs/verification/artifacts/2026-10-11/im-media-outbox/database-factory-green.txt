@@ -1,0 +1,5 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/local_database_factory_test.dart
+00:00 +0: cold metadata first shares the packaged SQLCipher library without changing formats
+00:00 +1: cold Matrix cipher first shares the packaged SQLCipher library without changing formats
+00:00 +2: All tests passed!

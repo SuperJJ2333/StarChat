@@ -1,0 +1,6 @@
+Analyzing local_database_factory.dart, media_outbox_store.dart, outbox_store.dart, moments_page_store.dart, media_disk_quota_index.dart, media_index.dart, profile_repository.dart, local_database_factory_test.dart, media_outbox_persistence_native_test.dart...
+
+   info - integration_test\media_outbox_persistence_native_test.dart:3:8 - The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart'. Try removing the import directive. - unnecessary_import
+   info - integration_test\media_outbox_persistence_native_test.dart:4:8 - The import of 'dart:ui' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart'. Try removing the import directive. - unnecessary_import
+
+2 issues found.

@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'outbox_message.dart';
+import '../local_database_factory.dart';
 
 /// 出站消息的本地持久化接口（插入/更新/条件认领/查询/删除）。
 ///
@@ -85,7 +86,7 @@ final class SqliteOutboxStore implements OutboxStore {
     DatabaseFactory? factory,
     Future<String> Function()? supportDirectory,
   })  : _databasePath = databasePath,
-        _factory = factory ?? databaseFactoryFfi,
+        _factory = factory ?? localMetadataDatabaseFactory,
         _supportDirectory = supportDirectory ?? _defaultSupportDirectory;
 
   static const String databaseName = 'chatflow_outbox_v1.db';
