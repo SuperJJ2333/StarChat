@@ -1,0 +1,8 @@
+{
+  "result": "PASS",
+  "python_ast": "PASS",
+  "safe_logger_formats_and_unknowns": "PASS",
+  "sensitive_markers_not_emitted": true,
+  "script_sha256": "571a5f9f7f20ca7ed6af9f6bb38387b34f9fa99e16914905459d145a593c7656",
+  "remote_executed_by_this_validation": false
+}

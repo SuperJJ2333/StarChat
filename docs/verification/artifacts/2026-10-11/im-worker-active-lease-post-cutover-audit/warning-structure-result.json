@@ -1,0 +1,18 @@
+{
+  "observed_utc": "2026-10-11T10:49:40.857101+00:00",
+  "since_utc": "2026-10-11T10:39:52Z",
+  "tail_limit": 2000,
+  "timeout_seconds": 12,
+  "prior_receipts_preserved": true,
+  "warning_lines": 4,
+  "logger_counts": {},
+  "unknown_logger_lines": 4,
+  "fixed_literal_flags": {
+    "sqlalchemy_literal": false,
+    "deprecation_literal": false,
+    "optional_provider_literal": false,
+    "connection_literal": false
+  },
+  "result": "LOGGER_STRUCTURE_OBSERVED_CAUSE_UNRESOLVED",
+  "interpretation": "Logger names and literal booleans are locating hints only; no cause, severity or configuration acceptance inferred."
+}

@@ -1,0 +1,12 @@
+{
+  "script_sha256": "571a5f9f7f20ca7ed6af9f6bb38387b34f9fa99e16914905459d145a593c7656",
+  "authorization": "Root separately authorized one minimal warning logger/literal structure read",
+  "observation_started_utc": "2026-10-11T10:49:41.1297767Z",
+  "observation_completed_utc": "2026-10-11T10:49:42.4522318Z",
+  "wrapper_exit_code": 0,
+  "this_supplement_remote_invocations": 1,
+  "created_containers": 0,
+  "service_mutations": 0,
+  "prior_receipts_and_report_bytes_unchanged": true,
+  "preservation_comparison_domain": "Same local checkout bytes immediately before and after this invocation"
+}
