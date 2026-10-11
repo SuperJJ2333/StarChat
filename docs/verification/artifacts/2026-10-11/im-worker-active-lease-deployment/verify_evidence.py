@@ -15,6 +15,16 @@ def load(name):
 def git_bytes(path):
     return subprocess.check_output(['git','show',FREEZE+':'+PREFIX+'/'+path],cwd=REPO)
 
+def staged_files():
+    """Publishable identity uses Git blobs, not autocrlf-dependent checkout bytes."""
+    paths = subprocess.check_output(['git','ls-files','-z','--',PREFIX],cwd=REPO).decode().split('\0')
+    result = {}
+    for path in sorted(filter(None, paths)):
+        name = path[len(PREFIX)+1:]
+        if Path(name).suffix in {'.py','.json','.md','.log','.txt'} and name != 'deployment-input-identities.json':
+            result[name] = sha(subprocess.check_output(['git','show',':'+path],cwd=REPO))
+    return result
+
 manifest = load('services-manifest.json')
 receipt = load('default-runtime-receipt.json')
 assert receipt['manifest_sha256'] == sha((HERE/'services-manifest.json').read_bytes())
@@ -53,14 +63,20 @@ assert all(row['live_id_unchanged'] and row['live_image_unchanged'] for row in c
 names = ['prepare.py','deploy.py','validate_default_runtime.py','default_entry_probe.py']
 for name in names:
     assert (HERE/name).read_bytes() == git_bytes(name), 'frozen script changed'
+files = staged_files()
 identities = {
     'result':'PASS','product_source_commit':'c3dd314212c73414c5ab371b4363e077bc9104c2',
     'source_review_commit':'cc1c372759d22c11e2e3f77e84d15ce3accba98e',
     'core_scripts_commit':FREEZE,'candidate_image':receipt['image'],
     'rollback_image':manifest['roles']['worker']['old_image'],
     'api_image':manifest['roles']['api']['old_image'],'deployed':False,
-    'files': {str(path.relative_to(HERE)).replace('\\','/'):sha(path.read_bytes()) for path in sorted(HERE.rglob('*'))
-        if path.is_file() and path.suffix in {'.py','.json','.md','.log','.txt'} and path.name != 'deployment-input-identities.json'},
+    'file_identity_contract': {
+        'files':'SHA-256 of staged Git blob bytes; verify against the resulting commit with audit_identity_bytes.py',
+        'checkout_raw_files':'SHA-256 of this local checkout at generation; observational only and not portable across checkouts or autocrlf settings',
+        'runtime_receipts':'Unchanged server receipt input hashes bind the actual image/container input bytes, not checkout bytes',
+    },
+    'files':files,
+    'checkout_raw_files':{name:sha((HERE/name).read_bytes()) for name in files},
 }
 (HERE/'deployment-input-identities.json').write_text(json.dumps(identities,indent=2)+'\n',encoding='utf-8',newline='\n')
 print(json.dumps({'result':'PASS','candidate_image':receipt['image'],'core_scripts_unchanged':True,

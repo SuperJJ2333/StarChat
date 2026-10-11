@@ -35,6 +35,12 @@ Logs are normalized only for trailing whitespace/line endings for Git; semantic 
 - `configuration-proof.json`, 10:07:12Z, read-only: actual frozen private API candidate/rollback is fully identical, worker differs only by its image; current API/worker IDs and images are still unchanged/healthy and permanent guard/probe SHAs match. No env/config values were emitted. `verify_evidence.py` binds downloaded receipts to exact frozen Git scripts/payloads and generates `deployment-input-identities.json`.
 - Private inspect/env/Compose stayed only on server; only non-sensitive manifests/proof receipts were downloaded. New release files and candidate image were created, but no production data, service configuration, guard/probe or running service was changed.
 
+## Evidence byte identities
+
+Independent review found that the first `deployment-input-identities.json` at `2760bc102650fe92da5777e3b769ee756cee6e6d` mixed checkout CRLF hashes with Git LF hashes for ten files. `identity-byte-red.json` preserves the exact ten mismatches (audit exit1). No runtime receipt content or deployment core script changed to repair this documentation identity gap. `verify_evidence.py` now builds `files` from already-staged Git blobs; stage artifact changes before invoking it, then stage the generated identity file. `audit_identity_bytes.py <commit>` verifies that map against exact committed bytes (omitting the argument audits the index). `identity-byte-green.json` records exit0 after repair.
+
+The separate `checkout_raw_files` map is an observation of this author's local bytes and is not portable across checkouts or `autocrlf` settings. Runtime receipt input hashes continue to describe actual immutable-image/container input bytes; they are not recalculated from normalized evidence logs or the checkout map. The manifest excludes its own identity file to avoid a self-hash cycle.
+
 ## Next step and rollback boundary
 
 Independent SPEC/domain then QUALITY/security review of frozen scripts plus image evidence. Do not execute deploy during this preparation task. A later release must preserve approved source and current live topology; unrelated client/backend updates are not permission to transplant whole unverified files. Refresh the live baseline after Android publication; a changed baseline requires new freeze/proof, not reuse of an old PASS marker.
