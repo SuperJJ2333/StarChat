@@ -63,6 +63,10 @@ final class MediaLoadScheduler {
   int get debugQueuedCount => _queued;
   int get debugConsumerCount =>
       _tasks.values.fold(0, (count, task) => count + task.consumers.length);
+
+  /// A running source can outlive one observer and acquire another. Publication
+  /// follows its current consumers, while its slot follows actual settlement.
+  bool hasConsumers(String key) => _tasks[key]?.consumers.isNotEmpty ?? false;
   bool _scheduled = false;
 
   MediaLoadLease request(String key, Future<Uint8List> Function() load,

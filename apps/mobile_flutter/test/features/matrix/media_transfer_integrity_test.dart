@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:matrix/matrix.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 final class _Paths extends PathProviderPlatform {
@@ -71,15 +74,7 @@ void main() {
       );
       expect(again.path, file.path);
       expect(receives, 1);
-      expect(
-          await scratch
-              .list(recursive: true)
-              .where((entry) =>
-                  entry is File &&
-                  !entry.path.endsWith('.len') &&
-                  !entry.path.endsWith('.ref'))
-              .length,
-          1);
+      await _expectCacheFiles(scratch, key, original);
     });
   }
 
@@ -114,12 +109,32 @@ void main() {
           throwsStateError);
       expect(await MediaCache.cached(key.roomId, key.eventId), isNull);
       expect(await MediaCache.totalCachedBytes(), 0);
-      expect(
-          await scratch
-              .list(recursive: true)
-              .where((entry) => entry is File)
-              .length,
-          0);
+      await _expectCacheFiles(scratch, key, null);
     });
   }
+}
+
+Future<void> _expectCacheFiles(
+    Directory root, MediaCacheKey key, Uint8List? plaintext) async {
+  final accountRoot =
+      'chat-media/v2/${sha256.convert(utf8.encode(key.accountId))}';
+  final expected = <String>['chat-media/quota-v1.sqlite'];
+  if (plaintext != null) {
+    final object = '$accountRoot/objects/${sha256.convert(plaintext)}.mp4';
+    final reference = sha256.convert(utf8.encode(jsonEncode([
+      key.roomId,
+      key.eventId,
+    ])));
+    expected
+        .addAll([object, '$object.len', '$accountRoot/refs/$reference.ref']);
+  }
+  final actual = await root
+      .list(recursive: true, followLinks: false)
+      .where((entry) => entry is! Directory)
+      .map(
+          (entry) => p.split(p.relative(entry.path, from: root.path)).join('/'))
+      .toList();
+  expect(actual, unorderedEquals(expected),
+      reason: 'Only the quota index and the exact authorized content object, '
+          'integrity sidecar and message reference may remain');
 }

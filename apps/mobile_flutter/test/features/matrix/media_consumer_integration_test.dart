@@ -8,6 +8,7 @@ import 'package:liuhetong_mobile/features/matrix/media_consumer_scope.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:liuhetong_mobile/features/matrix/media_load_scheduler.dart';
+import 'package:liuhetong_mobile/features/matrix/media_transfer_budget.dart';
 import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 
 void main() {
@@ -151,8 +152,12 @@ void main() {
     final canceled = expectLater(first, throwsA(isA<MediaLoadCanceled>()));
     try {
       await started.future;
+      expect(sharedMediaTransferBudget.activeBytes, defaultMediaTransferBytes);
       firstScope.cancel();
       await canceled;
+      expect(sharedMediaTransferBudget.activeBytes, defaultMediaTransferBytes,
+          reason:
+              'canceling the observer cannot release a real pending decrypt');
       expect(mediaLoadScheduler.debugActiveCount, 1);
       expect(mediaLoadScheduler.debugConsumerCount, 0);
 
@@ -168,6 +173,7 @@ void main() {
       held.complete(bytes);
       expect(await second, bytes);
       expect(decryptCalls, 1);
+      expect(sharedMediaTransferBudget.activeBytes, 0);
     } finally {
       firstScope.cancel();
       secondScope.cancel();
@@ -201,6 +207,9 @@ void main() {
         return prefetch.future;
       }, priority: MediaLoadPriority.prefetch);
       await _waitFor(() => mediaLoadScheduler.debugQueuedCount == 1);
+      expect(sharedMediaTransferBudget.activeBytes, 0,
+          reason:
+              'a queued prefetch must not reserve bytes ahead of visible work');
       visibleLoad = loadMediaWithCache(visibleKey, () {
         started.add('visible');
         return visible.future;
@@ -231,6 +240,37 @@ void main() {
         if (visibleLoad != null) visibleLoad.catchError((_) => Uint8List(0)),
       ]);
     }
+  });
+
+  test(
+      'abandoned real source retains budget until settle and publishes no cache',
+      () async {
+    final started = Completer<void>();
+    final source = Completer<Uint8List>();
+    final bytes = Uint8List.fromList([7, 8, 9]);
+    final key = MediaCacheKey(
+        accountId: 'abandoned',
+        roomId: 'room',
+        eventId: 'event',
+        contentSha256: sha256.convert(bytes).toString());
+    final scope = MediaConsumerScope();
+    final result = scope.run(() => loadMediaWithCache(key, () {
+          started.complete();
+          return source.future;
+        }));
+    final canceled = expectLater(result, throwsA(isA<MediaLoadCanceled>()));
+    await started.future;
+    scope.cancel();
+    await canceled;
+    final heldBytes = sharedMediaTransferBudget.activeBytes;
+    source.complete(bytes);
+    await _waitFor(() => mediaLoadScheduler.debugActiveCount == 0);
+    expect(heldBytes, defaultMediaTransferBytes);
+    expect(sharedMediaTransferBudget.activeBytes, 0);
+    expect(
+        await MediaCache.cached(key.roomId, key.eventId,
+            accountId: key.accountId, contentSha256: key.contentSha256),
+        isNull);
   });
 
   test('a queued scoped prefetch is promoted ahead of visible work', () async {

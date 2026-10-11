@@ -584,6 +584,42 @@ final class MediaCache {
       String? mimeType,
       int? width,
       int? height,
+      int? durationMs}) {
+    // Register before worker verification yields: playback and account cleanup
+    // must observe the entire store lifetime, not only its later disk writes.
+    final preparationKey = '${_digest(jsonEncode([
+          accountId,
+          roomId,
+          eventId
+        ]))}:prepare:${const Uuid().v4()}';
+    final flight = _verifyAndStore(roomId, eventId, bytes,
+        accountId: accountId,
+        contentSha256: contentSha256,
+        expectedAccountGeneration: expectedAccountGeneration,
+        variant: variant,
+        familyId: familyId,
+        mimeType: mimeType,
+        width: width,
+        height: height,
+        durationMs: durationMs);
+    _storeFlights[preparationKey] = flight;
+    _storeAccounts[preparationKey] = accountId;
+    return flight.whenComplete(() {
+      _storeFlights.remove(preparationKey);
+      _storeAccounts.remove(preparationKey);
+    });
+  }
+
+  static Future<File> _verifyAndStore(
+      String roomId, String eventId, Uint8List bytes,
+      {required String accountId,
+      String? contentSha256,
+      int? expectedAccountGeneration,
+      required MediaVariantKind variant,
+      String? familyId,
+      String? mimeType,
+      int? width,
+      int? height,
       int? durationMs}) async {
     if (expectedAccountGeneration != null &&
         expectedAccountGeneration != accountGeneration(accountId)) {
@@ -1547,137 +1583,147 @@ Future<Uint8List> _loadMediaWithCache(
         final limit = transferBytes ??
             outerLimit ??
             (disk == null ? defaultMediaDownloadBytes : await disk.length());
-        return sharedMediaTransferBudget.run(MediaTransferPlan.download(limit),
-            () async {
-          Future<Uint8List> readSource() => sharedMediaTransferBudget
-                  .run(MediaTransferPlan.download(limit), () async {
-                final loaded = await decrypt();
-                if (loaded.length > limit) {
-                  throw MediaTransferLimitException(limit);
-                }
-                return loaded;
-              });
-          Uint8List? bytes;
-          if (disk == null && localSeed) {
-            // Local outgoing bytes already own admission. Waiting for a network
-            // slot held by a download waiting for bytes would self-deadlock.
-            bytes = await readSource();
-          } else if (disk == null) {
-            // The scheduler pump can run in another task's Zone. Bind the source
-            // to its own reservation and cancellation scope before queueing.
-            final sourceZone = Zone.current;
-            final lease = mediaLoadScheduler.request(
-                taskKey,
-                () => sourceZone.run(() async {
-                      if (!localSeed) {
-                        PerformanceMetrics.instance
-                            .increment(PerformanceCounter.mediaDownload);
-                      }
-                      return readSource();
-                    }),
-                priority: child.priority,
-                isVideo: isVideo ?? currentMediaLoadIsVideo,
-                trace: trace);
-            void promote(MediaLoadPriority priority) =>
-                mediaLoadScheduler.promote(taskKey, priority);
-            child.addCancelListener(lease.cancel);
-            child.addPriorityListener(promote);
-            try {
-              if (!child.isActive) throw MediaLoadCanceled();
-              bytes = await lease.value;
-            } finally {
-              child.removeCancelListener(lease.cancel);
-              child.removePriorityListener(promote);
-            }
-          }
-          if (!child.isActive) throw MediaLoadCanceled();
-          if (bytes != null) {
-            bytes = (await VerifiedMediaContent.verify(bytes,
-                    scope: MediaCache.verificationScope(key.accountId),
-                    expectedSha256: key.contentSha256))
-                .bytes;
-          }
-          if (!child.isActive) throw MediaLoadCanceled();
-          if (generation != _mediaGeneration) {
-            throw StateError('Media cache session changed');
-          }
-          final file = disk ??
-              await MediaCache.store(key.roomId, key.eventId, bytes!,
-                  accountId: key.accountId,
-                  contentSha256: key.contentSha256,
-                  variant: key.variant,
-                  familyId: key.familyId);
-          if (key.sourceIdentity != null) {
-            final ref = await MediaCache._reference(
-                key.accountId, 'source', key.sourceIdentity!,
-                generation: generation);
-            await MediaCache._atomicBytes(
-                ref, utf8.encode(file.uri.pathSegments.last),
-                generation: generation);
-          }
-          final messageRef = await MediaCache._reference(
-              key.accountId, key.roomId, key.eventId,
-              generation: generation);
-          await MediaCache._atomicBytes(
-              messageRef, utf8.encode(file.uri.pathSegments.last),
-              generation: generation);
-          if (generation != _mediaGeneration) {
-            throw StateError('Media cache session changed');
-          }
-          // Legacy sources discover their digest after decrypting; converge on
-          // the same memory identity as newer events carrying a trusted digest.
-          final memoryKey = MediaCacheKey(
-                  accountId: key.accountId,
-                  roomId: key.roomId,
-                  eventId: key.eventId,
-                  contentSha256: file.uri.pathSegments.last.split('.').first)
-              .cacheId;
-          return _sharedMediaBytes.putIfAbsent(memoryKey, () async {
-            var result = bytes ?? await readMediaFileBounded(file, limit);
-            if (key.contentSha256 != null) {
-              try {
-                result = (await VerifiedMediaContent.verify(result,
-                        scope: MediaCache.verificationScope(key.accountId),
-                        expectedSha256: key.contentSha256))
-                    .bytes;
-              } on FormatException {
-                // 廉价命中路径可能漏掉"同尺寸且未改变 mtime"的极端篡改；
-                // 这里是最后一道内容校验：判定损坏 → 删除对象 + 失效索引 →
-                // 重新解密并落盘（修复，而不是把异常抛给 UI）。
-                await MediaCache._discardCorruptObject(key, file);
-                trace?.setMedia(
-                    source: localSeed
-                        ? PerformanceCacheSource.unknown
-                        : PerformanceCacheSource.miss);
+        final scheduled = disk == null && !localSeed;
+        bool hasConsumer() => scheduled
+            ? mediaLoadScheduler.hasConsumers(taskKey)
+            : child.isActive;
+        Future<Uint8List> loadAdmitted() => sharedMediaTransferBudget
+                .run(MediaTransferPlan.download(limit), () async {
+              if (!hasConsumer()) throw MediaLoadCanceled();
+              Future<Uint8List> readSource() => sharedMediaTransferBudget
+                      .run(MediaTransferPlan.download(limit), () async {
+                    final loaded = await decrypt();
+                    if (loaded.length > limit) {
+                      throw MediaTransferLimitException(limit);
+                    }
+                    return loaded;
+                  });
+              Uint8List? bytes;
+              if (disk == null) {
                 if (!localSeed) {
                   PerformanceMetrics.instance
                       .increment(PerformanceCounter.mediaDownload);
                 }
-                result = Uint8List(0);
-                final fresh = (await VerifiedMediaContent.verify(
-                        await readSource(),
+                bytes = await readSource();
+              }
+              if (!hasConsumer()) throw MediaLoadCanceled();
+              if (bytes != null) {
+                bytes = (await VerifiedMediaContent.verify(bytes,
                         scope: MediaCache.verificationScope(key.accountId),
                         expectedSha256: key.contentSha256))
                     .bytes;
-                if (!child.isActive) throw MediaLoadCanceled();
+              }
+              if (!hasConsumer()) throw MediaLoadCanceled();
+              if (generation != _mediaGeneration) {
+                throw StateError('Media cache session changed');
+              }
+              final file = disk ??
+                  await MediaCache.store(key.roomId, key.eventId, bytes!,
+                      accountId: key.accountId,
+                      contentSha256: key.contentSha256,
+                      variant: key.variant,
+                      familyId: key.familyId);
+              if (key.sourceIdentity != null) {
+                final ref = await MediaCache._reference(
+                    key.accountId, 'source', key.sourceIdentity!,
+                    generation: generation);
+                await MediaCache._atomicBytes(
+                    ref, utf8.encode(file.uri.pathSegments.last),
+                    generation: generation);
+              }
+              final messageRef = await MediaCache._reference(
+                  key.accountId, key.roomId, key.eventId,
+                  generation: generation);
+              await MediaCache._atomicBytes(
+                  messageRef, utf8.encode(file.uri.pathSegments.last),
+                  generation: generation);
+              if (generation != _mediaGeneration) {
+                throw StateError('Media cache session changed');
+              }
+              // Legacy sources discover their digest after decrypting; converge on
+              // the same memory identity as newer events carrying a trusted digest.
+              final memoryKey = MediaCacheKey(
+                      accountId: key.accountId,
+                      roomId: key.roomId,
+                      eventId: key.eventId,
+                      contentSha256:
+                          file.uri.pathSegments.last.split('.').first)
+                  .cacheId;
+              return _sharedMediaBytes.putIfAbsent(memoryKey, () async {
+                var result = bytes ?? await readMediaFileBounded(file, limit);
+                if (key.contentSha256 != null) {
+                  try {
+                    result = (await VerifiedMediaContent.verify(result,
+                            scope: MediaCache.verificationScope(key.accountId),
+                            expectedSha256: key.contentSha256))
+                        .bytes;
+                  } on FormatException {
+                    // 廉价命中路径可能漏掉"同尺寸且未改变 mtime"的极端篡改；
+                    // 这里是最后一道内容校验：判定损坏 → 删除对象 + 失效索引 →
+                    // 重新解密并落盘（修复，而不是把异常抛给 UI）。
+                    await MediaCache._discardCorruptObject(key, file);
+                    trace?.setMedia(
+                        source: localSeed
+                            ? PerformanceCacheSource.unknown
+                            : PerformanceCacheSource.miss);
+                    if (!localSeed) {
+                      PerformanceMetrics.instance
+                          .increment(PerformanceCounter.mediaDownload);
+                    }
+                    result = Uint8List(0);
+                    final fresh = (await VerifiedMediaContent.verify(
+                            await readSource(),
+                            scope: MediaCache.verificationScope(key.accountId),
+                            expectedSha256: key.contentSha256))
+                        .bytes;
+                    if (!hasConsumer()) throw MediaLoadCanceled();
+                    if (generation != _mediaGeneration) {
+                      throw StateError('Media cache session changed');
+                    }
+                    await MediaCache.store(key.roomId, key.eventId, fresh,
+                        accountId: key.accountId,
+                        contentSha256: key.contentSha256,
+                        variant: key.variant,
+                        familyId: key.familyId);
+                    result = fresh;
+                  }
+                }
+                if (!hasConsumer()) throw MediaLoadCanceled();
                 if (generation != _mediaGeneration) {
                   throw StateError('Media cache session changed');
                 }
-                await MediaCache.store(key.roomId, key.eventId, fresh,
-                    accountId: key.accountId,
-                    contentSha256: key.contentSha256,
-                    variant: key.variant,
-                    familyId: key.familyId);
-                result = fresh;
-              }
-            }
-            if (!child.isActive) throw MediaLoadCanceled();
-            if (generation != _mediaGeneration) {
-              throw StateError('Media cache session changed');
-            }
-            return result;
-          });
-        });
+                return result;
+              });
+            });
+        // Disk hits and already admitted outgoing bytes never wait on network
+        // slots. Cold work queues by priority before reserving its entire peak.
+        if (!scheduled) return loadAdmitted();
+        final sourceZone = Zone.current;
+        final lease = mediaLoadScheduler.request(taskKey, () {
+          // This scope belongs to the real source, not its first observer.
+          // A new observer may join after the first leaves. Keep the budget
+          // through verify/store; publish only while the task has consumers.
+          final sourceScope = MediaConsumerScope(priority: child.priority);
+          return sourceZone.run(() =>
+              sourceScope.run(loadAdmitted).whenComplete(sourceScope.dispose));
+        },
+            priority: child.priority,
+            isVideo: isVideo ?? currentMediaLoadIsVideo,
+            trace: trace);
+        void promote(MediaLoadPriority priority) =>
+            mediaLoadScheduler.promote(taskKey, priority);
+        child.addCancelListener(lease.cancel);
+        child.addPriorityListener(promote);
+        try {
+          if (!child.isActive) {
+            lease.cancel();
+            throw MediaLoadCanceled();
+          }
+          return await lease.value;
+        } finally {
+          child.removeCancelListener(lease.cancel);
+          child.removePriorityListener(promote);
+        }
       });
   flight.childScope.promote(demand);
   if (existing == null) {
@@ -1696,8 +1742,9 @@ Future<Uint8List> _loadMediaWithCache(
   }
   trace?.mark(PerformanceStage.cacheLoadDone);
   if (scope != null && !scope.isActive) throw MediaLoadCanceled();
-  // A source flight can serve a different message: persist its reference too.
-  if (existing != null && generation == _mediaGeneration) {
+  // A real scheduled source can outlive its first observer and serve a new
+  // flight/message. Every surviving caller therefore gets its own reference.
+  if (generation == _mediaGeneration) {
     await _linkMediaReference(key, bytes, generation);
     if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   }

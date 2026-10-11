@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter/services.dart';
 import 'package:liuhetong_mobile/core/native_media_download.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -36,7 +38,8 @@ IncomingMediaCandidate _candidate(String id,
         download: (_) async => Uint8List.fromList([1]));
 
 class _Client extends Client {
-  _Client() : super('incoming-test');
+  _Client({http.Client? httpClient})
+      : super('incoming-test', httpClient: httpClient);
   late final room =
       Room(id: '!room:test', client: this, membership: Membership.join);
   @override
@@ -93,19 +96,14 @@ class _ProbeEvent extends Event {
             originServerTs: event.originServerTs,
             content: event.content,
             originalSource: event.originalSource);
-  bool joinedNative = false;
+  Uint8List? ciphertext;
   @override
   Future<MatrixFile> downloadAndDecryptAttachment(
       {bool getThumbnail = false,
       Future<Uint8List> Function(Uri)? downloadCallback,
       bool fromLocalStoreOnly = false}) async {
-    joinedNative = downloadCallback != null;
-    if (downloadCallback != null) {
-      try {
-        await downloadCallback(
-            Uri.parse('https://matrix.test/_matrix/media/v3/download/test/id'));
-      } catch (_) {}
-    }
+    ciphertext = await downloadCallback!(Uri.parse(
+        'https://matrix.test/_matrix/media/v3/download/test/$eventId'));
     return MatrixFile(bytes: Uint8List.fromList([1]), name: 'probe');
   }
 }
@@ -345,10 +343,17 @@ void main() {
       () async {
     const channel = MethodChannel('chatflow/background_media');
     final ids = <String>[];
+    final nativeReads = <String>[];
+    final root =
+        await PathProviderPlatform.instance.getApplicationDocumentsPath();
+    final nativeFile = await File('$root/descriptor-a.bin').writeAsBytes([11]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'activate') return 'nonce';
-      if (call.method == 'status') return {'state': 'failed'};
+      if (call.method == 'status') {
+        nativeReads.add((call.arguments as Map)['id'] as String);
+        return {'state': 'complete', 'path': nativeFile.absolute.path};
+      }
       if (call.method == 'enqueue') {
         ids.add((call.arguments as Map)['id'] as String);
       }
@@ -357,7 +362,11 @@ void main() {
     addTearDown(() => TestDefaultBinaryMessengerBinding
         .instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null));
-    final client = _Client();
+    final httpRequests = <Uri>[];
+    final client = _Client(httpClient: MockClient((request) async {
+      httpRequests.add(request.url);
+      return http.Response.bytes([22], 200);
+    }));
     final source =
         MatrixSdkIncomingMediaSource(client: client, ensureActive: () {});
     addTearDown(source.dispose);
@@ -384,9 +393,18 @@ void main() {
     await received[0].prepare();
     final foregroundB = _ProbeEvent(events[1]);
     await downloadMediaContent(foregroundB);
-    expect(foregroundB.joinedNative, isFalse,
+    expect(foregroundB.ciphertext, [22],
         reason:
             'foreground B must not decrypt pending ciphertext A using B descriptor');
+    expect(nativeReads, isEmpty);
+    expect(httpRequests.single.path, endsWith('/cipher-b'));
+    final foregroundA = _ProbeEvent(events[0]);
+    await downloadMediaContent(foregroundA);
+    expect(foregroundA.ciphertext, [11],
+        reason:
+            'the exact descriptor still joins its registered native source');
+    expect(nativeReads, [ids.single]);
+    expect(httpRequests, hasLength(1));
     await received[1].prepare();
     expect(ids.toSet().length, 2,
         reason: 'equal plaintext is not equal ciphertext');

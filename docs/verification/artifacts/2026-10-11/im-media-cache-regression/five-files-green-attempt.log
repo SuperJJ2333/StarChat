@@ -1,0 +1,44 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: every received media event and late decryption works without opening a room
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: flash own redacted and encrypted events never enter the queue
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: duplicate events share a job, failed cache work retries without losing the media
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: all bounded native requests register while cache worker waits; logout fences late completion
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: forwarded pending and completed content still writes each page preview alias
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: permanent failed work retires and leaves bounded queue room for healthy media
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: same plaintext with independent encrypted descriptors registers separate native transfers
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: cache reuse consumes unused ciphertext registration and retirement cancels staging
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: prefetched video thumbnail is a synchronous page poster hit with account and size bounds
+00:01 +9: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M03：半写入文件按损坏处理——删除后未命中（重下载闭环）
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：内存缓存按字节预算回收（大视频不超预算）
+00:01 +11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：失败加载不占预算（可重试）
+00:01 +12: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M01：超限文件在 readAsBytes 之前被拒绝
+00:01 +13: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: U04：朋友圈快照按账号命名空间隔离（B 首绘不见 A）
+00:01 +14: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: U04：键名隔离——不同账号不共用持久化键
+00:01 +15: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: P2：invalidateById 绕过成功缓存强制重抽（字节损坏恢复）
+00:01 +16: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: P2：invalidateById 同时清零失败预算（预算耗尽后仍可恢复）
+00:01 +17: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: (tearDownAll)
+00:02 +17: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: scoped preview callers share one source while one cancels
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +17: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +17: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: MP4 playback receives container suffix and keeps one governed file
+[chatflow/mediaindex] degraded: UnimplementedError
+00:03 +18: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+00:03 +19: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+00:03 +20: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+00:03 +21: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+00:03 +22: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: explicit prefetch stays behind a later visible media request
+00:03 +23: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: explicit prefetch stays behind a later visible media request
+00:03 +24: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-hevc.mp4 transport resolves exact bytes to one MP4 cache
+00:03 +25: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: store after migration reuses typed file and its integrity metadata
+00:03 +26: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a queued scoped prefetch is promoted ahead of visible work
+00:03 +27: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a queued scoped prefetch is promoted ahead of visible work
+00:03 +28: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a queued scoped prefetch is promoted ahead of visible work
+00:03 +29: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: concurrent migration and store complete with one usable cache file
+00:03 +30: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: migrated cache still detects truncation and redownloads
+00:03 +31: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: unknown or non-video container is not mislabeled (3)
+00:03 +32: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: unknown or non-video container is not mislabeled (24)
+00:03 +33: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: hostile identifiers stay inside the managed cache directory
+00:03 +34: All tests passed!

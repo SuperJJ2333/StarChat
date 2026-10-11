@@ -1,0 +1,115 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: an offscreen cached bubble cancels its final consumer
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: an offscreen cached bubble cancels its final consumer
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: an offscreen cached bubble cancels its final consumer
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: an offscreen cached bubble cancels its final consumer
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a visible peer retains one shared load after the first scrolls off
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a visible peer retains one shared load after the first scrolls off
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a visible peer retains one shared load after the first scrolls off
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: exactly one matching candidate
+  Actual: _TypeWidgetFinder:<Found 0 widgets with type "Image": []>
+   Which: means none were found but one was expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart:92:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart line 92
+The test description was:
+  a visible peer retains one shared load after the first scrolls off
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +6 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_budget_test.dart: queued cancel removes metadata; active cancel retains bytes until settle
+00:00 +6 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a visible peer retains one shared load after the first scrolls off [E]
+  Test failed. See exception logs above.
+  The test description was: a visible peer retains one shared load after the first scrolls off
+
+00:00 +7 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error
+00:00 +8 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error
+00:00 +9 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error
+00:00 +10 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error
+00:00 +11 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: exactly one matching candidate
+  Actual: _TypeWidgetFinder:<Found 0 widgets with type "Image": []>
+   Which: means none were found but one was expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart:134:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart line 134
+The test description was:
+  a returning bubble retries cancellation without showing an error
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +11 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error [E]
+  Test failed. See exception logs above.
+  The test description was: a returning bubble retries cancellation without showing an error
+
+00:00 +11 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a same-key source replacement ignores a late old image
+00:00 +12 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a completed refresh source is not reloaded after visibility returns
+00:00 +13 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: an offscreen initial GIF is not animation-eligible
+00:00 +14 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: reentered room preview paints its retained first frame
+00:01 +15 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: video miss cannot cross a clear boundary (cached=false)
+[chatflow/mediaindex] degraded: UnimplementedError
+00:01 +16 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: video miss cannot cross a clear boundary (cached=true)
+00:01 +17 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: clear during disk lookup prevents an old source from starting
+00:01 +18 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: clear removes only selected account objects and all its refs
+00:01 +19 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: a failing account clearer cannot skip core account deletion
+00:01 +20 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+[chatflow/mediaindex] degraded: UnimplementedError
+00:01 +21 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:01 +22 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:01 +23 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:01 +24 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:01 +25 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:01 +25 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_storage_policy_test.dart: real cache store invokes fixed policy once and preserves files on native failure
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +26 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +27 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +28 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +29 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +30 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +31 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +32 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +33 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +34 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +35 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +36 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +37 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +38 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+00:02 +39 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: one physical object is counted once across refs and survives restart without a walk
+00:02 +40 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: one physical object is counted once across refs and survives restart without a walk
+00:02 +41 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: one physical object is counted once across refs and survives restart without a walk
+00:03 +42 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: one physical object is counted once across refs and survives restart without a walk
+00:03 +43 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: corrupt database and interrupted mutation rebuild only owned cache objects
+error SqfliteFfiException(sqlite_error: 26, , SqliteException(26): while selecting from statement, file is not a database, file is not a database (code 26)
+  Causing statement: PRAGMA user_version}) sql PRAGMA user_version {details: {database: {path: C:\Users\Administrator\.codex\worktrees\im-media-cache-regression\StarChat\docs\verification\artifacts\2026-10-11\im-media-cache-index\quota-93c967e9\chat-media\quota-v1.sqlite, id: 2, readOnly: false, singleInstance: true}}} during open, closing...
+00:03 +44 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: background calibration merges a simultaneous clear and write without resurrection
+00:03 +45 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: calibration repairs a rename and external length drift without double counting
+00:03 +46 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: calibration never follows an objects directory link into pending originals
+00:03 +47 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: failed recalibration revokes existing eviction eligibility until recovery
+00:03 +48 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: an unreadable calibration preserves files and can recover later
+00:03 +49 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: concurrent stores respect account and device totals and keep pinned/off-domain files
+00:04 +50 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a returning bubble retries cancellation without showing an error
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart: a visible peer retains one shared load after the first scrolls off

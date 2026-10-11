@@ -1,0 +1,17 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart
+00:00 +0: explicit prefetch stays behind a later visible media request
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +0 -1: explicit prefetch stays behind a later visible media request [E]
+  Expected: <0>
+    Actual: <201326592>
+  a queued prefetch must not reserve bytes ahead of visible work
+
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\features\matrix\media_consumer_integration_test.dart 209:7  main.<fn>
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: explicit prefetch stays behind a later visible media request

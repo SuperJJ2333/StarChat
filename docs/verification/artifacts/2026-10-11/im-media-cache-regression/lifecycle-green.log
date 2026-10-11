@@ -1,0 +1,10 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/ui/chat/contain_image_bubble_lifecycle_test.dart
+00:00 +0: an offscreen cached bubble cancels its final consumer
+00:00 +1: a visible peer retains one shared load after the first scrolls off
+00:00 +2: a returning bubble retries cancellation without showing an error
+00:00 +3: a same-key source replacement ignores a late old image
+00:00 +4: a completed refresh source is not reloaded after visibility returns
+00:00 +5: an offscreen initial GIF is not animation-eligible
+00:00 +6: reentered room preview paints its retained first frame
+00:00 +7: All tests passed!

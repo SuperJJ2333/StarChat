@@ -53,94 +53,106 @@ void main() {
   testWidgets(
       'a visible peer retains one shared load after the first scrolls off',
       (tester) async {
-    final controller = ScrollController();
-    final cache = MediaMemoryCache();
-    final held = Completer<Uint8List>();
-    MediaConsumerScope? firstScope;
-    MediaConsumerScope? secondScope;
-    var sourceCalls = 0;
-    Future<Uint8List> load(bool first) {
-      if (first) {
-        firstScope = MediaConsumerScope.current;
-      } else {
-        secondScope = MediaConsumerScope.current;
+    await tester.runAsync(() async {
+      final controller = ScrollController();
+      final cache = MediaMemoryCache();
+      final held = Completer<Uint8List>();
+      MediaConsumerScope? firstScope;
+      MediaConsumerScope? secondScope;
+      Future<Uint8List>? peerLoad;
+      var sourceCalls = 0;
+      Future<Uint8List> load(bool first) {
+        if (first) {
+          firstScope = MediaConsumerScope.current;
+        } else {
+          secondScope = MediaConsumerScope.current;
+        }
+        final result = cache.putIfAbsent('shared', () {
+          sourceCalls++;
+          return held.future;
+        });
+        if (!first) peerLoad = result;
+        return result;
       }
-      return cache.putIfAbsent('shared', () {
-        sourceCalls++;
-        return held.future;
-      });
-    }
 
-    try {
-      await tester.pumpWidget(_scrollingBubbles(
-          controller: controller,
-          first: _bubble('first', () => load(true)),
-          second: _bubble('second', () => load(false))));
-      await tester.pump();
-      await tester.pump();
-      expect(sourceCalls, 1);
-      controller.jumpTo(300);
-      await tester.pump();
-      await tester.pump();
+      try {
+        await tester.pumpWidget(_scrollingBubbles(
+            controller: controller,
+            first: _bubble('first', () => load(true)),
+            second: _bubble('second', () => load(false))));
+        await tester.pump();
+        await tester.pump();
+        expect(sourceCalls, 1);
+        controller.jumpTo(300);
+        await tester.pump();
+        await tester.pump();
 
-      expect(firstScope!.isActive, isFalse);
-      expect(secondScope!.isActive, isTrue);
-      expect(sourceCalls, 1);
-      held.complete(_png());
-      await tester.pump();
-      await tester.pump();
-      expect(find.byType(Image), findsOneWidget);
-    } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
-      if (!held.isCompleted) held.complete(_png());
-      cache.dispose();
-      controller.dispose();
-      await tester.pump();
-    }
+        expect(firstScope!.isActive, isFalse);
+        expect(secondScope!.isActive, isTrue);
+        expect(sourceCalls, 1);
+        held.complete(_png());
+        // Worker verification uses real isolates; await the surviving consumer's
+        // actual result before asking the widget to paint it.
+        expect(await peerLoad!.timeout(const Duration(seconds: 5)), _png());
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(Image), findsOneWidget);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        if (!held.isCompleted) held.complete(_png());
+        cache.dispose();
+        controller.dispose();
+        await tester.pump();
+      }
+    });
   });
 
   testWidgets(
       'a returning bubble retries cancellation without showing an error',
       (tester) async {
-    final controller = ScrollController();
-    final cache = MediaMemoryCache();
-    final held = [Completer<Uint8List>(), Completer<Uint8List>()];
-    var sourceCalls = 0;
-    Future<Uint8List> load() => cache.putIfAbsent('retry', () {
-          final next = held[sourceCalls++];
-          return next.future;
-        });
+    await tester.runAsync(() async {
+      final controller = ScrollController();
+      final cache = MediaMemoryCache();
+      final held = [Completer<Uint8List>(), Completer<Uint8List>()];
+      var sourceCalls = 0;
+      Future<Uint8List>? currentLoad;
+      Future<Uint8List> load() => currentLoad = cache.putIfAbsent('retry', () {
+            final next = held[sourceCalls++];
+            return next.future;
+          });
 
-    try {
-      await tester.pumpWidget(_scrollingBubbles(
-          controller: controller,
-          first: _bubble('first', load),
-          second: const SizedBox(height: 500)));
-      await tester.pump();
-      await tester.pump();
-      expect(sourceCalls, 1);
-      controller.jumpTo(300);
-      await tester.pump();
-      await tester.pump();
-      controller.jumpTo(0);
-      await tester.pump();
-      await tester.pump();
+      try {
+        await tester.pumpWidget(_scrollingBubbles(
+            controller: controller,
+            first: _bubble('first', load),
+            second: const SizedBox(height: 500)));
+        await tester.pump();
+        await tester.pump();
+        expect(sourceCalls, 1);
+        controller.jumpTo(300);
+        await tester.pump();
+        await tester.pump();
+        controller.jumpTo(0);
+        await tester.pump();
+        await tester.pump();
 
-      expect(sourceCalls, 2);
-      expect(find.text('图片加载失败，点击重试'), findsNothing);
-      held[1].complete(_png());
-      await tester.pump();
-      await tester.pump();
-      expect(find.byType(Image), findsOneWidget);
-    } finally {
-      await tester.pumpWidget(const SizedBox.shrink());
-      for (final completer in held) {
-        if (!completer.isCompleted) completer.complete(_png());
+        expect(sourceCalls, 2);
+        expect(find.text('图片加载失败，点击重试'), findsNothing);
+        held[1].complete(_png());
+        expect(await currentLoad!.timeout(const Duration(seconds: 5)), _png());
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(Image), findsOneWidget);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        for (final completer in held) {
+          if (!completer.isCompleted) completer.complete(_png());
+        }
+        cache.dispose();
+        controller.dispose();
+        await tester.pump();
       }
-      cache.dispose();
-      controller.dispose();
-      await tester.pump();
-    }
+    });
   });
 
   testWidgets('a same-key source replacement ignores a late old image',

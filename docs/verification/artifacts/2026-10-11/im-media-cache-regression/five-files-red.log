@@ -1,0 +1,199 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: every received media event and late decryption works without opening a room
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: flash own redacted and encrypted events never enter the queue
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: duplicate events share a job, failed cache work retries without losing the media
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: all bounded native requests register while cache worker waits; logout fences late completion
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: forwarded pending and completed content still writes each page preview alias
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: permanent failed work retires and leaves bounded queue room for healthy media
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: same plaintext with independent encrypted descriptors registers separate native transfers
+00:00 +6 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: same plaintext with independent encrypted descriptors registers separate native transfers [E]
+  Expected: false
+    Actual: <true>
+  foreground B must not decrypt pending ciphertext A using B descriptor
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\incoming_media_prefetch_test.dart 387:5  main.<fn>
+
+00:00 +6 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: cache reuse consumes unused ciphertext registration and retirement cancels staging
+00:00 +7 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: prefetched video thumbnail is a synchronous page poster hit with account and size bounds
+00:02 +8 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M03：半写入文件按损坏处理——删除后未命中（重下载闭环）
+00:02 +9 -1: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：内存缓存按字节预算回收（大视频不超预算）
+00:02 +9 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：内存缓存按字节预算回收（大视频不超预算） [E]
+  Expected: not null
+    Actual: <null>
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test\features\matrix\media_audit_test.dart 50:5     main.<fn>
+
+00:02 +9 -2: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：失败加载不占预算（可重试）
+00:02 +9 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：失败加载不占预算（可重试） [E]
+  Expected: not null
+    Actual: <null>
+  失败不永久占坑，可重试成功
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test\features\matrix\media_audit_test.dart 70:5     main.<fn>
+
+00:02 +9 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M01：超限文件在 readAsBytes 之前被拒绝
+00:02 +10 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: U04：朋友圈快照按账号命名空间隔离（B 首绘不见 A）
+00:02 +11 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: U04：键名隔离——不同账号不共用持久化键
+00:02 +12 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: P2：invalidateById 绕过成功缓存强制重抽（字节损坏恢复）
+00:02 +13 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: P2：invalidateById 同时清零失败预算（预算耗尽后仍可恢复）
+00:02 +14 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: (tearDownAll)
+00:02 +14 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: scoped preview callers share one source while one cancels
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +15 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: last queued scoped preview cancellation never starts decrypt
+00:02 +16 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+[chatflow/mediaindex] degraded: UnimplementedError
+00:03 +16 -3: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: MP4 playback receives container suffix and keeps one governed file
+[chatflow/mediaindex] degraded: UnimplementedError
+00:03 +16 -4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache
+00:03 +16 -4: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: MP4 playback receives container suffix and keeps one governed file [E]
+  Expected: an object with length of <1>
+    Actual: [
+              _File:File: '../../docs/verification/artifacts/2026-09-08\video-playback-9bca45c9\chat-media\quota-v1.sqlite',
+              _File:File: '../../docs/verification/artifacts/2026-09-08\video-playback-9bca45c9\chat-media\v2\e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\objects\754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd.mp4'
+            ]
+     Which: has length of <2>
+  No second plaintext media copy
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\video_playback_extension_test.dart 70:5  main.<fn>
+
+00:04 +16 -5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +16 -5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-h264.mp4 transport resolves exact bytes to one MP4 cache [E]
+  Expected: <1>
+    Actual: <2>
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\media_transfer_integrity_test.dart 74:7  main.<fn>
+
+00:04 +17 -5: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -6: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK encrypted video-hevc.mp4 transport resolves exact bytes to one MP4 cache [E]
+  Expected: <1>
+    Actual: <2>
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\media_transfer_integrity_test.dart 74:7  main.<fn>
+
+00:04 +17 -7: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -7: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: store after migration reuses typed file and its integrity metadata [E]
+  Expected: <3>
+    Actual: <4>
+  One media object, integrity sidecar and message reference remain
+
+  package:matcher                                                expect
+  package:flutter_test/src/widget_tester.dart 473:18             expect
+  test\features\matrix\video_playback_extension_test.dart 105:5  main.<fn>
+
+00:04 +17 -8: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -9: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -9: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: concurrent migration and store complete with one usable cache file [E]
+  FileSystemException: Video cache is unavailable, path = ''
+  package:liuhetong_mobile/features/matrix/media_cache.dart 718:23  MediaCache.preparePlaybackFile
+
+00:04 +17 -9: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK rejects bit-flip ciphertext before plaintext caching [E]
+  Expected: <0>
+    Actual: <1>
+
+  package:matcher                                                expect
+  package:flutter_test/src/widget_tester.dart 473:18             expect
+  test\features\matrix\media_transfer_integrity_test.dart 117:7  main.<fn>
+
+00:04 +17 -9: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: concurrent migration and store complete with one usable cache file [E]
+  PathNotFoundException: Cannot open file, path = '../../docs/verification/artifacts/2026-09-08\video-playback-d4eac44f/chat-media/v2/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/objects/754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd.mp4.len.33c39b69-8913-4770-a69b-ce8bf06bb5f5.tmp' (OS Error: 系统找不到指定的路径。, errno = 3)
+  dart:io                                                                      _File.writeAsBytes
+  package:liuhetong_mobile/features/matrix/media_cache.dart 570:17             MediaCache._writeAtomicBytes
+  package:liuhetong_mobile/features/matrix/media_cache.dart 555:13             MediaCache._atomicBytes.<fn>
+  package:liuhetong_mobile/features/matrix/media_cache.dart 556:7              MediaCache._atomicBytes
+  package:liuhetong_mobile/features/matrix/media_cache.dart 675:13             MediaCache._storeObject.<fn>
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart 172:34  MediaDiskQuotaIndex.mutate
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/features/matrix/media_disk_quota_index.dart 158:5   MediaDiskQuotaIndex.mutate
+  package:liuhetong_mobile/features/matrix/media_cache.dart 674:18             MediaCache._storeObject
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/features/matrix/media_cache.dart 671:5              MediaCache._storeObject
+  package:liuhetong_mobile/features/matrix/media_cache.dart 645:32             MediaCache._store
+  package:liuhetong_mobile/features/matrix/media_cache.dart 614:14             MediaCache.store.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                   Future.then
+  package:liuhetong_mobile/features/matrix/media_cache.dart 606:37             MediaCache.store
+  ===== asynchronous gap ===========================
+  dart:async                                                                   _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/features/matrix/media_cache.dart 595:22             MediaCache.store
+  test\features\matrix\video_playback_extension_test.dart 114:32               main.<fn>
+
+00:04 +17 -10: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -10: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart: migrated cache still detects truncation and redownloads [E]
+  PathNotFoundException: Cannot open file, path = '../../docs/verification/artifacts/2026-09-08\video-playback-d4eac44f/chat-media/v2/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/objects/754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd.mp4.len.33c39b69-8913-4770-a69b-ce8bf06bb5f5.tmp' (OS Error: 系统找不到指定的路径。, errno = 3)
+  dart:async  _startMicrotaskLoop
+
+00:04 +17 -11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +17 -11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_integrity_test.dart: SDK rejects truncation ciphertext before plaintext caching [E]
+  Expected: <0>
+    Actual: <1>
+
+  package:matcher                                                expect
+  package:flutter_test/src/widget_tester.dart 473:18             expect
+  test\features\matrix\media_transfer_integrity_test.dart 117:7  main.<fn>
+
+00:04 +18 -11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +19 -11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:04 +20 -11: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+00:07 +20 -12: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels [E]
+  Expected: <1>
+    Actual: <0>
+
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\features\matrix\media_consumer_integration_test.dart 167:7  main.<fn>
+
+  Bad state: Media load canceled
+  dart:async                                                                _Completer.completeError
+  package:liuhetong_mobile/features/matrix/media_consumer_scope.dart 91:15  OwnedMediaFlight.join.remove
+  package:liuhetong_mobile/features/matrix/media_consumer_scope.dart 41:15  MediaConsumerScope.dispose
+  package:liuhetong_mobile/features/matrix/media_consumer_scope.dart 36:20  MediaConsumerScope.cancel
+  test\features\matrix\media_consumer_integration_test.dart 173:19          main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                _CustomZone.registerUnaryCallback
+  test\features\matrix\media_consumer_integration_test.dart 153:7           main.<fn>
+
+00:07 +20 -12: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: explicit prefetch stays behind a later visible media request
+00:12 +20 -13: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: explicit prefetch stays behind a later visible media request [E]
+  Expected: true
+    Actual: <false>
+  Timed out waiting for scheduler state
+
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\features\matrix\media_consumer_integration_test.dart 304:3  _waitFor
+
+00:12 +20 -13: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a queued scoped prefetch is promoted ahead of visible work
+00:17 +20 -14: C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a queued scoped prefetch is promoted ahead of visible work [E]
+  Expected: true
+    Actual: <false>
+  Timed out waiting for scheduler state
+
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\features\matrix\media_consumer_integration_test.dart 304:3  _waitFor
+
+00:17 +20 -14: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/incoming_media_prefetch_test.dart: same plaintext with independent encrypted descriptors registers separate native transfers
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：内存缓存按字节预算回收（大视频不超预算）
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_audit_test.dart: M04：失败加载不占预算（可重试）
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_consumer_integration_test.dart: a new preview joins an active decrypt after the first scope cancels
+  ... and 10 more

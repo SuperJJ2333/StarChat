@@ -1,0 +1,6 @@
+{
+  "end": "2026-10-11T06:52:48.8901411Z",
+  "exit_code": 0,
+  "command": "flutter test --no-pub test/features/matrix/incoming_media_prefetch_test.dart test/features/matrix/media_audit_test.dart test/features/matrix/media_consumer_integration_test.dart test/features/matrix/media_transfer_integrity_test.dart test/features/matrix/video_playback_extension_test.dart test/ui/chat/contain_image_bubble_lifecycle_test.dart test/features/matrix/media_download_budget_test.dart test/features/matrix/media_transfer_budget_test.dart test/features/matrix/media_cache_clear_test.dart test/features/matrix/media_disk_quota_index_test.dart test/features/matrix/media_cache_storage_policy_test.dart test/features/matrix/media_memory_cache_test.dart test/features/matrix/media_memory_budget_test.dart --reporter expanded",
+  "start": "2026-10-11T06:52:37.6596077Z"
+}

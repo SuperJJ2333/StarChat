@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 final class _Paths extends PathProviderPlatform {
@@ -60,14 +63,7 @@ void main() {
     expect(await file.readAsBytes(), bytes);
     expect(await MediaCache.totalCachedBytes(), bytes.length);
     expect((await MediaCache.cached(key.roomId, key.eventId))?.path, file.path);
-    final dataFiles = await docs
-        .list(recursive: true)
-        .where((entity) =>
-            entity is File &&
-            !entity.path.endsWith('.len') &&
-            !entity.path.endsWith('.ref'))
-        .toList();
-    expect(dataFiles, hasLength(1), reason: 'No second plaintext media copy');
+    await _expectSingleMp4Object(docs, key, bytes);
   });
 
   test('typed content object reopens without downloading', () async {
@@ -102,9 +98,7 @@ void main() {
     expect(stored.path, prepared.path);
     expect(await stored.readAsBytes(), bytes);
     expect(await File('${stored.path}.len').readAsString(), '${bytes.length}');
-    expect(await docs.list(recursive: true).where((e) => e is File).length, 3,
-        reason:
-            'One media object, integrity sidecar and message reference remain');
+    await _expectSingleMp4Object(docs, key, bytes);
     expect(await MediaCache.totalCachedBytes(), bytes.length);
   });
 
@@ -120,7 +114,7 @@ void main() {
     expect(prepared.map((file) => file.path).toSet(), hasLength(1));
     expect(prepared.first.path, endsWith('.mp4'));
     expect(await prepared.first.readAsBytes(), bytes);
-    expect(await docs.list(recursive: true).where((e) => e is File).length, 3);
+    await _expectSingleMp4Object(docs, key, bytes);
   });
 
   test('migrated cache still detects truncation and redownloads', () async {
@@ -172,4 +166,31 @@ void main() {
         startsWith('$cacheRoot${Platform.pathSeparator}'));
     expect(await MediaCache.totalCachedBytes(), 24);
   });
+}
+
+Future<void> _expectSingleMp4Object(
+    Directory root, MediaCacheKey key, Uint8List bytes) async {
+  final accountRoot =
+      'chat-media/v2/${sha256.convert(utf8.encode(key.accountId))}';
+  final object = '$accountRoot/objects/${sha256.convert(bytes)}.mp4';
+  final reference = sha256.convert(utf8.encode(jsonEncode([
+    key.roomId,
+    key.eventId,
+  ])));
+  final actual = await root
+      .list(recursive: true, followLinks: false)
+      .where((entry) => entry is! Directory)
+      .map(
+          (entry) => p.split(p.relative(entry.path, from: root.path)).join('/'))
+      .toList();
+  expect(
+      actual,
+      unorderedEquals([
+        'chat-media/quota-v1.sqlite',
+        object,
+        '$object.len',
+        '$accountRoot/refs/$reference.ref',
+      ]),
+      reason: 'Exactly one content-addressed MP4, integrity sidecar, message '
+          'reference and quota index; no other plaintext copy');
 }
