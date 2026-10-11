@@ -1,0 +1,27 @@
+--- apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
++++ docs/verification/artifacts/2026-10-11/search-grid-final-independent-review/phase_probe_test.dart
+@@ -24,7 +24,7 @@
+ import 'package:shared_preferences/shared_preferences.dart';
+ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+ 
+-import 'profile_repository_test.dart' show MemoryProfileStore;
++import 'file:///C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/profile_repository_test.dart' show MemoryProfileStore;
+ 
+ final _png = base64Decode(
+     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+@@ -327,6 +327,7 @@
+           debugPrint(
+               'Initial shared preview: real=${decoding.elapsedMilliseconds}'
+               'ms, pumps=$decodePumps, advancedFakeMs=${decodePumps * 16}');
++          debugPrint('BEFORE_DECODE_ASSERT decoded=${decodedCurrentImages()} downloads=$downloads');
+           expect(decodedCurrentImages(), 2,
+               reason: 'Both current messages must finish the shared preview');
+           expect(
+@@ -496,6 +497,7 @@
+         }
+         expect(client.room.live.length, current ? 2 : 0);
+       } finally {
++        debugPrint('TEST_FINALLY_START scenario=$scenario');
+         if (client.room.lookupGate?.isCompleted == false) {
+           client.room.lookupGate!.complete();
+         }

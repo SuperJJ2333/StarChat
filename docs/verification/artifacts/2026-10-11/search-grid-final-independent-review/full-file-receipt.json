@@ -1,0 +1,11 @@
+{
+  "command": "flutter test --no-pub test/features/matrix/room_search_media_grid_test.dart --reporter expanded",
+  "scenario_filter": false,
+  "started_utc": "2026-10-11T09:40:56.0209468Z",
+  "elapsed_seconds": 133.6591593,
+  "test_sha256": "446dc8f815ab1566528870e2ca9056d447e778fb847db9470f20df35e31545d6",
+  "exit_code": 0,
+  "candidate": "f186d0e43b88da4d6a77397711ebcac9f560b614",
+  "synthetic_diagnostics": false,
+  "ended_utc": "2026-10-11T09:43:09.6801061Z"
+}

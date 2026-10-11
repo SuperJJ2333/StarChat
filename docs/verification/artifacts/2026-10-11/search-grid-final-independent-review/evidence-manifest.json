@@ -1,0 +1,58 @@
+{
+  "candidate": "f186d0e43b88da4d6a77397711ebcac9f560b614",
+  "baseline": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "generated_utc": "2026-10-11T09:44:23.766716+00:00",
+  "verdict": "PASS_TEST_ONLY",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "d62ccd4b43845316ee0db6423d6c739e8afd8b104399fbb36209e4b005c5bc2f",
+      "bytes": 73
+    },
+    {
+      "path": "bubble-state-diagnostic.patch",
+      "sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10",
+      "bytes": 2888
+    },
+    {
+      "path": "full-file-receipt.json",
+      "sha256": "ad247e974b07e7899d03cccb6c39e6f06dd81076778e0f177f6d9e3cac73a1c3",
+      "bytes": 469
+    },
+    {
+      "path": "full-file.log",
+      "sha256": "6ce2d908de678a2ae9c7fdd6cf7a91508ef8f190ff74d3ef1128eed7606fb1cc",
+      "bytes": 1663
+    },
+    {
+      "path": "identity-audit.json",
+      "sha256": "a237440d8ed9c5a0c23432df6d0a016ef685c9b647f00ef98dee5321f955c0ba",
+      "bytes": 13906
+    },
+    {
+      "path": "phase-probe.patch",
+      "sha256": "868cd10493433bcb6f2731e5c4b83e71e8c6aab6f63bda2de27f32435913d143",
+      "bytes": 1432
+    },
+    {
+      "path": "phase-receipt.json",
+      "sha256": "452b04864d1cbddb834a1c237ba032b9676bbbb0c73eb20a273195a91a1223e1",
+      "bytes": 1449
+    },
+    {
+      "path": "phase-trace.log",
+      "sha256": "349479c47cc2398882ac205c38cd11ac4a1b1f3433da7dbd9a845dcb6038c72a",
+      "bytes": 6623
+    },
+    {
+      "path": "preview-phase-with-errors-diagnostic.patch",
+      "sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+      "bytes": 2553
+    },
+    {
+      "path": "review.md",
+      "sha256": "2d00542ddf15c8b5dfc2f44c4e5786242524ca3438ba73c144949a75075415c2",
+      "bytes": 4153
+    }
+  ]
+}

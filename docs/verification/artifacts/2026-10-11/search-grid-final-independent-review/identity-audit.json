@@ -1,0 +1,256 @@
+{
+  "candidate": "f186d0e43b88da4d6a77397711ebcac9f560b614",
+  "baseline": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "checks": [
+    {
+      "check": "only one test changes outside docs",
+      "passed": true,
+      "detail": [
+        "apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart"
+      ]
+    },
+    {
+      "check": "runtime lib exact baseline",
+      "passed": true,
+      "detail": "88e982c36178b7d9096c581de199e27f6a34febf"
+    },
+    {
+      "check": "identity apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "446dc8f815ab1566528870e2ca9056d447e778fb847db9470f20df35e31545d6",
+        "local_raw_sha256": "446dc8f815ab1566528870e2ca9056d447e778fb847db9470f20df35e31545d6",
+        "git_raw_sha256": "446dc8f815ab1566528870e2ca9056d447e778fb847db9470f20df35e31545d6",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+        "local_raw_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+        "git_raw_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+        "local_raw_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+        "git_raw_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-preview-phase.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "7b0619692f1c63724c9bab55e17b6db424169bf841f5d0f099ecb6a03d826076",
+        "local_raw_sha256": "7b0619692f1c63724c9bab55e17b6db424169bf841f5d0f099ecb6a03d826076",
+        "git_raw_sha256": "7b0619692f1c63724c9bab55e17b6db424169bf841f5d0f099ecb6a03d826076",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-preview-errors-r2.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "66319380765cb12a1cba237fb1d78f6cf64e5c826a078818f8abed4a7a468598",
+        "local_raw_sha256": "66319380765cb12a1cba237fb1d78f6cf64e5c826a078818f8abed4a7a468598",
+        "git_raw_sha256": "66319380765cb12a1cba237fb1d78f6cf64e5c826a078818f8abed4a7a468598",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-short-preview-red.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "040f11e58176255905091648b379ba885844dcf93e276edc2f1c818d6466eb4a",
+        "local_raw_sha256": "040f11e58176255905091648b379ba885844dcf93e276edc2f1c818d6466eb4a",
+        "git_raw_sha256": "040f11e58176255905091648b379ba885844dcf93e276edc2f1c818d6466eb4a",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-diagnostic.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "9c5f11a495520f11483d56a23ca6b8cf220b833b9aa6409206cbf3d3b7db7ae9",
+        "local_raw_sha256": "9c5f11a495520f11483d56a23ca6b8cf220b833b9aa6409206cbf3d3b7db7ae9",
+        "git_raw_sha256": "9c5f11a495520f11483d56a23ca6b8cf220b833b9aa6409206cbf3d3b7db7ae9",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-full.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "79319354d05010a5a65b51da88632e9bcb46ab4640d5abc5bd2033c9a09de662",
+        "local_raw_sha256": "79319354d05010a5a65b51da88632e9bcb46ab4640d5abc5bd2033c9a09de662",
+        "git_raw_sha256": "79319354d05010a5a65b51da88632e9bcb46ab4640d5abc5bd2033c9a09de662",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-independent-r3-red.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "a7ab16aa877e134edbdda09181f04e4256328b563ca0f97975ab4140df7cacc5",
+        "local_raw_sha256": "a7ab16aa877e134edbdda09181f04e4256328b563ca0f97975ab4140df7cacc5",
+        "git_raw_sha256": "a7ab16aa877e134edbdda09181f04e4256328b563ca0f97975ab4140df7cacc5",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-independent-r4-red.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "1f204ea013e5ec55553ea8f7a551893a0a47750c2e7fd86e82fa9220c5819a2a",
+        "local_raw_sha256": "1f204ea013e5ec55553ea8f7a551893a0a47750c2e7fd86e82fa9220c5819a2a",
+        "git_raw_sha256": "1f204ea013e5ec55553ea8f7a551893a0a47750c2e7fd86e82fa9220c5819a2a",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-real-deadline-current.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "b9a22603fc524d0c478af227af9cf91654290b3fa7d6f51b24a93ce2cfac9201",
+        "local_raw_sha256": "b9a22603fc524d0c478af227af9cf91654290b3fa7d6f51b24a93ce2cfac9201",
+        "git_raw_sha256": "b9a22603fc524d0c478af227af9cf91654290b3fa7d6f51b24a93ce2cfac9201",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-full.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "d520e40f35c37f655c31e66d16f1deb0fb4e4f12f7a960abead3202ba9164669",
+        "local_raw_sha256": "d520e40f35c37f655c31e66d16f1deb0fb4e4f12f7a960abead3202ba9164669",
+        "git_raw_sha256": "d520e40f35c37f655c31e66d16f1deb0fb4e4f12f7a960abead3202ba9164669",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-analyze.log",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "44f9dd50ea9f8d7d027e9a2a2d2de13d57b355801819c436da90493cad891955",
+        "local_raw_sha256": "44f9dd50ea9f8d7d027e9a2a2d2de13d57b355801819c436da90493cad891955",
+        "git_raw_sha256": "44f9dd50ea9f8d7d027e9a2a2d2de13d57b355801819c436da90493cad891955",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/bubble-state-diagnostic.patch",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10",
+        "local_raw_sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10",
+        "git_raw_sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/preview-phase-with-errors-diagnostic.patch",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+        "local_raw_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+        "git_raw_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-real-deadline.patch",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "9ab2c60aa89f5b5e7fdb9f5a0b22aa2c609d958075833ed3e9d932e4aede9f46",
+        "local_raw_sha256": "9ab2c60aa89f5b5e7fdb9f5a0b22aa2c609d958075833ed3e9d932e4aede9f46",
+        "git_raw_sha256": "9ab2c60aa89f5b5e7fdb9f5a0b22aa2c609d958075833ed3e9d932e4aede9f46",
+        "author_raw_match": true
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-full-receipt.json",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "c2942a566579f1841e9654f615a1fbfb691d1ec9a8ec8adf4bf2999502fb4d17",
+        "local_raw_sha256": "c2942a566579f1841e9654f615a1fbfb691d1ec9a8ec8adf4bf2999502fb4d17",
+        "git_raw_sha256": "c2942a566579f1841e9654f615a1fbfb691d1ec9a8ec8adf4bf2999502fb4d17",
+        "author_raw_match": false
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-real-deadline-current-receipt.json",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "20fc4a9ac1f2c46cf45c75a33ca585f22bef2230a1f3e77570013db131d3d2ba",
+        "local_raw_sha256": "20fc4a9ac1f2c46cf45c75a33ca585f22bef2230a1f3e77570013db131d3d2ba",
+        "git_raw_sha256": "20fc4a9ac1f2c46cf45c75a33ca585f22bef2230a1f3e77570013db131d3d2ba",
+        "author_raw_match": false
+      }
+    },
+    {
+      "check": "identity docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-full-receipt.json",
+      "passed": true,
+      "detail": {
+        "expected_lf_sha256": "d17f7828c6bcd9e66e4bb5846918f41efa1f136b0b80b0bfa4f2623fb19d40f4",
+        "local_raw_sha256": "d17f7828c6bcd9e66e4bb5846918f41efa1f136b0b80b0bfa4f2623fb19d40f4",
+        "git_raw_sha256": "d17f7828c6bcd9e66e4bb5846918f41efa1f136b0b80b0bfa4f2623fb19d40f4",
+        "author_raw_match": false
+      }
+    },
+    {
+      "check": "strict decode/HTTP/deadline assertions retained",
+      "passed": true,
+      "detail": "dual decode=2, pre-navigation and search HTTP=1, same real ten-second limit"
+    },
+    {
+      "check": "working mobile source exact candidate",
+      "passed": true,
+      "detail": "temporary runtime trace restored before full-file test"
+    }
+  ],
+  "passed": 23,
+  "failed": 0,
+  "changed_paths": [
+    "apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/.gitattributes",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/bubble-state-diagnostic.patch",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/preview-phase-with-errors-diagnostic.patch",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-analyze.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-baseline.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-diagnostic.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-followup.md",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-full-receipt.json",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-canonical-full.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-current-green.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-diagnostic.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-diagnostic.patch",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-analyze.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-full-receipt.json",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-full.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-final-input-identities.json",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-followup.md",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-impact-timing.json",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-impact.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-independent-r3-red.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-independent-r4-red.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-input-identities.json",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-preview-errors-r2.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-preview-phase.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-real-deadline-current-receipt.json",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-real-deadline-current.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-real-deadline.patch",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-root-red.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-short-preview-red.log",
+    "docs/verification/artifacts/2026-10-11/im-media-cache-regression/search-grid-timing.log",
+    "docs/workflow/tasks/2026-10-11-im-search-grid-regression.md"
+  ],
+  "author_raw_mismatches": 3,
+  "note": "Known LF canonical evidence identities are checked explicitly where Git checkout CRLF differs; both actual raw and Git blob digests are preserved."
+}
