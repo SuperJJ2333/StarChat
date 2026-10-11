@@ -1,0 +1,62 @@
+{
+  "since_utc": "2026-10-11T03:16:39Z",
+  "observed_utc": "2026-10-11T03:21:48.687747+00:00",
+  "services": [
+    {
+      "name": "starchat-business-api-1",
+      "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+      "status": "running",
+      "health": "healthy",
+      "restart_count": 0,
+      "log_lines": 536,
+      "tail_limit": 10000,
+      "bounded_sample": false,
+      "traceback_headers": 0,
+      "http_buckets": {
+        "health:200": 91,
+        "other:200": 171,
+        "other:202": 5,
+        "other:204": 10,
+        "other:401": 5,
+        "other:429": 2,
+        "recovery:200": 66
+      }
+    },
+    {
+      "name": "starchat-getui-bridge-1",
+      "image": "sha256:0d3c204b0df4863a8826aef6b58556f0fc9c8a6c89d5ca0ec137eec81fe7f43c",
+      "status": "running",
+      "health": null,
+      "restart_count": 0,
+      "log_lines": 0,
+      "tail_limit": 10000,
+      "bounded_sample": false,
+      "traceback_headers": 0,
+      "http_buckets": {}
+    },
+    {
+      "name": "starchat-synapse-1",
+      "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d",
+      "status": "running",
+      "health": "healthy",
+      "restart_count": 0,
+      "log_lines": 173,
+      "tail_limit": 10000,
+      "bounded_sample": false,
+      "traceback_headers": 0,
+      "http_buckets": {}
+    },
+    {
+      "name": "starchat-synapse-sync-worker-1",
+      "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d",
+      "status": "running",
+      "health": "healthy",
+      "restart_count": 0,
+      "log_lines": 33,
+      "tail_limit": 10000,
+      "bounded_sample": false,
+      "traceback_headers": 0,
+      "http_buckets": {}
+    }
+  ]
+}

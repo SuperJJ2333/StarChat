@@ -1,0 +1,1 @@
+{"result": "PASS", "checks": 14, "transport": "real Twisted HTTP", "port": 8082, "matrix_auth": "explicit double", "database": "explicit read-only double"}

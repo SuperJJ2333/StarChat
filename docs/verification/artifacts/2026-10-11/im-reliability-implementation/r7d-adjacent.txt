@@ -1,0 +1,72 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +3: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +4: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +5: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +6: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +7: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +8: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +9: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:02 +10: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:04 +10: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: SQLCipher streaming migration 1000 keeps all IDs and bounded ACK pages
+migration count=1000 pages=4 maxPage=256 timerTicks=2386 elapsedMs=2601
+00:04 +11: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:04 +12: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +13: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +14: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +15: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +16: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +17: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +18: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +19: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +20: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:06 +21: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:06 +22: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:06 +22: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: another legacy room actual page progresses during held exact membership
+heldMembershipOtherLegacyPage elapsedMs=5
+00:06 +23: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:08 +23: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: maintenance over budget shrinks next transaction through minimum one ID
+adaptiveMigration firstChunks=[256, 73, 24, 8, 2, 1, 1, 1] totalChunks=154 metrics={chunks: 154, maxMicros: 46368, overBudget: 154, minimumRows: 1, nextLimit: 1}
+00:08 +24: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:08 +25: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:08 +26: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:09 +26: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: foreground transition at 250000 legacy IDs while worker is held
+transition count=250000 readMs=16 totalMs=631 rssBefore=218390528 rssPeak=218394624
+00:09 +27: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:13 +27: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: foreground transition at 1000000 legacy IDs while worker is held
+transition count=1000000 readMs=10 totalMs=3623 rssBefore=257306624 rssPeak=266682368
+00:13 +28: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:13 +28: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: native bounded blob authority and persisted membership at 250000
+native modes locking=[{locking_mode: normal}] journal=[{journal_mode: wal}]
+00:15 +28: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: SQLCipher streaming migration 10000 keeps all IDs and bounded ACK pages
+migration count=10000 pages=40 maxPage=256 timerTicks=9679 elapsedMs=10820
+00:15 +29: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+legacyMembership count=1000000 coldMs=14219 warmMs=438 warmSourceItems=2624
+00:16 +29: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: native bounded blob authority and persisted membership at 250000
+nativeTransition count=250000 firstPageMs=240 firstWriteMs=1320 secondWriteMs=217 controlMs=261 ticks=2445 rssBefore=209195008 rssPeak=234577920
+cachedRoomRestore rooms=100 legacyRooms=10 legacyIdsPerRoom=250000 elapsedMs=4236
+00:21 +30: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:21 +30: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: native bounded blob authority and persisted membership at 1000000
+native modes locking=[{locking_mode: normal}] journal=[{journal_mode: wal}]
+00:29 +31: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: SQLCipher streaming migration 100000 keeps all IDs and bounded ACK pages
+00:36 +31: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/nonblocking_legacy_timeline_test.dart: native bounded blob authority and persisted membership at 1000000
+nativeTransition count=1000000 firstPageMs=227 firstWriteMs=13243 secondWriteMs=235 controlMs=229 ticks=14255 rssBefore=243159040 rssPeak=274165760
+00:36 +32: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: SQLCipher streaming migration 100000 keeps all IDs and bounded ACK pages
+00:38 +33: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: SQLCipher streaming migration 100000 keeps all IDs and bounded ACK pages
+migration count=100000 pages=391 maxPage=256 timerTicks=43712 elapsedMs=45183
+01:00 +34: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: SQLCipher streaming migration 250000 keeps all IDs and bounded ACK pages
+migration count=250000 pages=977 maxPage=256 timerTicks=83997 elapsedMs=87063
+02:28 +35: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: migration failure resumes committed ordinal and does not own other room gate
+02:28 +36: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: same length legacy rewrite cannot publish mixed migrated order
+02:28 +37: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: closed client encrypted legacy projection restores old binary order
+02:30 +38: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: failed staged rollback preserves source and index then retries
+02:31 +39: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: account close cancels encrypted migration and reopened account resumes
+02:35 +40: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: encrypted retained search backfill 1000 is bounded and reopens
+retainedSearch count=1000 pages=4 maxPage=256 ticks=197 elapsedMs=249
+02:36 +41: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: encrypted retained search backfill 100000 is bounded and reopens
+retainedSearch count=100000 pages=391 maxPage=256 ticks=10320 elapsedMs=11554
+03:06 +42: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/timeline_storage_migration_test.dart: encrypted retained backfill resumes and stale pages respect concurrent delete
+03:06 +43: All tests passed!

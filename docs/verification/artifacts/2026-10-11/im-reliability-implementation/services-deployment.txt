@@ -1,0 +1,5 @@
+{"stage": "switching", "role": "getui"}
+{"stage": "healthy", "role": "getui"}
+{"stage": "switching", "role": "api"}
+{"stage": "healthy", "role": "api"}
+{"stage": "complete", "receipt": {"stage": "PASS", "started_utc": "2026-10-11T03:16:10Z", "services": [{"role": "getui", "id": "4173b36c75674fc1bbdbae04009e0214adb28ff7537a54f00ad0862db2bee66e", "image": "sha256:0d3c204b0df4863a8826aef6b58556f0fc9c8a6c89d5ca0ec137eec81fe7f43c", "ready": true}, {"role": "api", "id": "87c62739027c607d1ae1b13af206a5960f44539a1b1a9c7ad60b3e11697c33c8", "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3", "ready": true}], "schema": "0095_wallet_source_alerts", "unrelated_containers_unchanged": true, "completed_utc": "2026-10-11T03:16:39Z"}}

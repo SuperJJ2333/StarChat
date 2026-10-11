@@ -1,0 +1,279 @@
+{
+  "collected_at_utc": "2026-10-11T02:03:51.876355+00:00",
+  "read_only": true,
+  "starchat-business-api-1": {
+    "import_probe": {
+      "actual_app_root": "/opt/business-api/app",
+      "files": {
+        "core/outbox.py": {
+          "sha256": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27",
+          "bytes": 9465
+        },
+        "core/database.py": {
+          "sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+          "bytes": 5269
+        },
+        "integrations/media_blob_storage.py": {
+          "sha256": "bcc07fbb962022769caa701bddada05f3119e4c4fefcc4603b1218760285ea1b",
+          "bytes": 11559
+        },
+        "api/client_diagnostics.py": {
+          "sha256": "d63b5c27444f2dfec6d07ac2e45dc4cbdacd338546ca1bbac60e428dc01b7613",
+          "bytes": 29120
+        },
+        "core/errors.py": {
+          "sha256": "001dcccfe56a210c1c485421c519dfad4a8ec45df0833fee6d58ca60ca041e3f",
+          "bytes": 3807
+        },
+        "modules/identity/tokens.py": {
+          "sha256": "7ee736fa02820781fbf66650bc33baf9058bb1ddd3c99a16bcb55949def454d0",
+          "bytes": 27636
+        }
+      }
+    },
+    "logs": {
+      "counts": {
+        "lines": 50000,
+        "bytes": 12176095,
+        "client_diagnostic_batches": 455
+      },
+      "refresh_status_by_known_probe": {
+        "other_refresh:200": 128,
+        "known_protocol_probe:401": 611
+      },
+      "fixed_reason_marker_lines": {},
+      "client_refresh_diagnostic_event_records": {},
+      "structured_error_exception_classes": {},
+      "first_included_timestamp": "2026-10-10T15:33:33.152417280Z",
+      "last_included_timestamp": "2026-10-11T02:03:51.949186558Z",
+      "truncated_or_cap_reached": true,
+      "docker_logs_exit": 0,
+      "limit_lines": 50000,
+      "limit_bytes": 16777216,
+      "note": "raw log not exported; line/event counts overlap; diagnostics can retry and are not unique user counts; known probe is exact fixed query flag, not independently verified source identity"
+    }
+  },
+  "starchat-business-worker-1": {
+    "import_probe": {
+      "actual_app_root": "/usr/local/lib/python3.12/site-packages/app",
+      "files": {
+        "core/outbox.py": {
+          "sha256": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27",
+          "bytes": 9465
+        },
+        "core/database.py": {
+          "sha256": "c240d741206f03d68f70d56d334439aaf48866e70f7064f5b9ba42fed401a9a9",
+          "bytes": 1406
+        },
+        "integrations/media_blob_storage.py": {
+          "sha256": "bcc07fbb962022769caa701bddada05f3119e4c4fefcc4603b1218760285ea1b",
+          "bytes": 11559
+        },
+        "api/client_diagnostics.py": {
+          "sha256": "abe20cbc619a9d42992408ca5f23986cb6d2089f6caa743776ee4b88602d4f3a",
+          "bytes": 6449
+        },
+        "core/errors.py": {
+          "sha256": "001dcccfe56a210c1c485421c519dfad4a8ec45df0833fee6d58ca60ca041e3f",
+          "bytes": 3807
+        },
+        "modules/identity/tokens.py": {
+          "sha256": "8c1b22e1894b1384e6f705018ca43cf5123651fe658b20d11109193736c4d395",
+          "bytes": 25760
+        }
+      },
+      "worker_structure": {
+        "run_maintenance_once": {
+          "line": 101,
+          "calls": [
+            {
+              "line": 108,
+              "call": "_now_factory"
+            },
+            {
+              "line": 110,
+              "call": "get"
+            },
+            {
+              "line": 115,
+              "call": "task"
+            },
+            {
+              "line": 118,
+              "call": "str"
+            },
+            {
+              "line": 120,
+              "call": "warning"
+            }
+          ]
+        },
+        "run_once": {
+          "line": 149,
+          "calls": [
+            {
+              "line": 150,
+              "call": "run_maintenance_once"
+            },
+            {
+              "line": 151,
+              "call": "_reap_undeliverable"
+            },
+            {
+              "line": 153,
+              "call": "claim_batch"
+            },
+            {
+              "line": 158,
+              "call": "get"
+            },
+            {
+              "line": 160,
+              "call": "RuntimeError"
+            },
+            {
+              "line": 161,
+              "call": "handler"
+            },
+            {
+              "line": 163,
+              "call": "str"
+            },
+            {
+              "line": 166,
+              "call": "mark_dead"
+            },
+            {
+              "line": 169,
+              "call": "error"
+            },
+            {
+              "line": 177,
+              "call": "mark_failed"
+            },
+            {
+              "line": 181,
+              "call": "_now_factory"
+            },
+            {
+              "line": 181,
+              "call": "_retry_backoff"
+            },
+            {
+              "line": 184,
+              "call": "mark_succeeded"
+            },
+            {
+              "line": 185,
+              "call": "_touch_heartbeat"
+            },
+            {
+              "line": 186,
+              "call": "len"
+            }
+          ]
+        },
+        "run_forever": {
+          "line": 193,
+          "calls": [
+            {
+              "line": 200,
+              "call": "is_set"
+            },
+            {
+              "line": 201,
+              "call": "run_once"
+            },
+            {
+              "line": 202,
+              "call": "wait"
+            }
+          ]
+        }
+      }
+    },
+    "logs": {
+      "counts": {
+        "lines": 2985,
+        "bytes": 1232728
+      },
+      "refresh_status_by_known_probe": {},
+      "fixed_reason_marker_lines": {},
+      "client_refresh_diagnostic_event_records": {},
+      "structured_error_exception_classes": {},
+      "first_included_timestamp": "2026-10-10T02:04:36.493723800Z",
+      "last_included_timestamp": "2026-10-11T02:03:47.273018670Z",
+      "truncated_or_cap_reached": false,
+      "docker_logs_exit": 0,
+      "limit_lines": 50000,
+      "limit_bytes": 16777216,
+      "note": "raw log not exported; line/event counts overlap; diagnostics can retry and are not unique user counts; known probe is exact fixed query flag, not independently verified source identity"
+    }
+  },
+  "historical_outbox": {
+    "kind": "outbox_effective_historical_states",
+    "utc": "2026-10-11T02:03:52.919074+00:00",
+    "read_only": "on",
+    "statement_timeout": "5s",
+    "rows": [
+      {
+        "status": "DEAD",
+        "valid_superseded": false,
+        "count": 102874,
+        "first_created": "2026-08-14T04:32:58.827986+00:00",
+        "last_created": "2026-09-30T14:02:34.178667+00:00",
+        "max_attempts": 56947
+      },
+      {
+        "status": "DEAD",
+        "valid_superseded": true,
+        "count": 361,
+        "first_created": "2026-09-06T15:33:04.867819+00:00",
+        "last_created": "2026-09-07T21:28:09.050343+00:00",
+        "max_attempts": 0
+      },
+      {
+        "status": "PENDING",
+        "valid_superseded": true,
+        "count": 2,
+        "first_created": "2026-09-07T21:33:14.432635+00:00",
+        "last_created": "2026-09-07T21:38:20.033407+00:00",
+        "max_attempts": 0
+      }
+    ]
+  },
+  "pushers": {
+    "kind": "pusher_app_and_sound_aggregate",
+    "utc": "2026-10-11T02:03:53.558326+00:00",
+    "read_only": "on",
+    "rows": [
+      {
+        "app_group": "android_getui",
+        "sound_group": "missing",
+        "count": 23
+      },
+      {
+        "app_group": "ios_apns",
+        "sound_group": "default",
+        "count": 10
+      }
+    ]
+  },
+  "health": [
+    {
+      "path": "/api/v1/health/live",
+      "status": 200,
+      "ok": true,
+      "database": null,
+      "elapsed_ms": 40.93
+    },
+    {
+      "path": "/api/v1/health/ready",
+      "status": 200,
+      "ok": true,
+      "database": "ready",
+      "elapsed_ms": 41.06
+    }
+  ],
+  "completed_at_utc": "2026-10-11T02:03:53.647732+00:00"
+}

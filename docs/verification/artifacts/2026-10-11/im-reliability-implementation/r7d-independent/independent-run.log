@@ -1,0 +1,12 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/independent_membership_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/independent_membership_test.dart: warm blocks preserve first duplicate ordinal and escaped boundary IDs
+00:02 +1: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:03 +2: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:03 +3: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:04 +4: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:04 +5: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:05 +6: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+00:06 +7: C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/docs/verification/artifacts/2026-10-11/im-mention-pages/r7d-review/author_membership_test.dart: million-ID cold negative builds bounded warm tail membership lookup
+legacyMembership count=1000000 coldMs=10090 warmMs=320 warmSourceItems=2624
+00:22 +8: All tests passed!

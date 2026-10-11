@@ -1,0 +1,18 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart
+00:00 +0: million-ID cold negative builds bounded warm tail membership lookup
+legacyMembership count=1000000 coldMs=10726 warmMs=10926 warmSourceItems=1000000
+00:22 +0 -1: million-ID cold negative builds bounded warm tail membership lookup [E]
+  Expected: a value less than <50000>
+    Actual: <1000000>
+     Which: is not a value less than <50000>
+  a complete accelerator must not rescan the entire source
+  
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\legacy_membership_blocks_test.dart 60:7  main.<fn>
+  
+00:22 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup

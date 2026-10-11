@@ -1,0 +1,7 @@
+# R7c independent quality/security review
+
+Following SPEC/domain PASS, commit 7454986fd312abdca9ccc876b6a6d224cfec304a passes quality/security review with no blocking findings. Independently ran the three changed startup test files: 17 PASS, exit0 (review-r7c-focused.txt). Broader 40-test/analyze evidence is the implementer's recorded gate and was not misrepresented as a second run.
+
+Read full gate control flow, actual main entry and LiuhetongApp wrapper. Timers are canceled on success/failure/dispose, defer/allowFirstFrame is balanced by a flag, and late completion checks mounted before changing phase or starting the application. The in-flight checking/starting guards prevent repeated retry/lifecycle events from opening parallel clients. A hung future is not canceled/restarted underneath mutable DB/key work. Shell construction has no account data side effects; late theme variables are only accessed after shellPrepared is set following initialization. Initialization errors remain sanitized through startup-failure categorization. The first-frame observer keeps waiting without forcing a busy frame loop; the release/phase timers schedule the needed next frame.
+
+No auth/ledger/E2EE changes or destructive operations were introduced. Explicit failure allows retry; unknown/pending never does. UI responsiveness, physical first presentation, native protected-data cases and actual startup performance still require final-package/device evidence. Source and synthetic-Future behavior PASS is not device acceptance.

@@ -1,0 +1,981 @@
+
+> Configure project :gradle
+WARNING: Unsupported Kotlin plugin version.
+The `embedded-kotlin` and `kotlin-dsl` plugins rely on features of Kotlin `2.2.0` that might work differently than in the requested version `2.2.20`.
+
+> Task :gradle:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :gradle:compileKotlin UP-TO-DATE
+> Task :gradle:compileJava NO-SOURCE
+> Task :gradle:compileGroovy NO-SOURCE
+> Task :gradle:pluginDescriptors UP-TO-DATE
+> Task :gradle:processResources UP-TO-DATE
+> Task :gradle:classes UP-TO-DATE
+> Task :gradle:jar UP-TO-DATE
+
+> Configure project :app
+WARNING: The option setting 'android.builtInKotlin=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+WARNING: The option setting 'android.newDsl=false' is deprecated.
+The current default is 'true'.
+It will be removed in version 10.0 of the Android Gradle plugin.
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':app' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :audioplayers_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':audioplayers_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :connectivity_plus
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':connectivity_plus' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :emoji_picker_flutter
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':emoji_picker_flutter' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :file_selector_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':file_selector_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :firebase_core
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':firebase_core' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :firebase_messaging
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':firebase_messaging' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_image_compress_common
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_image_compress_common' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_local_notifications
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_local_notifications' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_olm
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_olm' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_openssl_crypto
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_openssl_crypto' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_plugin_android_lifecycle
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_plugin_android_lifecycle' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_secure_storage
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_secure_storage' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :flutter_webrtc
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':flutter_webrtc' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :image_cropper
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':image_cropper' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :image_picker_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':image_picker_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :integration_test
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':integration_test' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :jni
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':jni' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :jni_flutter
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':jni_flutter' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :mobile_scanner
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':mobile_scanner' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :package_info_plus
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':package_info_plus' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :permission_handler_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':permission_handler_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :photo_manager
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':photo_manager' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :record_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':record_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :shared_preferences_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':shared_preferences_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :speech_to_text
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':speech_to_text' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :sqflite_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':sqflite_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :sqlcipher_flutter_libs
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':sqlcipher_flutter_libs' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :url_launcher_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':url_launcher_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :video_compress
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':video_compress' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :video_player_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':video_player_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :wakelock_plus
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':wakelock_plus' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+
+> Configure project :webview_flutter_android
+w: Deprecated 'org.jetbrains.kotlin.android' plugin usage
+The 'org.jetbrains.kotlin.android' plugin in project ':webview_flutter_android' is no longer required for Kotlin support since AGP 9.0.
+Solution: Remove both `android.builtInKotlin=true` and `android.newDsl=false` from `gradle.properties`, then migrate to built-in Kotlin.
+See https://kotl.in/gradle/agp-built-in-kotlin for more details.
+
+WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): emoji_picker_flutter, firebase_core, flutter_image_compress_common, flutter_olm, flutter_openssl_crypto, flutter_webrtc, mobile_scanner, package_info_plus, photo_manager, speech_to_text, video_compress, wakelock_plus
+Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
+
+Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
+If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing 
+an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
+
+If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:cleanMergeStandardDebugAssets
+
+> Task :app:compileFlutterBuildStandardDebug
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+
+> Task :app:generateStandardDebugAssets UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preStandardDebugBuild UP-TO-DATE
+> Task :audioplayers_android:generateDebugAssets UP-TO-DATE
+> Task :audioplayers_android:preBuild UP-TO-DATE
+> Task :audioplayers_android:preDebugBuild UP-TO-DATE
+> Task :audioplayers_android:mergeDebugAssets UP-TO-DATE
+> Task :connectivity_plus:generateDebugAssets UP-TO-DATE
+> Task :connectivity_plus:preBuild UP-TO-DATE
+> Task :connectivity_plus:preDebugBuild UP-TO-DATE
+> Task :connectivity_plus:mergeDebugAssets UP-TO-DATE
+> Task :emoji_picker_flutter:generateDebugAssets UP-TO-DATE
+> Task :emoji_picker_flutter:preBuild UP-TO-DATE
+> Task :emoji_picker_flutter:preDebugBuild UP-TO-DATE
+> Task :emoji_picker_flutter:mergeDebugAssets UP-TO-DATE
+> Task :file_selector_android:generateDebugAssets UP-TO-DATE
+> Task :file_selector_android:preBuild UP-TO-DATE
+> Task :file_selector_android:preDebugBuild UP-TO-DATE
+> Task :file_selector_android:mergeDebugAssets UP-TO-DATE
+> Task :firebase_core:generateDebugAssets UP-TO-DATE
+> Task :firebase_core:preBuild UP-TO-DATE
+> Task :firebase_core:preDebugBuild UP-TO-DATE
+> Task :firebase_core:mergeDebugAssets UP-TO-DATE
+> Task :firebase_messaging:generateDebugAssets UP-TO-DATE
+> Task :firebase_messaging:preBuild UP-TO-DATE
+> Task :firebase_messaging:preDebugBuild UP-TO-DATE
+> Task :firebase_messaging:mergeDebugAssets UP-TO-DATE
+> Task :flutter_image_compress_common:generateDebugAssets UP-TO-DATE
+> Task :flutter_image_compress_common:preBuild UP-TO-DATE
+> Task :flutter_image_compress_common:preDebugBuild UP-TO-DATE
+> Task :flutter_image_compress_common:mergeDebugAssets UP-TO-DATE
+> Task :flutter_local_notifications:generateDebugAssets UP-TO-DATE
+> Task :flutter_local_notifications:preBuild UP-TO-DATE
+> Task :flutter_local_notifications:preDebugBuild UP-TO-DATE
+> Task :flutter_local_notifications:mergeDebugAssets UP-TO-DATE
+> Task :flutter_olm:generateDebugAssets UP-TO-DATE
+> Task :flutter_olm:preBuild UP-TO-DATE
+> Task :flutter_olm:preDebugBuild UP-TO-DATE
+> Task :flutter_olm:mergeDebugAssets UP-TO-DATE
+> Task :flutter_openssl_crypto:generateDebugAssets UP-TO-DATE
+> Task :flutter_openssl_crypto:preBuild UP-TO-DATE
+> Task :flutter_openssl_crypto:preDebugBuild UP-TO-DATE
+> Task :flutter_openssl_crypto:mergeDebugAssets UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:generateDebugAssets UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:preBuild UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:preDebugBuild UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:mergeDebugAssets UP-TO-DATE
+> Task :flutter_secure_storage:generateDebugAssets UP-TO-DATE
+> Task :flutter_secure_storage:preBuild UP-TO-DATE
+> Task :flutter_secure_storage:preDebugBuild UP-TO-DATE
+> Task :flutter_secure_storage:mergeDebugAssets UP-TO-DATE
+> Task :flutter_webrtc:generateDebugAssets UP-TO-DATE
+> Task :flutter_webrtc:preBuild UP-TO-DATE
+> Task :flutter_webrtc:preDebugBuild UP-TO-DATE
+> Task :flutter_webrtc:mergeDebugAssets UP-TO-DATE
+> Task :image_cropper:generateDebugAssets UP-TO-DATE
+> Task :image_cropper:preBuild UP-TO-DATE
+> Task :image_cropper:preDebugBuild UP-TO-DATE
+> Task :image_cropper:mergeDebugAssets UP-TO-DATE
+> Task :image_picker_android:generateDebugAssets UP-TO-DATE
+> Task :image_picker_android:preBuild UP-TO-DATE
+> Task :image_picker_android:preDebugBuild UP-TO-DATE
+> Task :image_picker_android:mergeDebugAssets UP-TO-DATE
+> Task :integration_test:generateDebugAssets UP-TO-DATE
+> Task :integration_test:preBuild UP-TO-DATE
+> Task :integration_test:preDebugBuild UP-TO-DATE
+> Task :integration_test:mergeDebugAssets UP-TO-DATE
+> Task :jni:generateDebugAssets UP-TO-DATE
+> Task :jni:preBuild UP-TO-DATE
+> Task :jni:preDebugBuild UP-TO-DATE
+> Task :jni:mergeDebugAssets UP-TO-DATE
+> Task :jni_flutter:generateDebugAssets UP-TO-DATE
+> Task :jni_flutter:preBuild UP-TO-DATE
+> Task :jni_flutter:preDebugBuild UP-TO-DATE
+> Task :jni_flutter:mergeDebugAssets UP-TO-DATE
+> Task :mobile_scanner:generateDebugAssets UP-TO-DATE
+> Task :mobile_scanner:preBuild UP-TO-DATE
+> Task :mobile_scanner:preDebugBuild UP-TO-DATE
+> Task :mobile_scanner:mergeDebugAssets UP-TO-DATE
+> Task :package_info_plus:generateDebugAssets UP-TO-DATE
+> Task :package_info_plus:preBuild UP-TO-DATE
+> Task :package_info_plus:preDebugBuild UP-TO-DATE
+> Task :package_info_plus:mergeDebugAssets UP-TO-DATE
+> Task :permission_handler_android:generateDebugAssets UP-TO-DATE
+> Task :permission_handler_android:preBuild UP-TO-DATE
+> Task :permission_handler_android:preDebugBuild UP-TO-DATE
+> Task :permission_handler_android:mergeDebugAssets UP-TO-DATE
+> Task :photo_manager:generateDebugAssets UP-TO-DATE
+> Task :photo_manager:preBuild UP-TO-DATE
+> Task :photo_manager:preDebugBuild UP-TO-DATE
+> Task :photo_manager:mergeDebugAssets UP-TO-DATE
+> Task :record_android:generateDebugAssets UP-TO-DATE
+> Task :record_android:preBuild UP-TO-DATE
+> Task :record_android:preDebugBuild UP-TO-DATE
+> Task :record_android:mergeDebugAssets UP-TO-DATE
+> Task :shared_preferences_android:generateDebugAssets UP-TO-DATE
+> Task :shared_preferences_android:preBuild UP-TO-DATE
+> Task :shared_preferences_android:preDebugBuild UP-TO-DATE
+> Task :shared_preferences_android:mergeDebugAssets UP-TO-DATE
+> Task :speech_to_text:generateDebugAssets UP-TO-DATE
+> Task :speech_to_text:preBuild UP-TO-DATE
+> Task :speech_to_text:preDebugBuild UP-TO-DATE
+> Task :speech_to_text:mergeDebugAssets UP-TO-DATE
+> Task :sqflite_android:generateDebugAssets UP-TO-DATE
+> Task :sqflite_android:preBuild UP-TO-DATE
+> Task :sqflite_android:preDebugBuild UP-TO-DATE
+> Task :sqflite_android:mergeDebugAssets UP-TO-DATE
+> Task :sqlcipher_flutter_libs:generateDebugAssets UP-TO-DATE
+> Task :sqlcipher_flutter_libs:preBuild UP-TO-DATE
+> Task :sqlcipher_flutter_libs:preDebugBuild UP-TO-DATE
+> Task :sqlcipher_flutter_libs:mergeDebugAssets UP-TO-DATE
+> Task :url_launcher_android:generateDebugAssets UP-TO-DATE
+> Task :url_launcher_android:preBuild UP-TO-DATE
+> Task :url_launcher_android:preDebugBuild UP-TO-DATE
+> Task :url_launcher_android:mergeDebugAssets UP-TO-DATE
+> Task :video_compress:generateDebugAssets UP-TO-DATE
+> Task :video_compress:preBuild UP-TO-DATE
+> Task :video_compress:preDebugBuild UP-TO-DATE
+> Task :video_compress:mergeDebugAssets UP-TO-DATE
+> Task :video_player_android:generateDebugAssets UP-TO-DATE
+> Task :video_player_android:preBuild UP-TO-DATE
+> Task :video_player_android:preDebugBuild UP-TO-DATE
+> Task :video_player_android:mergeDebugAssets UP-TO-DATE
+> Task :wakelock_plus:generateDebugAssets UP-TO-DATE
+> Task :wakelock_plus:preBuild UP-TO-DATE
+> Task :wakelock_plus:preDebugBuild UP-TO-DATE
+> Task :wakelock_plus:mergeDebugAssets UP-TO-DATE
+> Task :webview_flutter_android:generateDebugAssets UP-TO-DATE
+> Task :webview_flutter_android:preBuild UP-TO-DATE
+> Task :webview_flutter_android:preDebugBuild UP-TO-DATE
+> Task :webview_flutter_android:mergeDebugAssets UP-TO-DATE
+> Task :app:mergeStandardDebugAssets
+> Task :app:copyFlutterAssetsStandardDebug
+> Task :app:generateStandardDebugResources UP-TO-DATE
+> Task :app:packageStandardDebugResources UP-TO-DATE
+> Task :audioplayers_android:processDebugNavigationResources UP-TO-DATE
+> Task :connectivity_plus:processDebugNavigationResources UP-TO-DATE
+> Task :emoji_picker_flutter:processDebugNavigationResources UP-TO-DATE
+> Task :file_selector_android:processDebugNavigationResources UP-TO-DATE
+> Task :firebase_core:processDebugNavigationResources UP-TO-DATE
+> Task :firebase_messaging:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_image_compress_common:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_local_notifications:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_olm:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_openssl_crypto:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_secure_storage:processDebugNavigationResources UP-TO-DATE
+> Task :flutter_webrtc:processDebugNavigationResources UP-TO-DATE
+> Task :image_cropper:processDebugNavigationResources UP-TO-DATE
+> Task :image_picker_android:processDebugNavigationResources UP-TO-DATE
+> Task :integration_test:processDebugNavigationResources UP-TO-DATE
+> Task :jni:processDebugNavigationResources UP-TO-DATE
+> Task :jni_flutter:processDebugNavigationResources UP-TO-DATE
+> Task :mobile_scanner:processDebugNavigationResources UP-TO-DATE
+> Task :package_info_plus:processDebugNavigationResources UP-TO-DATE
+> Task :permission_handler_android:processDebugNavigationResources UP-TO-DATE
+> Task :photo_manager:processDebugNavigationResources UP-TO-DATE
+> Task :record_android:processDebugNavigationResources UP-TO-DATE
+> Task :shared_preferences_android:processDebugNavigationResources UP-TO-DATE
+> Task :speech_to_text:processDebugNavigationResources UP-TO-DATE
+> Task :sqflite_android:processDebugNavigationResources UP-TO-DATE
+> Task :sqlcipher_flutter_libs:processDebugNavigationResources UP-TO-DATE
+> Task :url_launcher_android:processDebugNavigationResources UP-TO-DATE
+> Task :video_compress:processDebugNavigationResources UP-TO-DATE
+> Task :video_player_android:processDebugNavigationResources UP-TO-DATE
+> Task :wakelock_plus:processDebugNavigationResources UP-TO-DATE
+> Task :webview_flutter_android:processDebugNavigationResources UP-TO-DATE
+> Task :app:processStandardDebugNavigationResources UP-TO-DATE
+> Task :app:parseStandardDebugLocalResources UP-TO-DATE
+> Task :app:generateStandardDebugRFile UP-TO-DATE
+> Task :audioplayers_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :audioplayers_android:generateDebugResources UP-TO-DATE
+> Task :audioplayers_android:packageDebugResources UP-TO-DATE
+> Task :audioplayers_android:parseDebugLocalResources UP-TO-DATE
+> Task :audioplayers_android:generateDebugRFile UP-TO-DATE
+> Task :audioplayers_android:compileDebugKotlin UP-TO-DATE
+> Task :audioplayers_android:javaPreCompileDebug UP-TO-DATE
+> Task :audioplayers_android:compileDebugJavaWithJavac NO-SOURCE
+> Task :audioplayers_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :connectivity_plus:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :connectivity_plus:generateDebugResources UP-TO-DATE
+> Task :connectivity_plus:packageDebugResources UP-TO-DATE
+> Task :connectivity_plus:parseDebugLocalResources UP-TO-DATE
+> Task :connectivity_plus:generateDebugRFile UP-TO-DATE
+> Task :connectivity_plus:compileDebugKotlin NO-SOURCE
+> Task :connectivity_plus:javaPreCompileDebug UP-TO-DATE
+> Task :connectivity_plus:compileDebugJavaWithJavac UP-TO-DATE
+> Task :connectivity_plus:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :emoji_picker_flutter:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :emoji_picker_flutter:generateDebugResources UP-TO-DATE
+> Task :emoji_picker_flutter:packageDebugResources UP-TO-DATE
+> Task :emoji_picker_flutter:parseDebugLocalResources UP-TO-DATE
+> Task :emoji_picker_flutter:generateDebugRFile UP-TO-DATE
+> Task :emoji_picker_flutter:compileDebugKotlin UP-TO-DATE
+> Task :emoji_picker_flutter:javaPreCompileDebug UP-TO-DATE
+> Task :emoji_picker_flutter:compileDebugJavaWithJavac NO-SOURCE
+> Task :emoji_picker_flutter:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :file_selector_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :file_selector_android:generateDebugResources UP-TO-DATE
+> Task :file_selector_android:packageDebugResources UP-TO-DATE
+> Task :file_selector_android:parseDebugLocalResources UP-TO-DATE
+> Task :file_selector_android:generateDebugRFile UP-TO-DATE
+> Task :file_selector_android:compileDebugKotlin UP-TO-DATE
+> Task :file_selector_android:javaPreCompileDebug UP-TO-DATE
+> Task :file_selector_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :file_selector_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :firebase_core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :firebase_core:generateDebugBuildConfig UP-TO-DATE
+> Task :firebase_core:generateDebugResources UP-TO-DATE
+> Task :firebase_core:packageDebugResources UP-TO-DATE
+> Task :firebase_core:parseDebugLocalResources UP-TO-DATE
+> Task :firebase_core:generateDebugRFile UP-TO-DATE
+> Task :firebase_core:compileDebugKotlin UP-TO-DATE
+> Task :firebase_core:javaPreCompileDebug UP-TO-DATE
+> Task :firebase_core:compileDebugJavaWithJavac UP-TO-DATE
+> Task :firebase_core:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :firebase_messaging:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :firebase_messaging:generateDebugBuildConfig UP-TO-DATE
+> Task :firebase_messaging:generateDebugResources UP-TO-DATE
+> Task :firebase_messaging:packageDebugResources UP-TO-DATE
+> Task :firebase_messaging:parseDebugLocalResources UP-TO-DATE
+> Task :firebase_messaging:generateDebugRFile UP-TO-DATE
+> Task :firebase_messaging:compileDebugKotlin NO-SOURCE
+> Task :firebase_messaging:javaPreCompileDebug UP-TO-DATE
+> Task :firebase_messaging:compileDebugJavaWithJavac UP-TO-DATE
+> Task :firebase_messaging:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_image_compress_common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_image_compress_common:generateDebugResources UP-TO-DATE
+> Task :flutter_image_compress_common:packageDebugResources UP-TO-DATE
+> Task :flutter_image_compress_common:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_image_compress_common:generateDebugRFile UP-TO-DATE
+> Task :flutter_image_compress_common:compileDebugKotlin UP-TO-DATE
+> Task :flutter_image_compress_common:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_image_compress_common:compileDebugJavaWithJavac UP-TO-DATE
+> Task :flutter_image_compress_common:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_local_notifications:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_local_notifications:generateDebugResources UP-TO-DATE
+> Task :flutter_local_notifications:packageDebugResources UP-TO-DATE
+> Task :flutter_local_notifications:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_local_notifications:generateDebugRFile UP-TO-DATE
+> Task :flutter_local_notifications:compileDebugKotlin NO-SOURCE
+> Task :flutter_local_notifications:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_local_notifications:compileDebugJavaWithJavac UP-TO-DATE
+> Task :flutter_local_notifications:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_olm:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_olm:generateDebugResources UP-TO-DATE
+> Task :flutter_olm:packageDebugResources UP-TO-DATE
+> Task :flutter_olm:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_olm:generateDebugRFile UP-TO-DATE
+> Task :flutter_olm:compileDebugKotlin UP-TO-DATE
+> Task :flutter_olm:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_olm:compileDebugJavaWithJavac NO-SOURCE
+> Task :flutter_olm:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_openssl_crypto:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_openssl_crypto:generateDebugResources UP-TO-DATE
+> Task :flutter_openssl_crypto:packageDebugResources UP-TO-DATE
+> Task :flutter_openssl_crypto:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_openssl_crypto:generateDebugRFile UP-TO-DATE
+> Task :flutter_openssl_crypto:compileDebugKotlin UP-TO-DATE
+> Task :flutter_openssl_crypto:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_openssl_crypto:compileDebugJavaWithJavac NO-SOURCE
+> Task :flutter_openssl_crypto:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_plugin_android_lifecycle:generateDebugResources UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:packageDebugResources UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:generateDebugRFile UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:compileDebugKotlin NO-SOURCE
+> Task :flutter_plugin_android_lifecycle:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:compileDebugJavaWithJavac UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_secure_storage:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_secure_storage:generateDebugBuildConfig UP-TO-DATE
+> Task :flutter_secure_storage:generateDebugResources UP-TO-DATE
+> Task :flutter_secure_storage:packageDebugResources UP-TO-DATE
+> Task :flutter_secure_storage:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_secure_storage:generateDebugRFile UP-TO-DATE
+> Task :flutter_secure_storage:compileDebugKotlin NO-SOURCE
+> Task :flutter_secure_storage:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_secure_storage:compileDebugJavaWithJavac UP-TO-DATE
+> Task :flutter_secure_storage:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :flutter_webrtc:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :flutter_webrtc:generateDebugResources UP-TO-DATE
+> Task :flutter_webrtc:packageDebugResources UP-TO-DATE
+> Task :flutter_webrtc:parseDebugLocalResources UP-TO-DATE
+> Task :flutter_webrtc:generateDebugRFile UP-TO-DATE
+> Task :flutter_webrtc:compileDebugKotlin UP-TO-DATE
+> Task :flutter_webrtc:javaPreCompileDebug UP-TO-DATE
+> Task :flutter_webrtc:compileDebugJavaWithJavac UP-TO-DATE
+> Task :flutter_webrtc:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :image_cropper:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :image_cropper:generateDebugResources UP-TO-DATE
+> Task :image_cropper:packageDebugResources UP-TO-DATE
+> Task :image_cropper:parseDebugLocalResources UP-TO-DATE
+> Task :image_cropper:generateDebugRFile UP-TO-DATE
+> Task :image_cropper:compileDebugKotlin NO-SOURCE
+> Task :image_cropper:javaPreCompileDebug UP-TO-DATE
+> Task :image_cropper:compileDebugJavaWithJavac UP-TO-DATE
+> Task :image_cropper:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :image_picker_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :image_picker_android:generateDebugResources UP-TO-DATE
+> Task :image_picker_android:packageDebugResources UP-TO-DATE
+> Task :image_picker_android:parseDebugLocalResources UP-TO-DATE
+> Task :image_picker_android:generateDebugRFile UP-TO-DATE
+> Task :image_picker_android:compileDebugKotlin UP-TO-DATE
+> Task :image_picker_android:javaPreCompileDebug UP-TO-DATE
+> Task :image_picker_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :image_picker_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :integration_test:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :integration_test:generateDebugResources UP-TO-DATE
+> Task :integration_test:packageDebugResources UP-TO-DATE
+> Task :integration_test:parseDebugLocalResources UP-TO-DATE
+> Task :integration_test:generateDebugRFile UP-TO-DATE
+> Task :integration_test:compileDebugKotlin NO-SOURCE
+> Task :integration_test:javaPreCompileDebug UP-TO-DATE
+> Task :integration_test:compileDebugJavaWithJavac UP-TO-DATE
+> Task :integration_test:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :jni:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :jni:generateDebugResources UP-TO-DATE
+> Task :jni:packageDebugResources UP-TO-DATE
+> Task :jni:parseDebugLocalResources UP-TO-DATE
+> Task :jni:generateDebugRFile UP-TO-DATE
+> Task :jni:compileDebugKotlin NO-SOURCE
+> Task :jni:javaPreCompileDebug UP-TO-DATE
+> Task :jni:compileDebugJavaWithJavac UP-TO-DATE
+> Task :jni:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :jni_flutter:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :jni_flutter:generateDebugResources UP-TO-DATE
+> Task :jni_flutter:packageDebugResources UP-TO-DATE
+> Task :jni_flutter:parseDebugLocalResources UP-TO-DATE
+> Task :jni_flutter:generateDebugRFile UP-TO-DATE
+> Task :jni_flutter:compileDebugKotlin NO-SOURCE
+> Task :jni_flutter:javaPreCompileDebug UP-TO-DATE
+> Task :jni_flutter:compileDebugJavaWithJavac UP-TO-DATE
+> Task :jni_flutter:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :mobile_scanner:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :mobile_scanner:generateDebugResources UP-TO-DATE
+> Task :mobile_scanner:packageDebugResources UP-TO-DATE
+> Task :mobile_scanner:parseDebugLocalResources UP-TO-DATE
+> Task :mobile_scanner:generateDebugRFile UP-TO-DATE
+> Task :mobile_scanner:compileDebugKotlin UP-TO-DATE
+> Task :mobile_scanner:javaPreCompileDebug UP-TO-DATE
+> Task :mobile_scanner:compileDebugJavaWithJavac NO-SOURCE
+> Task :mobile_scanner:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :package_info_plus:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :package_info_plus:generateDebugResources UP-TO-DATE
+> Task :package_info_plus:packageDebugResources UP-TO-DATE
+> Task :package_info_plus:parseDebugLocalResources UP-TO-DATE
+> Task :package_info_plus:generateDebugRFile UP-TO-DATE
+> Task :package_info_plus:compileDebugKotlin UP-TO-DATE
+> Task :package_info_plus:javaPreCompileDebug UP-TO-DATE
+> Task :package_info_plus:compileDebugJavaWithJavac NO-SOURCE
+> Task :package_info_plus:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :permission_handler_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :permission_handler_android:generateDebugResources UP-TO-DATE
+> Task :permission_handler_android:packageDebugResources UP-TO-DATE
+> Task :permission_handler_android:parseDebugLocalResources UP-TO-DATE
+> Task :permission_handler_android:generateDebugRFile UP-TO-DATE
+> Task :permission_handler_android:compileDebugKotlin NO-SOURCE
+> Task :permission_handler_android:javaPreCompileDebug UP-TO-DATE
+> Task :permission_handler_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :permission_handler_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :photo_manager:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :photo_manager:generateDebugResources UP-TO-DATE
+> Task :photo_manager:packageDebugResources UP-TO-DATE
+> Task :photo_manager:parseDebugLocalResources UP-TO-DATE
+> Task :photo_manager:generateDebugRFile UP-TO-DATE
+> Task :photo_manager:compileDebugKotlin UP-TO-DATE
+> Task :photo_manager:javaPreCompileDebug UP-TO-DATE
+> Task :photo_manager:compileDebugJavaWithJavac NO-SOURCE
+> Task :photo_manager:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :record_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :record_android:generateDebugResources UP-TO-DATE
+> Task :record_android:packageDebugResources UP-TO-DATE
+> Task :record_android:parseDebugLocalResources UP-TO-DATE
+> Task :record_android:generateDebugRFile UP-TO-DATE
+> Task :record_android:compileDebugKotlin UP-TO-DATE
+> Task :record_android:javaPreCompileDebug UP-TO-DATE
+> Task :record_android:compileDebugJavaWithJavac NO-SOURCE
+> Task :record_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :shared_preferences_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :shared_preferences_android:generateDebugResources UP-TO-DATE
+> Task :shared_preferences_android:packageDebugResources UP-TO-DATE
+> Task :shared_preferences_android:parseDebugLocalResources UP-TO-DATE
+> Task :shared_preferences_android:generateDebugRFile UP-TO-DATE
+> Task :shared_preferences_android:compileDebugKotlin UP-TO-DATE
+> Task :shared_preferences_android:javaPreCompileDebug UP-TO-DATE
+> Task :shared_preferences_android:compileDebugJavaWithJavac NO-SOURCE
+> Task :shared_preferences_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :speech_to_text:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :speech_to_text:generateDebugResources UP-TO-DATE
+> Task :speech_to_text:packageDebugResources UP-TO-DATE
+> Task :speech_to_text:parseDebugLocalResources UP-TO-DATE
+> Task :speech_to_text:generateDebugRFile UP-TO-DATE
+> Task :speech_to_text:compileDebugKotlin UP-TO-DATE
+> Task :speech_to_text:javaPreCompileDebug UP-TO-DATE
+> Task :speech_to_text:compileDebugJavaWithJavac NO-SOURCE
+> Task :speech_to_text:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :sqflite_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :sqflite_android:generateDebugResources UP-TO-DATE
+> Task :sqflite_android:packageDebugResources UP-TO-DATE
+> Task :sqflite_android:parseDebugLocalResources UP-TO-DATE
+> Task :sqflite_android:generateDebugRFile UP-TO-DATE
+> Task :sqflite_android:compileDebugKotlin NO-SOURCE
+> Task :sqflite_android:javaPreCompileDebug UP-TO-DATE
+> Task :sqflite_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :sqflite_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :sqlcipher_flutter_libs:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :sqlcipher_flutter_libs:generateDebugResources UP-TO-DATE
+> Task :sqlcipher_flutter_libs:packageDebugResources UP-TO-DATE
+> Task :sqlcipher_flutter_libs:parseDebugLocalResources UP-TO-DATE
+> Task :sqlcipher_flutter_libs:generateDebugRFile UP-TO-DATE
+> Task :sqlcipher_flutter_libs:compileDebugKotlin NO-SOURCE
+> Task :sqlcipher_flutter_libs:javaPreCompileDebug UP-TO-DATE
+> Task :sqlcipher_flutter_libs:compileDebugJavaWithJavac UP-TO-DATE
+> Task :sqlcipher_flutter_libs:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :url_launcher_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :url_launcher_android:generateDebugBuildConfig UP-TO-DATE
+> Task :url_launcher_android:generateDebugResources UP-TO-DATE
+> Task :url_launcher_android:packageDebugResources UP-TO-DATE
+> Task :url_launcher_android:parseDebugLocalResources UP-TO-DATE
+> Task :url_launcher_android:generateDebugRFile UP-TO-DATE
+> Task :url_launcher_android:compileDebugKotlin UP-TO-DATE
+> Task :url_launcher_android:javaPreCompileDebug UP-TO-DATE
+> Task :url_launcher_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :url_launcher_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :video_compress:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :video_compress:generateDebugResources UP-TO-DATE
+> Task :video_compress:packageDebugResources UP-TO-DATE
+> Task :video_compress:parseDebugLocalResources UP-TO-DATE
+> Task :video_compress:generateDebugRFile UP-TO-DATE
+> Task :video_compress:compileDebugKotlin UP-TO-DATE
+> Task :video_compress:javaPreCompileDebug UP-TO-DATE
+> Task :video_compress:compileDebugJavaWithJavac NO-SOURCE
+> Task :video_compress:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :video_player_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :video_player_android:generateDebugResources UP-TO-DATE
+> Task :video_player_android:packageDebugResources UP-TO-DATE
+> Task :video_player_android:parseDebugLocalResources UP-TO-DATE
+> Task :video_player_android:generateDebugRFile UP-TO-DATE
+> Task :video_player_android:compileDebugKotlin UP-TO-DATE
+> Task :video_player_android:javaPreCompileDebug UP-TO-DATE
+> Task :video_player_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :video_player_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :wakelock_plus:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :wakelock_plus:generateDebugResources UP-TO-DATE
+> Task :wakelock_plus:packageDebugResources UP-TO-DATE
+> Task :wakelock_plus:parseDebugLocalResources UP-TO-DATE
+> Task :wakelock_plus:generateDebugRFile UP-TO-DATE
+> Task :wakelock_plus:compileDebugKotlin UP-TO-DATE
+> Task :wakelock_plus:javaPreCompileDebug UP-TO-DATE
+> Task :wakelock_plus:compileDebugJavaWithJavac NO-SOURCE
+> Task :wakelock_plus:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :webview_flutter_android:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :webview_flutter_android:generateDebugResources UP-TO-DATE
+> Task :webview_flutter_android:packageDebugResources UP-TO-DATE
+> Task :webview_flutter_android:parseDebugLocalResources UP-TO-DATE
+> Task :webview_flutter_android:generateDebugRFile UP-TO-DATE
+> Task :webview_flutter_android:compileDebugKotlin UP-TO-DATE
+> Task :webview_flutter_android:javaPreCompileDebug UP-TO-DATE
+> Task :webview_flutter_android:compileDebugJavaWithJavac UP-TO-DATE
+> Task :webview_flutter_android:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:compileStandardDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileStandardDebug UP-TO-DATE
+> Task :app:compileStandardDebugJavaWithJavac UP-TO-DATE
+> Task :audioplayers_android:writeDebugAarMetadata UP-TO-DATE
+> Task :connectivity_plus:writeDebugAarMetadata UP-TO-DATE
+> Task :emoji_picker_flutter:writeDebugAarMetadata UP-TO-DATE
+> Task :file_selector_android:writeDebugAarMetadata UP-TO-DATE
+> Task :firebase_core:writeDebugAarMetadata UP-TO-DATE
+> Task :firebase_messaging:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_image_compress_common:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_local_notifications:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_olm:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_openssl_crypto:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_secure_storage:writeDebugAarMetadata UP-TO-DATE
+> Task :flutter_webrtc:writeDebugAarMetadata UP-TO-DATE
+> Task :image_cropper:writeDebugAarMetadata UP-TO-DATE
+> Task :image_picker_android:writeDebugAarMetadata UP-TO-DATE
+> Task :integration_test:writeDebugAarMetadata UP-TO-DATE
+> Task :jni:writeDebugAarMetadata UP-TO-DATE
+> Task :jni_flutter:writeDebugAarMetadata UP-TO-DATE
+> Task :mobile_scanner:writeDebugAarMetadata UP-TO-DATE
+> Task :package_info_plus:writeDebugAarMetadata UP-TO-DATE
+> Task :permission_handler_android:writeDebugAarMetadata UP-TO-DATE
+> Task :photo_manager:writeDebugAarMetadata UP-TO-DATE
+> Task :record_android:writeDebugAarMetadata UP-TO-DATE
+> Task :shared_preferences_android:writeDebugAarMetadata UP-TO-DATE
+> Task :speech_to_text:writeDebugAarMetadata UP-TO-DATE
+> Task :sqflite_android:writeDebugAarMetadata UP-TO-DATE
+> Task :sqlcipher_flutter_libs:writeDebugAarMetadata UP-TO-DATE
+> Task :url_launcher_android:writeDebugAarMetadata UP-TO-DATE
+> Task :video_compress:writeDebugAarMetadata UP-TO-DATE
+> Task :video_player_android:writeDebugAarMetadata UP-TO-DATE
+> Task :wakelock_plus:writeDebugAarMetadata UP-TO-DATE
+> Task :webview_flutter_android:writeDebugAarMetadata UP-TO-DATE
+> Task :app:checkStandardDebugAarMetadata UP-TO-DATE
+> Task :app:compileStandardDebugNavigationResources UP-TO-DATE
+> Task :app:mapStandardDebugSourceSetPaths UP-TO-DATE
+> Task :app:mergeStandardDebugResources UP-TO-DATE
+> Task :app:createStandardDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksStandardDebug UP-TO-DATE
+> Task :audioplayers_android:extractDeepLinksDebug UP-TO-DATE
+> Task :audioplayers_android:processDebugManifest UP-TO-DATE
+> Task :connectivity_plus:extractDeepLinksDebug UP-TO-DATE
+> Task :connectivity_plus:processDebugManifest UP-TO-DATE
+> Task :emoji_picker_flutter:extractDeepLinksDebug UP-TO-DATE
+> Task :emoji_picker_flutter:processDebugManifest UP-TO-DATE
+> Task :file_selector_android:extractDeepLinksDebug UP-TO-DATE
+> Task :file_selector_android:processDebugManifest UP-TO-DATE
+> Task :firebase_core:extractDeepLinksDebug UP-TO-DATE
+> Task :firebase_core:processDebugManifest UP-TO-DATE
+> Task :firebase_messaging:extractDeepLinksDebug UP-TO-DATE
+> Task :firebase_messaging:processDebugManifest UP-TO-DATE
+> Task :flutter_image_compress_common:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_image_compress_common:processDebugManifest UP-TO-DATE
+> Task :flutter_local_notifications:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_local_notifications:processDebugManifest UP-TO-DATE
+> Task :flutter_olm:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_olm:processDebugManifest UP-TO-DATE
+> Task :flutter_openssl_crypto:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_openssl_crypto:processDebugManifest UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:processDebugManifest UP-TO-DATE
+> Task :flutter_secure_storage:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_secure_storage:processDebugManifest UP-TO-DATE
+> Task :flutter_webrtc:extractDeepLinksDebug UP-TO-DATE
+> Task :flutter_webrtc:processDebugManifest UP-TO-DATE
+> Task :image_cropper:extractDeepLinksDebug UP-TO-DATE
+> Task :image_cropper:processDebugManifest UP-TO-DATE
+> Task :image_picker_android:extractDeepLinksDebug UP-TO-DATE
+> Task :image_picker_android:processDebugManifest UP-TO-DATE
+> Task :integration_test:extractDeepLinksDebug UP-TO-DATE
+> Task :integration_test:processDebugManifest UP-TO-DATE
+> Task :jni:extractDeepLinksDebug UP-TO-DATE
+> Task :jni:processDebugManifest UP-TO-DATE
+> Task :jni_flutter:extractDeepLinksDebug UP-TO-DATE
+> Task :jni_flutter:processDebugManifest UP-TO-DATE
+> Task :mobile_scanner:extractDeepLinksDebug UP-TO-DATE
+> Task :mobile_scanner:processDebugManifest UP-TO-DATE
+> Task :package_info_plus:extractDeepLinksDebug UP-TO-DATE
+> Task :package_info_plus:processDebugManifest UP-TO-DATE
+> Task :permission_handler_android:extractDeepLinksDebug UP-TO-DATE
+> Task :permission_handler_android:processDebugManifest UP-TO-DATE
+> Task :photo_manager:extractDeepLinksDebug UP-TO-DATE
+> Task :photo_manager:processDebugManifest UP-TO-DATE
+> Task :record_android:extractDeepLinksDebug UP-TO-DATE
+> Task :record_android:processDebugManifest UP-TO-DATE
+> Task :shared_preferences_android:extractDeepLinksDebug UP-TO-DATE
+> Task :shared_preferences_android:processDebugManifest UP-TO-DATE
+> Task :speech_to_text:extractDeepLinksDebug UP-TO-DATE
+> Task :speech_to_text:processDebugManifest UP-TO-DATE
+> Task :sqflite_android:extractDeepLinksDebug UP-TO-DATE
+> Task :sqflite_android:processDebugManifest UP-TO-DATE
+> Task :sqlcipher_flutter_libs:extractDeepLinksDebug UP-TO-DATE
+> Task :sqlcipher_flutter_libs:processDebugManifest UP-TO-DATE
+> Task :url_launcher_android:extractDeepLinksDebug UP-TO-DATE
+> Task :url_launcher_android:processDebugManifest UP-TO-DATE
+> Task :video_compress:extractDeepLinksDebug UP-TO-DATE
+> Task :video_compress:processDebugManifest UP-TO-DATE
+> Task :video_player_android:extractDeepLinksDebug UP-TO-DATE
+> Task :video_player_android:processDebugManifest UP-TO-DATE
+> Task :wakelock_plus:extractDeepLinksDebug UP-TO-DATE
+> Task :wakelock_plus:processDebugManifest UP-TO-DATE
+> Task :webview_flutter_android:extractDeepLinksDebug UP-TO-DATE
+> Task :webview_flutter_android:processDebugManifest UP-TO-DATE
+> Task :app:processStandardDebugMainManifest UP-TO-DATE
+> Task :app:outputStandardDebugAppLinkSettings UP-TO-DATE
+> Task :app:processStandardDebugManifest UP-TO-DATE
+> Task :app:processStandardDebugManifestForPackage UP-TO-DATE
+> Task :audioplayers_android:compileDebugLibraryResources UP-TO-DATE
+> Task :connectivity_plus:compileDebugLibraryResources UP-TO-DATE
+> Task :emoji_picker_flutter:compileDebugLibraryResources UP-TO-DATE
+> Task :file_selector_android:compileDebugLibraryResources UP-TO-DATE
+> Task :firebase_core:compileDebugLibraryResources UP-TO-DATE
+> Task :firebase_messaging:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_image_compress_common:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_local_notifications:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_olm:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_openssl_crypto:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_secure_storage:compileDebugLibraryResources UP-TO-DATE
+> Task :flutter_webrtc:compileDebugLibraryResources UP-TO-DATE
+> Task :image_cropper:compileDebugLibraryResources UP-TO-DATE
+> Task :image_picker_android:compileDebugLibraryResources UP-TO-DATE
+> Task :integration_test:compileDebugLibraryResources UP-TO-DATE
+> Task :jni:compileDebugLibraryResources UP-TO-DATE
+> Task :jni_flutter:compileDebugLibraryResources UP-TO-DATE
+> Task :mobile_scanner:compileDebugLibraryResources UP-TO-DATE
+> Task :package_info_plus:compileDebugLibraryResources UP-TO-DATE
+> Task :permission_handler_android:compileDebugLibraryResources UP-TO-DATE
+> Task :photo_manager:compileDebugLibraryResources UP-TO-DATE
+> Task :record_android:compileDebugLibraryResources UP-TO-DATE
+> Task :shared_preferences_android:compileDebugLibraryResources UP-TO-DATE
+> Task :speech_to_text:compileDebugLibraryResources UP-TO-DATE
+> Task :sqflite_android:compileDebugLibraryResources UP-TO-DATE
+> Task :sqlcipher_flutter_libs:compileDebugLibraryResources UP-TO-DATE
+> Task :url_launcher_android:compileDebugLibraryResources UP-TO-DATE
+> Task :video_compress:compileDebugLibraryResources UP-TO-DATE
+> Task :video_player_android:compileDebugLibraryResources UP-TO-DATE
+> Task :wakelock_plus:compileDebugLibraryResources UP-TO-DATE
+> Task :webview_flutter_android:compileDebugLibraryResources UP-TO-DATE
+> Task :app:processStandardDebugResources UP-TO-DATE
+> Task :app:bundleStandardDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleStandardDebugClassesToCompileJar UP-TO-DATE
+> Task :app:preStandardDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileStandardDebugUnitTest UP-TO-DATE
+> Task :app:processStandardDebugJavaRes UP-TO-DATE
+> Task :audioplayers_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :audioplayers_android:processDebugJavaRes UP-TO-DATE
+> Task :connectivity_plus:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :connectivity_plus:processDebugJavaRes NO-SOURCE
+> Task :emoji_picker_flutter:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :emoji_picker_flutter:processDebugJavaRes UP-TO-DATE
+> Task :file_selector_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :file_selector_android:processDebugJavaRes UP-TO-DATE
+> Task :firebase_core:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :firebase_core:processDebugJavaRes UP-TO-DATE
+> Task :firebase_messaging:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :firebase_messaging:processDebugJavaRes NO-SOURCE
+> Task :flutter_image_compress_common:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_image_compress_common:processDebugJavaRes UP-TO-DATE
+> Task :flutter_local_notifications:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_local_notifications:processDebugJavaRes NO-SOURCE
+> Task :flutter_olm:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_olm:processDebugJavaRes UP-TO-DATE
+> Task :flutter_openssl_crypto:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_openssl_crypto:processDebugJavaRes UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_plugin_android_lifecycle:processDebugJavaRes NO-SOURCE
+> Task :flutter_secure_storage:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_secure_storage:processDebugJavaRes NO-SOURCE
+> Task :flutter_webrtc:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :flutter_webrtc:processDebugJavaRes UP-TO-DATE
+> Task :image_cropper:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :image_cropper:processDebugJavaRes NO-SOURCE
+> Task :image_picker_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :image_picker_android:processDebugJavaRes UP-TO-DATE
+> Task :integration_test:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :integration_test:processDebugJavaRes NO-SOURCE
+> Task :jni:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :jni:processDebugJavaRes NO-SOURCE
+> Task :jni_flutter:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :jni_flutter:processDebugJavaRes NO-SOURCE
+> Task :mobile_scanner:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :mobile_scanner:processDebugJavaRes UP-TO-DATE
+> Task :package_info_plus:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :package_info_plus:processDebugJavaRes UP-TO-DATE
+> Task :permission_handler_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :permission_handler_android:processDebugJavaRes NO-SOURCE
+> Task :photo_manager:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :photo_manager:processDebugJavaRes UP-TO-DATE
+> Task :record_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :record_android:processDebugJavaRes UP-TO-DATE
+> Task :shared_preferences_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :shared_preferences_android:processDebugJavaRes UP-TO-DATE
+> Task :speech_to_text:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :speech_to_text:processDebugJavaRes UP-TO-DATE
+> Task :sqflite_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :sqflite_android:processDebugJavaRes NO-SOURCE
+> Task :sqlcipher_flutter_libs:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :sqlcipher_flutter_libs:processDebugJavaRes NO-SOURCE
+> Task :url_launcher_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :url_launcher_android:processDebugJavaRes UP-TO-DATE
+> Task :video_compress:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :video_compress:processDebugJavaRes UP-TO-DATE
+> Task :video_player_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :video_player_android:processDebugJavaRes UP-TO-DATE
+> Task :wakelock_plus:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :wakelock_plus:processDebugJavaRes UP-TO-DATE
+> Task :webview_flutter_android:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :webview_flutter_android:processDebugJavaRes UP-TO-DATE
+
+> Task :app:compileStandardDebugUnitTestKotlin
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/call/LockScreenCallPresentationTest.kt:23:66 'static field FLAG_DISMISS_KEYGUARD: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/call/LockScreenCallPresentationTest.kt:24:61 'static field FLAG_SHOW_WHEN_LOCKED: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/media/MediaStoragePolicyTest.kt:21:52 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/push/NativePushBridgeTest.kt:82:38 'fun addResolveInfoForIntent(p0: Intent!, p1: ResolveInfo!): Unit' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/update/DeltaApplierTest.kt:57:70 Java type mismatch: inferred type is 'String?', but 'String' was expected.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/update/DeltaApplierTest.kt:77:85 'val id: Long' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/update/DeltaApplierTest.kt:79:81 'val id: Long' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/com/liuhetong/mobile/update/DeltaApplierTest.kt:106:76 Only safe (?.) or non-null asserted (!!.) calls are allowed on a nullable receiver of type 'File?'.
+w: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/android/app/src/test/kotlin/io/flutter/plugins/imagepicker/SystemCameraUriGrantTest.kt:91:51 'fun addResolveInfoForIntentNoDefaults(p0: Intent!, p1: ResolveInfo!): Unit' is deprecated. Deprecated in Java.
+
+> Task :app:compileStandardDebugUnitTestJavaWithJavac UP-TO-DATE
+> Task :app:processStandardDebugUnitTestJavaRes UP-TO-DATE
+
+> Task :app:testStandardDebugUnitTest
+
+MediaStoragePolicyTest > rejectsDanglingOptionalJournalAndPart FAILED
+    java.lang.AssertionError at MediaStoragePolicyTest.kt:92
+
+
+6 tests completed, 1 failed
+> Task :app:testStandardDebugUnitTest FAILED
+
+
+[Incubating] Problems report is available at: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/build/reports/problems/problems-report.html
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:testStandardDebugUnitTest'.
+> There were failing tests. See the report at: file:///C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/build/app/reports/tests/testStandardDebugUnitTest/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 37s
+515 actionable tasks: 6 executed, 509 up-to-date

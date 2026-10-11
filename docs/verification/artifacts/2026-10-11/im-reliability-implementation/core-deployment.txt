@@ -1,0 +1,8 @@
+{"stage": "preflight_pass", "old_logs_retained": true, "targets": ["synapse", "synapse-sync-worker", "gateway"]}
+{"stage": "switching", "service": "synapse"}
+{"stage": "healthy", "service": "synapse"}
+{"stage": "switching", "service": "synapse-sync-worker"}
+{"stage": "healthy", "service": "synapse-sync-worker"}
+{"stage": "switching", "service": "gateway"}
+{"stage": "healthy", "service": "gateway"}
+{"stage": "complete", "receipt": {"started_utc": "2026-10-11T02:53:36Z", "stage": "PASS", "services": [{"name": "starchat-synapse-1", "id": "5c6f470dec7f2fbced266ebc1ce3322fcfdb03ddcf8aab6837be613e5bd516c5", "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d", "healthy": true, "logging": {"Type": "json-file", "Config": {"max-file": "10", "max-size": "20m"}}}, {"name": "starchat-synapse-sync-worker-1", "id": "ea4dda148ed6be5aa7deb4187b6a777c38b080b627713a096ddb70a47ded9463", "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d", "healthy": true, "logging": {"Type": "json-file", "Config": {"max-file": "10", "max-size": "20m"}}}, {"name": "starchat-gateway-1", "id": "bf6b51f25372c063fbbffd4f9c34fd4c076151e038431dcd9fa470476340c312", "image": "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10", "healthy": true, "logging": {"Type": "json-file", "Config": {"max-file": "10", "max-size": "20m"}}}], "probes": {"matrix_versions": 200, "business_ready": 200, "recovery_unauthorized": 401}, "unrelated_containers_unchanged": true, "completed_utc": "2026-10-11T02:54:12Z"}}

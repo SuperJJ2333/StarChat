@@ -1,0 +1,24 @@
+{
+  "reviewedCommit": "b888e282c0deca3945ffd57bed5499ac2a68a5be",
+  "reviewedAt": "2026-10-11T12:20:16.9602800+08:00",
+  "sdkTree": "60a6095b26128dfa333d4803a71c9f565e41705d",
+  "reviewerSdkTree": "60a6095b26128dfa333d4803a71c9f565e41705d",
+  "files": [
+    {
+      "path": "independent_membership_test.dart",
+      "sha256": "1a05682afca56158951d380fa2da5b419fbc21b22327ddd5e745481bd8f07149"
+    },
+    {
+      "path": "author_membership_test.dart",
+      "sha256": "9c996ad244d45408680f9e92f4a74abe4030802d8efb3f92f0f4de78bb6e2d52"
+    },
+    {
+      "path": "independent-run.log",
+      "sha256": "80445c3b1a6ab501c8291d7f1813d0fd58edce66bc0df1de9fb7bdd44ae04085"
+    },
+    {
+      "path": "review.md",
+      "sha256": "45627ed1d8d26caa2f8f3a7e535a8059eb3602d29f40f538661f15ef969c7751"
+    }
+  ]
+}

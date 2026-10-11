@@ -1,0 +1,7 @@
+# R5b server independent specification/domain review
+
+Reviewed commit de7953ad2916cdb4a4ff8fe1ffd3df7af453a45a in im-ios-push-policy. Reviewer is the client-contract author, not the server implementer. Scope: frozen wire design, services/sygnal helper/vendor patch/Dockerfile/README and real Sygnal contract fixture. Result: PASS, no blocking finding.
+
+The exact v1 object, strict integer/bool types and revision range match the frozen client contract. Invalid present policies (including unavailable/reserved zones) are silent without rejecting/deleting the pusher; absent policies retain legacy behavior. UTC is sampled at each _dispatch_request attempt and converted with IANA ZoneInfo; half-open, midnight, equal endpoints and DST semantics agree. Only aps.sound is removed from a deep copy, preserving static-off, visible alert/badge and future retries. Explicit non-alert/VoIP push types remain unchanged. No plaintext, financial state, keys, new authentication or E2EE boundary is introduced. Revision is registration identity metadata, not anti-replay or server preference authority; client owner serialization remains necessary.
+
+Source comparison against the exact pinned upstream image confirms only the added import/send-time call and sanitization of two existing logs in apnspushkin.py. Protocol integration and deployment still require the real generated client DND payload, gateway-first rollout, and native/device acceptance; this review is not a deployment or physical APNs claim.

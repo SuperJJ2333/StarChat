@@ -1,0 +1,14 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart
+00:00 +0: million-ID cold negative builds bounded warm tail membership lookup
+00:00 +0 -1: million-ID cold negative builds bounded warm tail membership lookup [E]
+  SqfliteFfiException(error, Invalid argument(s): Failed to load dynamic library 'libsqlcipher.dll': The specified module could not be found.
+   (error code: 126)}) DatabaseException(Invalid argument(s): Failed to load dynamic library 'libsqlcipher.dll': The specified module could not be found.
+   (error code: 126))
+  package:sqflite_common_ffi/src/method_call.dart 125:9  responseToResultOrThrow
+  package:sqflite_common_ffi/src/isolate.dart 35:12      SqfliteIsolate.handle
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart: million-ID cold negative builds bounded warm tail membership lookup

@@ -1,0 +1,531 @@
+{
+  "collected_at_utc": "2026-10-11T02:00:19.902565+00:00",
+  "read_only": true,
+  "server_files_written": false,
+  "starchat-business-api-1": {
+    "identity": {
+      "id": "0483600f216dcf8d99572a5099146b3108964bc8debeda89d15247341c715cff",
+      "image": "sha256:58dca4884b89bc25839f9cfb652c67528f79473aca8ebcd79df2992f6509452f",
+      "started_at": "2026-10-05T12:10:30.055283885Z",
+      "working_dir": "/opt/business-api"
+    },
+    "source_probe": {
+      "cwd": "/opt/business-api",
+      "app_origin": "/opt/business-api/app/__init__.py",
+      "selected_config": {
+        "BUSINESS_API_WORKERS": "2",
+        "DB_POOL_SIZE": null,
+        "DB_MAX_OVERFLOW": null,
+        "BUSINESS_MEDIA_BLOB_BACKEND": "s3",
+        "BUSINESS_MEDIA_S3_MAX_OBJECT_BYTES": "67108864",
+        "WORKER_BATCH_SIZE": null,
+        "WORKER_POLL_INTERVAL_SECONDS": null
+      },
+      "sources": {
+        "/opt/business-api/app/api/media_platform.py": {
+          "sha256": "32cb48d0ef95873e2ecaa27cbe119b9f3f39d7b1529b55f043beb819276d680e",
+          "bytes": 29507
+        },
+        "/opt/business-api/app/api/profile.py": {
+          "sha256": "905c8bc1959a21a5aa64311fb7eb3fd09004e15818c0871ed8a34afdcfa57cea",
+          "bytes": 10430
+        },
+        "/opt/business-api/app/modules/media/service.py": {
+          "sha256": "0a72ac4941f83a46598a18d5b6ec7a8e9946cf92029966e020bfb7fd09ff2b31",
+          "bytes": 17638
+        },
+        "/opt/business-api/app/modules/media/repository.py": {
+          "sha256": "f0ea1ec9fb46ae9f9271b1f31721e8e0c45a460d380f78a53b83440b0be8fa96",
+          "bytes": 24988
+        },
+        "/opt/business-api/app/integrations/media_blob_storage.py": {
+          "sha256": "bcc07fbb962022769caa701bddada05f3119e4c4fefcc4603b1218760285ea1b",
+          "bytes": 11559
+        },
+        "/opt/business-api/app/core/outbox.py": {
+          "sha256": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27",
+          "bytes": 9465
+        },
+        "/opt/business-api/app/core/database.py": {
+          "sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+          "bytes": 5269
+        },
+        "/opt/business-api/app/api/health.py": {
+          "sha256": "464e427a908a698a15a907c308e082a7a6e713eff568aaebd1412cbdf1e9e110",
+          "bytes": 1203
+        }
+      },
+      "signed_media_route": [
+        {
+          "name": "read_signed_content",
+          "line": 540,
+          "async": true,
+          "direct_sync_service_read": true
+        }
+      ]
+    },
+    "log_summary": {
+      "counters": {
+        "lines": 30000,
+        "bytes": 6780595,
+        "error_level_lines": 0,
+        "traceback_starts": 0,
+        "http_5xx_lines": 0,
+        "outbox_deadletter_lines": 0,
+        "maintenance_failure_lines": 0,
+        "timeout_lines": 271,
+        "storage_error_lines": 0,
+        "oom_lines": 0
+      },
+      "requested_since_hours": 24,
+      "tail_limit": 30000,
+      "byte_limit": 8388608,
+      "truncated_or_cap_reached": true,
+      "first_included_timestamp": "2026-10-10T18:55:59.734040810Z",
+      "last_included_timestamp": "2026-10-11T02:00:19.763654180Z",
+      "docker_logs_exit": 0,
+      "coverage_note": "line categories may overlap; not requests or unique incidents; log rotation and retained coverage unverified; no raw logs exported"
+    }
+  },
+  "starchat-business-worker-1": {
+    "identity": {
+      "id": "354788995fd90f30e8f5c752b3af21df41e2e3cb70ea1984e55979b09ca05e5d",
+      "image": "sha256:5a9cec63cc780e1e3cc769d3f249e120499bdfc5a37a99419302bd1c862bdbe1",
+      "started_at": "2026-10-05T12:10:30.053531541Z",
+      "working_dir": "/opt/business-worker/app"
+    },
+    "source_probe": {
+      "cwd": "/opt/business-worker/app",
+      "app_origin": "/usr/local/lib/python3.12/site-packages/app/__init__.py",
+      "selected_config": {
+        "BUSINESS_API_WORKERS": null,
+        "DB_POOL_SIZE": null,
+        "DB_MAX_OVERFLOW": null,
+        "BUSINESS_MEDIA_BLOB_BACKEND": "s3",
+        "BUSINESS_MEDIA_S3_MAX_OBJECT_BYTES": "67108864",
+        "WORKER_BATCH_SIZE": null,
+        "WORKER_POLL_INTERVAL_SECONDS": null
+      },
+      "sources": {
+        "/opt/business-api/app/api/media_platform.py": {
+          "sha256": "32cb48d0ef95873e2ecaa27cbe119b9f3f39d7b1529b55f043beb819276d680e",
+          "bytes": 29507
+        },
+        "/opt/business-api/app/api/profile.py": {
+          "sha256": "636ac3477562d9365465ea5bcb70e3aac7254b47c6ea9788e01f6ce02934c0f6",
+          "bytes": 9823
+        },
+        "/opt/business-api/app/modules/media/service.py": {
+          "sha256": "0a72ac4941f83a46598a18d5b6ec7a8e9946cf92029966e020bfb7fd09ff2b31",
+          "bytes": 17638
+        },
+        "/opt/business-api/app/modules/media/repository.py": {
+          "sha256": "f0ea1ec9fb46ae9f9271b1f31721e8e0c45a460d380f78a53b83440b0be8fa96",
+          "bytes": 24988
+        },
+        "/opt/business-api/app/core/outbox.py": {
+          "sha256": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27",
+          "bytes": 9465
+        },
+        "/opt/business-api/app/core/database.py": {
+          "sha256": "c240d741206f03d68f70d56d334439aaf48866e70f7064f5b9ba42fed401a9a9",
+          "bytes": 1406
+        },
+        "/opt/business-api/app/api/health.py": {
+          "sha256": "464e427a908a698a15a907c308e082a7a6e713eff568aaebd1412cbdf1e9e110",
+          "bytes": 1203
+        },
+        "/opt/business-worker/app/worker.py": {
+          "sha256": "e4166427233d489ab7f7e483373546417c54a5c4dddd194153e1dfad38dd1638",
+          "bytes": 8472
+        },
+        "/opt/business-worker/app/main.py": {
+          "sha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1",
+          "bytes": 16419
+        }
+      },
+      "signed_media_route": [
+        {
+          "name": "read_signed_content",
+          "line": 540,
+          "async": true,
+          "direct_sync_service_read": true
+        }
+      ]
+    },
+    "log_summary": {
+      "counters": {
+        "lines": 2986,
+        "bytes": 1233267,
+        "error_level_lines": 1,
+        "traceback_starts": 0,
+        "http_5xx_lines": 0,
+        "outbox_deadletter_lines": 0,
+        "maintenance_failure_lines": 0,
+        "timeout_lines": 0,
+        "storage_error_lines": 0,
+        "oom_lines": 0
+      },
+      "requested_since_hours": 24,
+      "tail_limit": 30000,
+      "byte_limit": 8388608,
+      "truncated_or_cap_reached": false,
+      "first_included_timestamp": "2026-10-10T02:00:31.716997269Z",
+      "last_included_timestamp": "2026-10-11T02:00:13.060242080Z",
+      "docker_logs_exit": 0,
+      "coverage_note": "line categories may overlap; not requests or unique incidents; log rotation and retained coverage unverified; no raw logs exported"
+    }
+  },
+  "business_pg": [
+    {
+      "kind": "identity",
+      "utc": "2026-10-11T02:00:20.950189+00:00",
+      "version": "16.9",
+      "read_only": "on",
+      "statement_timeout": "5s",
+      "max_connections": "100",
+      "database_bytes": 399880675
+    },
+    {
+      "kind": "activity",
+      "rows": [
+        {
+          "backend_type": "client backend",
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "connections": 22,
+          "max_xact_age_s": null
+        }
+      ]
+    },
+    {
+      "kind": "database_counters",
+      "stats_reset": null,
+      "xact_commit": 53847769,
+      "xact_rollback": 20756524,
+      "deadlocks": 0,
+      "conflicts": 0,
+      "temp_files": 40,
+      "temp_bytes": 482934784,
+      "blks_read": 2845091,
+      "blks_hit": 2134830201,
+      "sessions": 617192,
+      "sessions_fatal": 0,
+      "sessions_killed": 1
+    },
+    {
+      "kind": "index_summary",
+      "count": 347,
+      "invalid": 0,
+      "not_ready": 0,
+      "zero_scans_since_reset": 150,
+      "total_index_bytes": 121683968
+    },
+    {
+      "kind": "top_tables",
+      "rows": [
+        {
+          "table_name": "audit_events",
+          "estimated_live_rows": 249949,
+          "estimated_dead_rows": 6,
+          "seq_scan": 421,
+          "idx_scan": 75228,
+          "total_bytes": 151609344,
+          "last_autovacuum": "2026-10-08T07:28:04.02311+00:00",
+          "last_autoanalyze": "2026-10-09T00:06:19.955325+00:00"
+        },
+        {
+          "table_name": "outbox_events",
+          "estimated_live_rows": 173945,
+          "estimated_dead_rows": 1868,
+          "seq_scan": 4764337,
+          "idx_scan": 42132083,
+          "total_bytes": 108331008,
+          "last_autovacuum": "2026-10-10T21:48:24.6057+00:00",
+          "last_autoanalyze": "2026-10-10T13:34:15.934842+00:00"
+        },
+        {
+          "table_name": "ledger_manual_reserve_evaluations",
+          "estimated_live_rows": 77785,
+          "estimated_dead_rows": 0,
+          "seq_scan": 162809,
+          "idx_scan": 77791,
+          "total_bytes": 107601920,
+          "last_autovacuum": "2026-10-10T01:34:04.651202+00:00",
+          "last_autoanalyze": "2026-10-10T15:15:17.025805+00:00"
+        },
+        {
+          "table_name": "refresh_tokens",
+          "estimated_live_rows": 20391,
+          "estimated_dead_rows": 402,
+          "seq_scan": 375,
+          "idx_scan": 190209,
+          "total_bytes": 10149888,
+          "last_autovacuum": "2026-10-06T18:07:16.052219+00:00",
+          "last_autoanalyze": "2026-10-09T12:39:11.412019+00:00"
+        },
+        {
+          "table_name": "idempotency_records",
+          "estimated_live_rows": 585,
+          "estimated_dead_rows": 78,
+          "seq_scan": 260,
+          "idx_scan": 726,
+          "total_bytes": 507904,
+          "last_autovacuum": null,
+          "last_autoanalyze": "2026-09-29T11:11:27.089869+00:00"
+        },
+        {
+          "table_name": "ledger_entries",
+          "estimated_live_rows": 1142,
+          "estimated_dead_rows": 0,
+          "seq_scan": 283161,
+          "idx_scan": 214147,
+          "total_bytes": 475136,
+          "last_autovacuum": null,
+          "last_autoanalyze": "2026-10-09T16:58:15.258154+00:00"
+        },
+        {
+          "table_name": "wallet_handover_preparations",
+          "estimated_live_rows": 4,
+          "estimated_dead_rows": 0,
+          "seq_scan": 108,
+          "idx_scan": 226,
+          "total_bytes": 385024,
+          "last_autovacuum": null,
+          "last_autoanalyze": null
+        },
+        {
+          "table_name": "refresh_token_families",
+          "estimated_live_rows": 837,
+          "estimated_dead_rows": 99,
+          "seq_scan": 286053,
+          "idx_scan": 3898630,
+          "total_bytes": 344064,
+          "last_autovacuum": null,
+          "last_autoanalyze": "2026-10-04T13:38:07.693935+00:00"
+        }
+      ]
+    },
+    {
+      "kind": "schema_revision",
+      "versions": [
+        "0095_wallet_source_alerts"
+      ]
+    },
+    {
+      "kind": "outbox_status_all_history",
+      "rows": [
+        {
+          "status": "DEAD",
+          "count": 103235,
+          "first_created": "2026-08-14T04:32:58.827986+00:00",
+          "last_created": "2026-09-30T14:02:34.178667+00:00",
+          "max_attempts": 56947
+        },
+        {
+          "status": "PENDING",
+          "count": 2,
+          "first_created": "2026-09-07T21:33:14.432635+00:00",
+          "last_created": "2026-09-07T21:38:20.033407+00:00",
+          "max_attempts": 0
+        },
+        {
+          "status": "PUBLISHED",
+          "count": 71777,
+          "first_created": "2026-08-18T08:37:53.361432+00:00",
+          "last_created": "2026-10-11T02:00:13.221207+00:00",
+          "max_attempts": 21
+        }
+      ]
+    },
+    {
+      "kind": "outbox_last_24h",
+      "rows": [
+        {
+          "status": "PUBLISHED",
+          "count": 5222,
+          "max_attempts": 1
+        }
+      ]
+    },
+    {
+      "kind": "outbox_pending_aggregate",
+      "rows": [
+        {
+          "topic_group": "wallet.alert",
+          "status": "PENDING",
+          "count": 2,
+          "oldest_age_s": 2867226.518,
+          "available_now": 2,
+          "expired_leases": 0
+        }
+      ]
+    },
+    {
+      "kind": "outbox_published_latency_last_24h",
+      "count": 5222,
+      "p50_s": 0.4997745,
+      "p95_s": 0.9351461,
+      "p99_s": 0.94234269,
+      "max_s": 1.102322
+    },
+    {
+      "kind": "outbox_error_class_all_history",
+      "rows": [
+        {
+          "status": "DEAD",
+          "error_class": "other_redacted",
+          "count": 5,
+          "first_created": "2026-09-29T14:45:31.928744+00:00",
+          "last_created": "2026-09-30T14:02:34.178667+00:00"
+        },
+        {
+          "status": "DEAD",
+          "error_class": "unregistered_topic",
+          "count": 103230,
+          "first_created": "2026-08-14T04:32:58.827986+00:00",
+          "last_created": "2026-09-27T16:24:08.122496+00:00"
+        }
+      ]
+    },
+    {
+      "kind": "historical_supersession",
+      "dispositions": 363,
+      "with_matching_notice_and_smtp_receipt": 363
+    }
+  ],
+  "matrix_pg": [
+    {
+      "kind": "identity",
+      "utc": "2026-10-11T02:00:21.182355+00:00",
+      "version": "16.9",
+      "read_only": "on",
+      "statement_timeout": "5s",
+      "max_connections": "250",
+      "database_bytes": 197980643
+    },
+    {
+      "kind": "activity",
+      "rows": [
+        {
+          "backend_type": "client backend",
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "connections": 35,
+          "max_xact_age_s": null
+        }
+      ]
+    },
+    {
+      "kind": "database_counters",
+      "stats_reset": null,
+      "xact_commit": 26582120,
+      "xact_rollback": 238,
+      "deadlocks": 0,
+      "conflicts": 0,
+      "temp_files": 0,
+      "temp_bytes": 0,
+      "blks_read": 35075,
+      "blks_hit": 495887088,
+      "sessions": 462802,
+      "sessions_fatal": 0,
+      "sessions_killed": 10
+    },
+    {
+      "kind": "index_summary",
+      "count": 326,
+      "invalid": 0,
+      "not_ready": 0,
+      "zero_scans_since_reset": 128,
+      "total_index_bytes": 62578688
+    },
+    {
+      "kind": "top_tables",
+      "rows": [
+        {
+          "table_name": "event_json",
+          "estimated_live_rows": 36935,
+          "estimated_dead_rows": 60,
+          "seq_scan": 355,
+          "idx_scan": 5249802,
+          "total_bytes": 65503232,
+          "last_autovacuum": "2026-10-04T11:44:02.603141+00:00",
+          "last_autoanalyze": "2026-10-10T06:42:01.496073+00:00"
+        },
+        {
+          "table_name": "events",
+          "estimated_live_rows": 36935,
+          "estimated_dead_rows": 0,
+          "seq_scan": 1259,
+          "idx_scan": 11929148,
+          "total_bytes": 27287552,
+          "last_autovacuum": "2026-10-04T11:41:02.219964+00:00",
+          "last_autoanalyze": "2026-10-10T14:48:26.649567+00:00"
+        },
+        {
+          "table_name": "device_inbox",
+          "estimated_live_rows": 8449,
+          "estimated_dead_rows": 110,
+          "seq_scan": 438,
+          "idx_scan": 110984,
+          "total_bytes": 17145856,
+          "last_autovacuum": "2026-10-08T19:45:28.38025+00:00",
+          "last_autoanalyze": "2026-10-07T07:07:39.755164+00:00"
+        },
+        {
+          "table_name": "event_edges",
+          "estimated_live_rows": 36998,
+          "estimated_dead_rows": 0,
+          "seq_scan": 98,
+          "idx_scan": 964972,
+          "total_bytes": 13950976,
+          "last_autovacuum": "2026-10-04T11:38:02.1448+00:00",
+          "last_autoanalyze": "2026-10-07T14:18:46.568146+00:00"
+        },
+        {
+          "table_name": "stream_ordering_to_exterm",
+          "estimated_live_rows": 28891,
+          "estimated_dead_rows": 5004,
+          "seq_scan": 8,
+          "idx_scan": 2405,
+          "total_bytes": 9388032,
+          "last_autovacuum": "2026-10-04T14:35:05.541876+00:00",
+          "last_autoanalyze": "2026-10-09T15:57:46.590757+00:00"
+        },
+        {
+          "table_name": "event_to_state_groups",
+          "estimated_live_rows": 36935,
+          "estimated_dead_rows": 0,
+          "seq_scan": 2831,
+          "idx_scan": 1498345,
+          "total_bytes": 7233536,
+          "last_autovacuum": "2026-10-04T09:37:59.964938+00:00",
+          "last_autoanalyze": "2026-10-09T14:25:45.027738+00:00"
+        },
+        {
+          "table_name": "e2e_one_time_keys_json",
+          "estimated_live_rows": 7660,
+          "estimated_dead_rows": 1063,
+          "seq_scan": 3230,
+          "idx_scan": 7503,
+          "total_bytes": 4898816,
+          "last_autovacuum": "2026-10-04T04:57:55.046475+00:00",
+          "last_autoanalyze": "2026-10-08T14:25:03.093018+00:00"
+        },
+        {
+          "table_name": "event_push_actions",
+          "estimated_live_rows": 66,
+          "estimated_dead_rows": 58,
+          "seq_scan": 216069,
+          "idx_scan": 4035224,
+          "total_bytes": 3727360,
+          "last_autovacuum": "2026-10-10T17:37:29.140545+00:00",
+          "last_autoanalyze": "2026-10-10T20:49:31.953933+00:00"
+        }
+      ]
+    }
+  ],
+  "completed_at_utc": "2026-10-11T02:00:21.314266+00:00"
+}

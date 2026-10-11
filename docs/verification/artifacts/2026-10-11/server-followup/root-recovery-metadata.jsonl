@@ -1,0 +1,1 @@
+{"observed_utc": "2026-10-11T02:03:39.226262+00:00", "exit": 0, "safe": {"recovery_module_config": [{"module": "RecoveryVaultModule", "enabled": true, "credential_path_configured": true}]}, "scope": "Only module enable boolean. No credentials, no material, no sessions, no endpoint request."}

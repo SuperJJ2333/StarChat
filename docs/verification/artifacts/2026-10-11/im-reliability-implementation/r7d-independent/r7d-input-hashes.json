@@ -1,0 +1,22 @@
+[
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/timeline_migration_reader.dart",
+    "sha256": "753c26d1beb6148dce771a53fed88f964d6e4854d39abe99ac61ed619241c573"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/timeline_migration_reader_stub.dart",
+    "sha256": "50870714cab81b918b7440f64980263889f9f885b6c06de3945ac1d51da1a105"
+  },
+  {
+    "path": "apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart",
+    "sha256": "73bea91a89da27d9c2af0d2afd9388633c98d1445af323a6854af8fec703ef41"
+  },
+  {
+    "path": "apps/mobile_flutter/pubspec.lock",
+    "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+  },
+  {
+    "path": "C:/Users/Administrator/.codex/worktrees/search-camera-history-20261003/StarChat/docs/verification/artifacts/2026-10-03/search-camera-history/task-3b-sqlcipher-build/libsqlcipher.dll",
+    "sha256": "7a1c979c4c64437280a3c50d6b906388beafd0f3c0772494e72de9a7a0bef1da"
+  }
+]

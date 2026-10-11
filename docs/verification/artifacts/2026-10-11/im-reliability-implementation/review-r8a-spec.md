@@ -1,0 +1,7 @@
+# R8a independent specification/domain review
+
+Reviewed 8475a0b420f313c544554ac7e0b85257cfb2d67e + SDK adapter ffe49562 (integrated as 8d3a38f3c271851edeebbddc09d855f6b4bbcb77) + 3e0ce73557299743ceae705e919e9a537f9a179d. Scope: selected-file/voice early size guard and actual SDK/room-lease read-only limit capability. SPEC/domain PASS, no blocking finding.
+
+Effective size is min(client100MiB, configured known proxy bound, advertised server limit). Missing advertised field retains local/proxy bound, while lookup failure/5s timeout fails before source allocation. Invalid configured limits fail safely; advertised zero permits only empty input. Ordinary file/voice stat preflight occurs before read, repeats after queueing, and actual loaded bytes are checked again. Video uses its final existing-transcoder output, with output bound checked before poster/read. Source original and txid are preserved; temporary rendition cleanup remains in finally. This does not increase server limits or bypass the final SDK check.
+
+The actual SDK reads its cached getConfig capability under current-client admission; the room lease additionally checks cancel, access revocation, room identity and account owner before/after await. No auth or E2EE bypass, plaintext transmission, crypto-format or transaction identity change. Other gallery/emoji entry paths and aggregate in-flight memory budgets are separate scope; this check alone does not claim complete media-memory protection.

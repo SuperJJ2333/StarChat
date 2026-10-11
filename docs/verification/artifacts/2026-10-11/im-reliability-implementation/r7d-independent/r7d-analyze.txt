@@ -1,0 +1,6 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Analyzing 3 items...                                            
+
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\features\matrix\timeline_migration_reader.dart:651:15 - curly_braces_in_flow_control_structures
+
+1 issue found. (ran in 6.5s)

@@ -1,0 +1,35 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +9: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +10: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +11: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +12: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +13: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +14: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +15: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +16: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:00 +17: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 history rows retain at most one body page and read each once
+00:02 +18: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 1000 row reader releases all consumed page bodies
+00:02 +19: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 10000 row reader releases all consumed page bodies
+00:03 +20: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: 100000 row reader releases all consumed page bodies
+00:05 +21: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: captured read marker and head survive receipt and newer sync changes
+00:05 +22: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: unreachable read marker resolves without rereading any body
+00:05 +23: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: revocation before checkpoint persistence cannot move in-memory head
+00:05 +24: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: failed platform write retains pending and retries the uncommitted head
+00:05 +25: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: failed initial platform write does not cache a successfully opened state
+00:05 +26: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: interaction stops page reads until 500ms quiet
+00:05 +27: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: metadata registration yields at 256 IDs and cancels while interactive
+00:05 +28: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: cancel hung body read completes within 200ms without checkpoint
+00:05 +29: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: server history extends only behind the captured tail
+00:05 +30: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: hung history network does not hold another maintenance owner
+00:05 +31: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: history reply reacquires maintenance before any body read
+00:05 +32: All tests passed!

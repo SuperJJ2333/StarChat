@@ -1,0 +1,275 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: lease acquisition failure is a measured same-root waiting attempt
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: background 5xx is classified as server failure rather than socket
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: background lease attempts reuse registered root after page trace closes
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: correlation bridge is bounded and drops old account contexts
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: restarted scheduler restores stored deadline before dispatch
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +9: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +10: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +11: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +12: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +13: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +14: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +15: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +16: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +17: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +18: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +19: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +20: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +21: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +22: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +23: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +24: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +25: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +26: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution does not spend bound transport capacity
+00:00 +27: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler authorization error blocks lease
+00:00 +28: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: online pending resolution retries without a network edge
+00:00 +29: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: online pending resolution retries without a network edge
+00:00 +30: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: online pending resolution retries without a network edge
+00:00 +31: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler recovery during unresolved send is consumed after late failure
+00:00 +32: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/unbound_resolution_retry_test.dart: pending resolution stops with a retryable failed durable row
+00:00 +33: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler startup recovery is single flight and never resets a live claim
+00:00 +34: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler drain requested during an active batch picks up newly queued rows
+00:00 +35: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/core/outbox/message_send_scheduler_test.dart: MessageSendScheduler hung room does not block another room and late success keeps one txid
+00:00 +36: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +37: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +38: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +39: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +40: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +41: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +42: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +43: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +44: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +45: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +46: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +47: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +48: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +49: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +50: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +51: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +52: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +53: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +54: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +55: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +56: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:00 +57: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:01 +58: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:01 +59: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:01 +60: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:01 +60: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/ios_push_policy_test.dart: unavailable or invalid native zone becomes explicit fail-closed metadata
+[chatflow/notif-diag] 2026-10-11T11:59:36.967217 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.972102 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.973077 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.973077 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.973077 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.973077 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.973077 [push] iOS notification policy unavailable; silent pending retry
+[chatflow/notif-diag] 2026-10-11T11:59:36.973077 [push] iOS notification policy unavailable; silent pending retry
+00:01 +61: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:01 +62: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (inactive)
+00:01 +63: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/ios_push_policy_test.dart: default persistent storage survives policy owner replacement
+00:01 +64: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (unregister)
+00:01 +65: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (unregister)
+00:01 +66: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (replace)
+00:01 +67: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (clear)
+00:01 +68: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: deleted foreground room still counts toward global transport cap
+00:01 +69: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: page sender captures transport before UI timeout and disposal
+00:01 +70: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: foreground deletion preserves true room ownership (prior scan: false)
+00:01 +71: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: foreground deletion preserves true room ownership (prior scan: true)
+00:01 +72: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: foreground ACK wakes the ordered background room queue
+00:01 +73: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: scheduler keeps true controller ownership after UI timeout and deletion
+00:01 +74: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: account teardown prevents dispatch after the old transport settles
+00:01 +75: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: failed page send retries with its existing root correlation
+00:01 +76: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: message send trace spans persistence, admission, ACK and published row
+00:01 +77: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: composer submit trace includes local projection before persistence
+00:01 +78: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: projection failure releases the newly started send trace
+00:01 +79: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: manual retry keeps one send trace through the final ACK
+00:01 +80: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: send stage measures first attempt without retry waiting time
+00:01 +81: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: network recovery keeps one send trace through automatic retry
+00:01 +82: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: adapter retry of local media also settles the retained send trace
+00:01 +83: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: send trace expires as waiting network without a Matrix send
+00:01 +84: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: waiting send trace retention obeys recorder capacity
+00:01 +85: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: send trace reports local admission rejection without transport
+00:01 +86: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: expired deadline with failed writes wakes only once per owner
+00:01 +87: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: retryable canonical admission failure receives durable retry budget
+00:01 +88: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: late admission failure preserves concurrent owner retry deadline
+00:01 +89: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: late admission failure preserves concurrent owner terminal rejection
+00:01 +90: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: observation timeout holds budget until late ACK
+00:01 +91: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: observation timeout holds budget until late 503
+00:01 +92: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: late ACK after UI timeout finishes the same send trace as sent
+00:01 +93: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: direct foreground late failure wakes background after page disposal
+00:01 +94: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: restored page wakes at durable deadline and wrapper never charges twice
+00:01 +95: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: late server failure persists retry budget after page disposal
+00:01 +96: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: room switch during dispatch late server acknowledgement settles outbox after page disposal
+00:01 +97: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: room switch during dispatch late server failure survives page disposal
+00:01 +98: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: room switch during dispatch late network failure survives page disposal
+00:01 +99: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 发送中的消息已持久化（status=sending），送达后从 outbox 移除
+00:01 +100: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 离线发送 → outbox 行是 waitingNetwork（不是 failed）且 txid 不变
+00:01 +101: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 服务端拒绝 → outbox 行是 failed，并保留失败原因
+00:01 +102: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 网络恢复自动重发：同一 txid、outbox 里始终只有一行
+00:01 +103: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 手动重试复用同一 txid，且不会新增 outbox 行
+00:01 +104: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 互动门禁拒绝（canSendNow=false）→ 不触达传输层，但原文仍落盘为 failed
+00:01 +105: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 会话内发送：先落盘再派发 媒体消息（图片/语音等）不进 outbox：带外载荷无法用正文重放
+00:01 +106: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 重启恢复：把上一条进程留下的行放回时间线 新控制器用行内 txid 发送上一次进程留下的未送达行（只发一次）
+00:01 +107: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 重启恢复：把上一条进程留下的行放回时间线 重复派发保护：同一 outbox 行两次发送尝试 → 只发一次
+00:01 +108: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: 重启恢复：把上一条进程留下的行放回时间线 failed 行只能手动重试：restoreOutboxMessage 只恢复展示，不派发
+00:01 +109: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: pending 原文与持久化行的抵扣 已落盘的原文不会被再次新建发送；重复内容逐个抵扣
+00:01 +110: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: pending 原文与持久化行的抵扣 没有落盘行时全部走兜底（降级路径），空文本被忽略
+00:01 +111: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: historical source preserves OutboxStatus.sending without rerouting retries
+00:01 +112: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: historical source preserves OutboxStatus.waitingNetwork without rerouting retries
+00:01 +113: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: historical source preserves OutboxStatus.failed without rerouting retries
+00:01 +114: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: historical outbox remains visible but never reroutes its transaction to primary
+00:02 +115: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 登录后注册 pusher：kind=http、format=event_id_only、指向网关
+[chatflow/notif-diag] 2026-10-11T11:59:37.989557 [push] pusher registered (format=event_id_only)
+00:02 +116: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: same CID reconciles scope/revision and waits for acknowledged native policy
+[chatflow/notif-diag] 2026-10-11T11:59:38.013003 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.014954 [push] pusher registered (format=event_id_only)
+00:02 +117: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: E2EE 边界：pusher 数据只含 format/url，不含任何内容字段
+[chatflow/notif-diag] 2026-10-11T11:59:38.019837 [push] pusher registered (format=event_id_only)
+00:02 +118: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: metadata changes during registration coalesce to newest same-CID identity
+[chatflow/notif-diag] 2026-10-11T11:59:38.025698 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.026670 [push] pusher registered (format=event_id_only)
+00:02 +119: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: late old dispose preserves replacement binding
+[chatflow/notif-diag] 2026-10-11T11:59:38.033645 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.047024 [push] pusher deleted
+00:02 +120: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: late old logout preserves replacement binding
+[chatflow/notif-diag] 2026-10-11T11:59:38.051470 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.052447 [push] pusher deleted
+00:02 +121: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: different accounts serialize the shared token remote binding
+[chatflow/notif-diag] 2026-10-11T11:59:38.058305 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.058305 [push] pusher deleted
+00:02 +122: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: disposed bindings release capacity across sequential token churn
+[chatflow/notif-diag] 2026-10-11T11:59:38.063188 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.063188 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.064166 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.064166 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.065141 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.066118 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.067094 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.068072 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.068072 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.069048 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.070027 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.071001 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.071001 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.071979 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.072956 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.072956 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.073930 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.074912 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.074912 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.075884 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.076860 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.077838 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.078815 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.078815 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.079790 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.080769 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.081745 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.082720 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.083726 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.085805 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.085805 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.086780 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.087757 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.088733 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.089709 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.090686 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.091662 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.091662 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.092640 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.093616 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.093616 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.094592 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.095570 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.096545 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.096545 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.097523 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.097523 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.098499 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.099474 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.099474 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.101527 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.102054 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.103146 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.104313 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.104875 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.104875 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.105801 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.106977 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.107498 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.107498 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.108466 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.109441 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.109441 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.110418 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.111394 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.111394 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.112371 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.112371 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.113349 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.114855 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.115487 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.116008 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.116008 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.117955 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.119909 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.120883 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.120883 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.121861 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.121861 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.122836 [push] pusher registered (format=event_id_only)
+00:02 +123: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: same-token concurrent services have a finite pending write budget
+[chatflow/notif-diag] 2026-10-11T11:59:38.150698 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.152656 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.152656 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.152656 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.152656 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.152656 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] register failed: StateError
+[chatflow/notif-diag] 2026-10-11T11:59:38.153628 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.156099 [push] pusher registered (format=event_id_only)
+00:02 +124: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: iOS APNs event-id-only pushes include a generic visible alert
+[chatflow/notif-diag] 2026-10-11T11:59:38.167091 [push] pusher registered (format=event_id_only)
+00:02 +125: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 个推网关使用 Synapse 强制的标准路径，以查询参数选择通道
+[chatflow/notif-diag] 2026-10-11T11:59:38.171969 [push] pusher registered (format=event_id_only)
+00:02 +126: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 网关未配置：不注册并留下诊断（安全降级）
+[chatflow/notif-diag] 2026-10-11T11:59:38.174899 [push] gateway not configured; pusher off
+00:02 +127: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 无设备 Token：不注册（FCM 凭据缺失场景）
+[chatflow/notif-diag] 2026-10-11T11:59:38.177828 [push] no device token; pusher off
+[chatflow/notif-diag] 2026-10-11T11:59:38.177828 [push] pusher retry scheduled in 10s (attempt 1/4)
+00:02 +128: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 相同 Token 幂等；Token 轮换自动重注册
+[chatflow/notif-diag] 2026-10-11T11:59:38.180440 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.181416 [push] pusher registered (format=event_id_only)
+00:02 +129: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 登出注销：deletePusher 携带 appId+pushkey；无 Token 时不误删
+[chatflow/notif-diag] 2026-10-11T11:59:38.184345 [push] pusher registered (format=event_id_only)
+[chatflow/notif-diag] 2026-10-11T11:59:38.185322 [push] pusher deleted
+00:02 +130: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: 注册失败（服务端异常）：不抛出、不进入已注册态、可重试
+[chatflow/notif-diag] 2026-10-11T11:59:38.188230 [push] register failed: _Exception
+[chatflow/notif-diag] 2026-10-11T11:59:38.188759 [push] pusher retry scheduled in 10s (attempt 1/4)
+[chatflow/notif-diag] 2026-10-11T11:59:38.188759 [push] pusher registered (format=event_id_only)
+00:02 +131: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: C04：create 在途时注销 → 等待收敛+补偿删除，无旧账号 pusher
+[chatflow/notif-diag] 2026-10-11T11:59:38.191672 [push] pusher deleted
+00:02 +132: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/matrix_pusher_service_test.dart: C04：dispose 后失败回调不能再排队重试
+[chatflow/notif-diag] 2026-10-11T11:59:38.193625 [push] register failed: _Exception
+[chatflow/notif-diag] 2026-10-11T11:59:38.193625 [push] pusher retry scheduled in 10s (attempt 1/4)
+00:03 +133: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/managed_pusher_gateway_test.dart: managed pusher list cannot publish after capability revocation
+{"trace_id":"dGH5bKZe3S10QilzGvL_5J3N","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"dGH5bKZe3S10QilzGvL_5J3N","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"dGH5bKZe3S10QilzGvL_5J3N","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +134: C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/apps/mobile_flutter/test/features/push/managed_pusher_gateway_test.dart: managed pusher gateway returns SDK list and treats null as unknown
+{"trace_id":"1pU2UL_MZrXV6ZrBKS_3loqo","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"1pU2UL_MZrXV6ZrBKS_3loqo","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"1pU2UL_MZrXV6ZrBKS_3loqo","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +135: All tests passed!

@@ -1,0 +1,26 @@
+[
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/media_message_service.dart",
+    "sha256": "f5c017b2706d9815013e350bc7ed4b2378e75896f9ce93f1c3922d34e5b21521"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/matrix_media_upload_limit.dart",
+    "sha256": "981c0c621ca49043df84e9e59e9c914dedd54926284c4b40fd18ab8afa7a7471"
+  },
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+    "sha256": "b0968dec4b59f36c2e12289b922f1a1ba610a6af14eb1d850db5269334bbe5ad"
+  },
+  {
+    "path": "apps/mobile_flutter/test/features/matrix/media_upload_preflight_test.dart",
+    "sha256": "3b8fe98a137fe86ac4567086b5db5d5499d045c6ad7545a085b11e0ad11c57a5"
+  },
+  {
+    "path": "apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart",
+    "sha256": "cb5f83b387e08ec0cea9919984b6f976c2036d8db2ac660a7e24f0abc325403a"
+  },
+  {
+    "path": "apps/mobile_flutter/pubspec.lock",
+    "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+  }
+]

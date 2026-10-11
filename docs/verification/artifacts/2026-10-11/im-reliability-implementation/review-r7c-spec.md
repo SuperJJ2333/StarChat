@@ -1,0 +1,7 @@
+# R7c independent specification/domain review
+
+Reviewed commit 7454986fd312abdca9ccc876b6a6d224cfec304a: InstallationStartupGate, main entry, three test files and verification report. Result: PASS, no blocking findings.
+
+The version/preferences await now starts inside the gate after runApp. A single 1-second shell/3-second details budget spans preparation, installation reconciliation and application creation without resetting at phase transitions. Pending UI is account-free and has no retry action; manual/lifecycle retries occur only after explicit failure. _checking and _started prevent duplicate starts, while mounted checks prevent disposed pending work from publishing an app. Reconciliation remains before startApplication, where account data is composed; prepare only loads version/local display preferences and constructs the reconciler/session-store objects. Constructing SecureSessionStore does not open Matrix databases. Completed preparation is reused on failed-reconcile retry. No key/database deletion boundary or E2EE recovery behavior is relaxed.
+
+The first-frame metric now excludes deferred layout frames, and reports Flutter engine submission rather than physical display latency. User-visible one/three-second budgets still require a responsive Dart UI isolate; a synchronous UI stall is not solved by timers. Startup diagnostics are intentionally nonblocking and do not decide account state. SPEC/domain acceptance is limited to these source and fixture guarantees; physical-device startup profiling remains separate.

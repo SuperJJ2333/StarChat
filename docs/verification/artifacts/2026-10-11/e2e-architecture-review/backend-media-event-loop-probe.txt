@@ -1,0 +1,23 @@
+recorded_at=2026-10-11T09:23:09.4336859+08:00
+command=.venv/Scripts/python.exe docs/verification/artifacts/2026-10-11/e2e-architecture-review/backend-media-event-loop-probe.py
+environment=PYTHONUTF8=1 PYTHONIOENCODING=utf-8 PYTHONDONTWRITEBYTECODE=1
+{
+  "scope": "actual async route, synthetic 250ms synchronous storage delegate",
+  "production_latency_measurement": false,
+  "network_calls": 0,
+  "database_calls": 0,
+  "platform": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "status": 200,
+  "timer_ran_before_response": false,
+  "timer_delay_ms": 250.47,
+  "expected_timer_ms": 10,
+  "source_sha256": {
+    "services/business-api/app/api/media_platform.py": "32cb48d0ef95873e2ecaa27cbe119b9f3f39d7b1529b55f043beb819276d680e",
+    "services/business-api/app/modules/media/service.py": "0a72ac4941f83a46598a18d5b6ec7a8e9946cf92029966e020bfb7fd09ff2b31",
+    "services/business-api/app/modules/media/repository.py": "f0ea1ec9fb46ae9f9271b1f31721e8e0c45a460d380f78a53b83440b0be8fa96",
+    "services/business-api/app/integrations/media_blob_storage.py": "bcc07fbb962022769caa701bddada05f3119e4c4fefcc4603b1218760285ea1b"
+  }
+}
+exit_code=0
+

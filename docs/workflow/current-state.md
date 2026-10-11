@@ -1,4 +1,8 @@
 # 当前工作状态
+## 2026-10-11 IM可靠性：服务端分批已部署，客户端修复集成中
+
+用户已授权产品修改、服务重启和部署。恢复鉴权8082、Getui跨房去重/节流、业务媒体同步IO与核心日志轮转已部署；Sygnal发出时DND策略已部署但需新客户端元数据。精确镜像/回退/测试见[任务](tasks/2026-10-11-im-reliability-implementation.md)。客户端FGS、发送公平/真实settle、pusher对账、启动、提及分页/哈希/热历史索引已集成；媒体活动预算/持久附件/目录策略和共享候选门禁仍在进行。正式Android/iOS仍2213，不将源码候选当成品；iOS签名连续性/真机、OEM审核及长期容量门禁未完成。续作按[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)，不重做已冻结输入的完整门禁。
+
 ## 2026-10-09 iOS0.4.44+2213普通更新弹窗已启用
 
 用户最新授权启用弹窗，22:04+08 IOS_POPUP_PUBLISH_PASS/ROUTE_AND_AUDIT_READBACK_PASS；仅iOS version/build2205→2213，两条事务CAS审计，min3/说明/安装页/Android五设置/静态/容器身份保持。77契约、SPEC→QUALITY、两端及legacy实际route函数投影、公网三路401与IPA HEAD通过。仍为官网指定SHA9e5d3582…bc8a21包，签名/真机覆盖缺口不变；实际旧版手机弹窗待反馈，无APNs推送或强制升级。见[报告](../verification/2026-10-09-ios2213-update-popup.md)、[任务](tasks/2026-10-09-ios2213-update-popup.md)。

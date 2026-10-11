@@ -1,0 +1,55 @@
+{
+  "commit": "b888e282c0deca3945ffd57bed5499ac2a68a5be",
+  "files": [
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/timeline_migration_reader.dart",
+      "gitBlob": "7fb49776d1e4df62261b00085fd3c0bc4804bcd6",
+      "sha256": "753c26d1beb6148dce771a53fed88f964d6e4854d39abe99ac61ed619241c573"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/timeline_migration_reader_stub.dart",
+      "gitBlob": "0ef6ae55cbd921e55e514cee9935c7d85eb2bced",
+      "sha256": "50870714cab81b918b7440f64980263889f9f885b6c06de3945ac1d51da1a105"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/legacy_membership_blocks_test.dart",
+      "gitBlob": "3815a71a20bccbed34a184ad5d2077442fa7cd31",
+      "sha256": "73bea91a89da27d9c2af0d2afd9388633c98d1445af323a6854af8fec703ef41"
+    },
+    {
+      "path": "docs/verification/2026-10-11-legacy-membership-blocks.md",
+      "gitBlob": "77edcbd129111427641d96b0f5d612d0315ce0de",
+      "sha256": "7dd7b3101967b1a3533d8bfba73d96f5b057871aa54466b5f9b70dae7ac6c9b2"
+    }
+  ],
+  "authorEvidence": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-adjacent.txt",
+      "sha256": "ac580b069c30a088d6a2c46ad93c3e4165d8a242cce5dd34f9b6a0c0035616a0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-analyze-final.txt",
+      "sha256": "0fb1e74447445586e924e48a632e28b1d7083b6bd6276dc71fc9cf824d1544c9"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-analyze.txt",
+      "sha256": "e6b0ed88ee17c2afbd918d070c727a5d3ce11075dfbcf635d34832a510f7281d"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-green.txt",
+      "sha256": "9fcb5a6590e5712e802e2f71a6f0dd33b202ab16914cd6e0e899ec261250e36f"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-input-hashes.json",
+      "sha256": "c0237922b26d32ca1587614d082ef02a1993eaa2ddfed6f898cd52b235657643"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-red-behavior.txt",
+      "sha256": "cc4d2f05d007462f03a40d890e00951e51ed41d8f58512e7c910776cf8200f04"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-implementation\\r7d-red.txt",
+      "sha256": "af763b6e90c41dd7097e7aef1d75d3c54c50d2f263a6fee58f77865fd5c74e81"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{"observed_utc": "2026-10-11T02:00:34.109691+00:00", "purpose": "GET versions only, production-host DNS/TLS timing; no client geography inference"}
+{"mode": "default", "sample": 1, "exit": 0, "timing": {"http": 200, "dns": 0.003996, "connect": 0.004107, "tls": 0.038582, "ttfb": 0.040804, "total": 0.040845}, "stderr_present": false}
+{"mode": "default", "sample": 2, "exit": 0, "timing": {"http": 200, "dns": 0.003971, "connect": 0.004086, "tls": 0.034438, "ttfb": 0.036655, "total": 0.036692}, "stderr_present": false}
+{"mode": "default", "sample": 3, "exit": 0, "timing": {"http": 200, "dns": 0.080627, "connect": 0.080768, "tls": 0.131646, "ttfb": 0.134423, "total": 0.134494}, "stderr_present": false}
+{"mode": "ipv4", "sample": 1, "exit": 0, "timing": {"http": 200, "dns": 0.003993, "connect": 0.00413, "tls": 0.039809, "ttfb": 0.042069, "total": 0.042115}, "stderr_present": false}
+{"mode": "ipv4", "sample": 2, "exit": 0, "timing": {"http": 200, "dns": 0.004237, "connect": 0.00437, "tls": 0.036561, "ttfb": 0.038796, "total": 0.038842}, "stderr_present": false}
+{"mode": "ipv4", "sample": 3, "exit": 0, "timing": {"http": 200, "dns": 0.005056, "connect": 0.005167, "tls": 0.040437, "ttfb": 0.042625, "total": 0.042664}, "stderr_present": false}
+{"mode": "loopback_tls", "sample": 1, "exit": 0, "timing": {"http": 200, "dns": 1.3e-05, "connect": 0.00011, "tls": 0.029441, "ttfb": 0.031838, "total": 0.031895}, "stderr_present": false}
+{"mode": "loopback_tls", "sample": 2, "exit": 0, "timing": {"http": 200, "dns": 1.3e-05, "connect": 0.000107, "tls": 0.028692, "ttfb": 0.030939, "total": 0.030998}, "stderr_present": false}
+{"mode": "loopback_tls", "sample": 3, "exit": 0, "timing": {"http": 200, "dns": 1.4e-05, "connect": 0.00011, "tls": 0.029052, "ttfb": 0.031477, "total": 0.031515}, "stderr_present": false}
+{"getaddrinfo_sample": 1, "elapsed_ms": 57.38, "families": [2], "address_count": 1}
+{"getaddrinfo_sample": 2, "elapsed_ms": 4.21, "families": [2], "address_count": 1}
+{"getaddrinfo_sample": 3, "elapsed_ms": 6.12, "families": [2], "address_count": 1}

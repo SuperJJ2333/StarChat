@@ -1,0 +1,466 @@
+{
+  "utc": "2026-10-11T01:21:41.889147+00:00",
+  "root": "D:\\pythonProject\\outsource\\StarChat",
+  "method": "Logical file lengths, metadata only; no junction/symlink traversal intended. Not allocated disk bytes or deduplicated usage.",
+  "tracked_files": 5345,
+  "tracked_docs": 1433,
+  "tracked_doc_groups": {
+    "docs/ANDROID_SECURITY_AUDIT.md": 1,
+    "docs/ChatFlow_Codex_审计修复Prompt.md": 1,
+    "docs/DIRECT_CHAT_ANDROID_COMPATIBILITY.md": 1,
+    "docs/FRIEND_SYSTEM_REFACTOR.md": 1,
+    "docs/MEDIA_PICKER_FIX.md": 1,
+    "docs/NOTIFICATION_QA_MATRIX.md": 1,
+    "docs/NOTIFICATION_SYSTEM.md": 1,
+    "docs/PERFORMANCE_AND_CACHE_AUDIT.md": 1,
+    "docs/PUSH_SETUP.md": 1,
+    "docs/README.md": 1,
+    "docs/RUNBOOK_PRODUCTION_CONFIG.md": 1,
+    "docs/RUNBOOK_RELEASE.md": 1,
+    "docs/TURN.md": 1,
+    "docs/VIDEO_SEND_PIPELINE.md": 1,
+    "docs/adr": 72,
+    "docs/architecture": 9,
+    "docs/archive": 24,
+    "docs/figma": 3,
+    "docs/performance": 1,
+    "docs/plans": 3,
+    "docs/reports": 1,
+    "docs/runbooks": 62,
+    "docs/superpowers": 403,
+    "docs/testing": 2,
+    "docs/ui-development-figma-workflow.md": 1,
+    "docs/ui-development-html-demo-workflow.md": 1,
+    "docs/verification": 611,
+    "docs/workflow": 224,
+    "docs/畅聊缺陷清单-0917 - 缺陷清单.csv": 1,
+    "docs/畅聊缺陷清单-0917-标准化.csv": 1
+  },
+  "tracked_archives": [],
+  "directories": {
+    "docs/verification": {
+      "files": 316020,
+      "bytes": 30524696290,
+      "errors": 0,
+      "largest": [
+        {
+          "relative_path": "docs\\verification\\archives\\2026-09-10-docs-cleanup\\7ddb869d169dfe5e1ae8.zip",
+          "bytes": 550878965
+        },
+        {
+          "relative_path": "docs\\verification\\archives\\2026-09-10-docs-cleanup\\067f493b17ccc1e8fcf4.zip",
+          "bytes": 534232303
+        },
+        {
+          "relative_path": "docs\\verification\\archives\\2026-09-10-docs-cleanup\\54af7e6c6e1e4e31578b.zip",
+          "bytes": 502458338
+        },
+        {
+          "relative_path": "docs\\verification\\archives\\2026-09-10-docs-cleanup\\5b4d7356c7e8ce961aaf.zip",
+          "bytes": 493804525
+        },
+        {
+          "relative_path": "docs\\verification\\artifacts\\2026-10-09\\git-main-integration\\pre-integration.bundle",
+          "bytes": 282928877
+        },
+        {
+          "relative_path": "docs\\verification\\artifacts\\2026-09-26\\ldplayer-readiness\\installed-before-base.apk",
+          "bytes": 230042119
+        },
+        {
+          "relative_path": "docs\\verification\\artifacts\\2026-10-01\\unified-media\\android-release\\build-temp\\app\\intermediates\\merged_native_libs\\standardRelease\\mergeStandardReleaseNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 163774472
+        },
+        {
+          "relative_path": "docs\\verification\\artifacts\\2026-09-30\\main-wallet-search\\android-release\\build-temp\\app\\intermediates\\merged_native_libs\\standardRelease\\mergeStandardReleaseNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 163774472
+        }
+      ],
+      "extension_bytes_top8": [
+        [
+          ".zip",
+          12407820731
+        ],
+        [
+          ".apk",
+          7184039270
+        ],
+        [
+          ".so",
+          3409950304
+        ],
+        [
+          ".smali",
+          2084211980
+        ],
+        [
+          ".ipa",
+          1140412317
+        ],
+        [
+          "",
+          784844642
+        ],
+        [
+          ".json",
+          506633800
+        ],
+        [
+          ".bin",
+          402479017
+        ]
+      ]
+    },
+    "docs/workflow": {
+      "files": 225,
+      "bytes": 1800939,
+      "errors": 0,
+      "largest": [],
+      "extension_bytes_top8": [
+        [
+          ".md",
+          1800939
+        ]
+      ]
+    },
+    ".worktrees": {
+      "files": 1006519,
+      "bytes": 50177744977,
+      "errors": 0,
+      "largest": [
+        {
+          "relative_path": ".worktrees\\staff-debug-2163\\apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": ".worktrees\\online-room-refresh\\docs\\verification\\artifacts\\2026-09-24\\group-moments-wallet-debug\\build-2168-link\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": ".worktrees\\online-room-refresh\\apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": ".worktrees\\mobile-feedback-2165\\apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": ".worktrees\\debug-feedback-2164\\apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": ".worktrees\\conversation-reliability\\apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": ".worktrees\\avatar-album-release\\docs\\verification\\artifacts\\2026-09-23\\avatar-album-release\\branch-archive\\before.bundle",
+          "bytes": 271594007
+        },
+        {
+          "relative_path": ".worktrees\\staff-debug-2163\\apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libVkLayer_khronos_validation.so",
+          "bytes": 248644248
+        }
+      ],
+      "extension_bytes_top8": [
+        [
+          ".so",
+          16492745024
+        ],
+        [
+          ".apk",
+          9805181881
+        ],
+        [
+          ".smali",
+          5952638504
+        ],
+        [
+          ".bin",
+          5318938583
+        ],
+        [
+          ".dill",
+          2503676960
+        ],
+        [
+          ".dex",
+          1424258440
+        ],
+        [
+          ".png",
+          1399414615
+        ],
+        [
+          ".bundle",
+          928214595
+        ]
+      ]
+    },
+    "apps/mobile_flutter/build": {
+      "files": 15712,
+      "bytes": 4924998057,
+      "errors": 0,
+      "largest": [
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\minimalDebug\\mergeMinimalDebugNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 392541920
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardDebug\\mergeStandardDebugNativeLibs\\out\\lib\\arm64-v8a\\libVkLayer_khronos_validation.so",
+          "bytes": 248644248
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\minimalDebug\\mergeMinimalDebugNativeLibs\\out\\lib\\arm64-v8a\\libVkLayer_khronos_validation.so",
+          "bytes": 248644248
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\outputs\\flutter-apk\\app-minimal-debug.apk",
+          "bytes": 188813532
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\outputs\\apk\\minimal\\debug\\app-minimal-debug.apk",
+          "bytes": 188813532
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\intermediates\\merged_native_libs\\standardRelease\\mergeStandardReleaseNativeLibs\\out\\lib\\arm64-v8a\\libflutter.so",
+          "bytes": 163774472
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\build\\app\\outputs\\flutter-apk\\app-standard-debug.apk",
+          "bytes": 151706989
+        }
+      ],
+      "extension_bytes_top8": [
+        [
+          ".so",
+          2825960552
+        ],
+        [
+          ".apk",
+          841129258
+        ],
+        [
+          ".bin",
+          487001705
+        ],
+        [
+          ".dill",
+          156318512
+        ],
+        [
+          ".jar",
+          153761030
+        ],
+        [
+          ".dex",
+          133997040
+        ],
+        [
+          ".sym",
+          56140932
+        ],
+        [
+          "",
+          55577663
+        ]
+      ]
+    },
+    "apps/mobile_flutter/.dart_tool": {
+      "files": 493,
+      "bytes": 1036947091,
+      "errors": 0,
+      "largest": [
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\108d6df1de3d2f6d1625f448f6590789\\app.dill",
+          "bytes": 110432288
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\61470fd0b1827258be1962dd11978753\\app.dill",
+          "bytes": 110010568
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\e877c5fa97a38432a803ad6197d45b4a\\app.dill",
+          "bytes": 109697560
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\d05bb6cff17989609453927ce7d6e12b\\app.dill",
+          "bytes": 109697536
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\2dc30ca6a871ba2b49344f8422994843\\app.dill",
+          "bytes": 109581104
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\5eb5a6c484a674d131bac9b70640b50a\\app.dill",
+          "bytes": 109581080
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\15fbb92d252ad90b75c0c7850933102a\\app.dill",
+          "bytes": 109440288
+        },
+        {
+          "relative_path": "apps\\mobile_flutter\\.dart_tool\\flutter_build\\80c95b6621cbfc34cf2844dc428d4f07\\app.dill",
+          "bytes": 66129264
+        }
+      ],
+      "extension_bytes_top8": [
+        [
+          ".dill",
+          964653160
+        ],
+        [
+          ".so",
+          46136136
+        ],
+        [
+          "",
+          7510210
+        ],
+        [
+          ".db",
+          7274496
+        ],
+        [
+          ".stamp",
+          5283705
+        ],
+        [
+          ".d",
+          5275139
+        ],
+        [
+          ".json",
+          775261
+        ],
+        [
+          ".dart",
+          20250
+        ]
+      ]
+    },
+    "third_party": {
+      "files": 31,
+      "bytes": 366026,
+      "errors": 0,
+      "largest": [],
+      "extension_bytes_top8": [
+        [
+          ".pyc",
+          183685
+        ],
+        [
+          ".py",
+          117296
+        ],
+        [
+          ".0",
+          35184
+        ],
+        [
+          ".json",
+          12341
+        ],
+        [
+          ".patch",
+          5800
+        ],
+        [
+          ".md",
+          5543
+        ],
+        [
+          ".sql",
+          4107
+        ],
+        [
+          "",
+          1854
+        ]
+      ]
+    },
+    "data": {
+      "files": 3565,
+      "bytes": 138677787,
+      "errors": 0,
+      "largest": [],
+      "extension_bytes_top8": [
+        [
+          "",
+          138092590
+        ],
+        [
+          ".init",
+          376752
+        ],
+        [
+          ".stat",
+          106021
+        ],
+        [
+          ".conf",
+          84113
+        ],
+        [
+          ".map",
+          5240
+        ],
+        [
+          ".aof",
+          5109
+        ],
+        [
+          ".yaml",
+          5010
+        ],
+        [
+          ".config",
+          1122
+        ]
+      ]
+    },
+    "migration-artifacts": {
+      "files": 38,
+      "bytes": 20889925,
+      "errors": 0,
+      "largest": [],
+      "extension_bytes_top8": [
+        [
+          ".gz",
+          20090691
+        ],
+        [
+          ".dump",
+          774400
+        ],
+        [
+          ".py",
+          9021
+        ],
+        [
+          ".env",
+          6343
+        ],
+        [
+          ".conf",
+          3170
+        ],
+        [
+          "",
+          2333
+        ],
+        [
+          ".sql",
+          1645
+        ],
+        [
+          ".txt",
+          1121
+        ]
+      ]
+    }
+  }
+}

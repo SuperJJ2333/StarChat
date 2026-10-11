@@ -1,0 +1,26 @@
+[
+  {
+    "sha256": "a1d938d17917e7e5288ab0c79498071a6c29589d570d32aa9e71ef8166a99d04",
+    "path": "apps/mobile_flutter/lib/core/installation_startup_gate.dart"
+  },
+  {
+    "sha256": "9c81b9e8dc21432bb399c0a41eac9e60d7b8030ca8bf096f27d9f58dcbbdd35b",
+    "path": "apps/mobile_flutter/lib/main.dart"
+  },
+  {
+    "sha256": "46dd1ee4e4f37b28f38804bb27dc8e81df41bf5dcdc0807c45026f19ffe6520f",
+    "path": "apps/mobile_flutter/test/core/installation_startup_gate_test.dart"
+  },
+  {
+    "sha256": "65f053c0b7f56ebfc2357c933916471c10df74264e7a14d5b812c7bb936fb7e3",
+    "path": "apps/mobile_flutter/test/core/startup_preparation_shell_test.dart"
+  },
+  {
+    "sha256": "c4a12a837e84eb0d4dc1869d10214bde05b749f5afea47605b8b84318c611130",
+    "path": "apps/mobile_flutter/test/performance/app_startup_trace_test.dart"
+  },
+  {
+    "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+    "path": "apps/mobile_flutter/pubspec.lock"
+  }
+]

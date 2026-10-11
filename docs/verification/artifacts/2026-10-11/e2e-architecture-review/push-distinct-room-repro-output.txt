@@ -1,0 +1,9 @@
+D:\python\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+INFO httpx HTTP Request: POST https://restapi.getui.com/v2/fixture/auth "HTTP/1.1 200 OK"
+INFO httpx HTTP Request: POST https://restapi.getui.com/v2/fixture/push/single/cid "HTTP/1.1 200 OK"
+INFO httpx HTTP Request: POST http://testserver/_matrix/push/v1/notify "HTTP/1.1 200 OK"
+INFO httpx HTTP Request: POST http://testserver/_matrix/push/v1/notify "HTTP/1.1 200 OK"
+DISTINCT_ROOM_SILENT_DROP_CONFIRMED http_statuses=200,200 provider_requests=1 expected_distinct_events=2
+V1_VENDOR_FALLBACK_PRESENT False
+exit_code=0

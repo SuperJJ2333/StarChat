@@ -1,0 +1,107 @@
+[
+  {
+    "path": "docs/workflow/tasks/2026-10-11-e2e-architecture-review.md",
+    "sha256": "b8ae9c8393f6c977d21008aa5adbb6c7f79cc60d34615f63f353bdf11112fe77",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/production-resource-snapshot.txt",
+    "sha256": "132fc1a5fe97fbb3010878f919f5a7e607ed6c04cbd763172b289a646c79a0da",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/workspace-inventory.json",
+    "sha256": "b54f5a87f651ea9f0dcaa13c69e7f6fdb59a03cf958f2e44e3f7e6a1e232a211",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-09/android2213-release/delivery/identity.log",
+    "sha256": "884f92493440684473d40ea826edac106015c27ad7de71db7a41ca0a9c91e558",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/push-distinct-room-repro.py",
+    "sha256": "74b6ef26418f1dd90a8a88e098e6e856f7962921fd479e9ae2f9594c4456b377",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/push-distinct-room-repro-output.txt",
+    "sha256": "1c35437f22d825ab2fe3beb2890d33864a733423ac83a887fc76ea6e3a3ce214",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/backend-media-event-loop-probe.txt",
+    "sha256": "a5acf0d1c189f8e95abc35a0ff44ecb23c2fb96d98cd3e0fa317a67c335c82f7",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/production-media-limit.txt",
+    "sha256": "74dc145e5306ae06ea21527e0070e5671f4239ef64f9ff6ebc4f7ad831f2715d",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/push-tests-result.txt",
+    "sha256": "619afa8d154b28df9afa14bd67721734cc8ed022a1de80d353d4c0663e7626ec",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/push-review.md",
+    "sha256": "6214d33b244fdf0fe80ab9b1d141ea29363bad19318411c679f1a3016539a4ea",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/client-review.md",
+    "sha256": "2af24fc424947b2036adff29176180490f5e6ff6f39cdd29a14c088b1586846a",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/e2e-architecture-review/backend-review.md",
+    "sha256": "86bffc5f829912e266ebf2ac9dfcdb9243aa2b6ae0f3fd6c3343d9792e4c93c3",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-log-classification.jsonl",
+    "sha256": "413e19d1348752fa6f6aa6c09bdfddbe537b7842a40f82c8f00ae182659a7fd5",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-recovery-metadata.jsonl",
+    "sha256": "f2e3e43c42657b93d0942c49e78657d5b64c028d3047c1a9534c50b2426b4db8",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-recovery-authority.jsonl",
+    "sha256": "846743a148473fa711f56c819b60088878cba491d4ee5a7773c7f09265504bb6",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-synapse-latency.jsonl",
+    "sha256": "b7d7625db626e728eae1cfb288d79d09aec6e3e4fb60a83d2d2d47ea777608f7",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/backend-runtime.json",
+    "sha256": "88267e0def07a19cbc3287df7ffc17415dc074d9fbfdf1c6e23069e7c0e951b6",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/backend-runtime-detail.json",
+    "sha256": "e162f887d0e4894762350d851b485dadb59d97bc42748c4612139950a3152cc9",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-routing.jsonl",
+    "sha256": "13da704932d6190a2ec39c1931df9f26209a9b09f6d0c2689d599b2d33b3b14d",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-runtime.jsonl",
+    "sha256": "3f5d0c0c2ded81c21cd0e7af360f192b8823b6547423b960653dd2a3bbe1b67f",
+    "source": "primary workspace historical sanitized evidence"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/server-followup/root-network-timing.jsonl",
+    "sha256": "838b76ad73ff963bf7e484c5c6c5c841b8d759044c182f09019460a31b50e040",
+    "source": "primary workspace historical sanitized evidence"
+  }
+]
