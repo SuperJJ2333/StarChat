@@ -1,0 +1,7 @@
+{
+  "verifyExists": true,
+  "envPresent": false,
+  "scope": "Standalone stdlib collector; root owns final integrated gate",
+  "pythonVersion": "Python 3.11.11",
+  "pwshVersion": "7.6.5"
+}

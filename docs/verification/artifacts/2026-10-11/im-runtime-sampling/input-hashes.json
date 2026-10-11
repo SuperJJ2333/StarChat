@@ -1,0 +1,26 @@
+{
+  "base": "1284772e1743b584533333de5d2493477289c754",
+  "frozenAt": "2026-10-11T12:38:15.6682922+08:00",
+  "files": [
+    {
+      "path": "scripts/collect_im_runtime_sample.py",
+      "sha256": "47931699d7eeb52f5b72599783f4ee058126a1e1f3d17e4d5fa98a2395ee7a43"
+    },
+    {
+      "path": "scripts/tests/test_collect_im_runtime_sample.py",
+      "sha256": "c1673450a76d34671a8eaee5740e09dac0b458f74c43bc276c8563ee4915d217"
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/superpowers/plans/2026-10-11-im-reliability-remediation.md",
+      "sha256": "2a6f5cdb9a51b8be459698421d8ba201646b1791d8977da8b5ea101f4d59432e"
+    },
+    {
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-runtime-sampling\\runtime-sample.json",
+      "sha256": "98acf054abbd95efad542a6315bb19c7a1a318faf425145168aa1999be6bc9ee"
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-11/im-reliability-implementation/post-deploy-observe.py",
+      "sha256": "4a9c4ba4296da41e3a30b874d620efebfc8adbdbc75556800635f37eb74b8d29"
+    }
+  ]
+}

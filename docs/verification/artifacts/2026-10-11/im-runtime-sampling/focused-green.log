@@ -1,0 +1,15 @@
+test_bounded_process_limits_bytes_and_timeout_without_error_text (test_collect_im_runtime_sample.RuntimeCollectionTest.test_bounded_process_limits_bytes_and_timeout_without_error_text) ... ok
+test_collection_uses_fixed_window_and_only_read_only_docker_commands (test_collect_im_runtime_sample.RuntimeCollectionTest.test_collection_uses_fixed_window_and_only_read_only_docker_commands) ... ok
+test_failed_sample_is_missing_not_zero_success_and_never_echoes_error (test_collect_im_runtime_sample.RuntimeCollectionTest.test_failed_sample_is_missing_not_zero_success_and_never_echoes_error) ... ok
+test_inspect_and_stats_allow_only_fixed_fields (test_collect_im_runtime_sample.RuntimeCollectionTest.test_inspect_and_stats_allow_only_fixed_fields) ... ok
+test_duplicate_start_ids_and_window_edges_do_not_lose_requests (test_collect_im_runtime_sample.RuntimeLogTest.test_duplicate_start_ids_and_window_edges_do_not_lose_requests) ... ok
+test_long_sync_is_idle_only_with_zero_events_and_timeout_evidence (test_collect_im_runtime_sample.RuntimeLogTest.test_long_sync_is_idle_only_with_zero_events_and_timeout_evidence) ... ok
+test_mixed_formats_have_conserved_line_and_request_denominators (test_collect_im_runtime_sample.RuntimeLogTest.test_mixed_formats_have_conserved_line_and_request_denominators) ... ok
+test_route_category_uses_path_not_sensitive_query_values (test_collect_im_runtime_sample.RuntimeLogTest.test_route_category_uses_path_not_sensitive_query_values) ... ok
+test_synapse_status_before_request_is_counted (test_collect_im_runtime_sample.RuntimeLogTest.test_synapse_status_before_request_is_counted) ... ok
+test_tail_byte_partial_and_unknown_rows_are_explicit (test_collect_im_runtime_sample.RuntimeLogTest.test_tail_byte_partial_and_unknown_rows_are_explicit) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.169s
+
+OK
