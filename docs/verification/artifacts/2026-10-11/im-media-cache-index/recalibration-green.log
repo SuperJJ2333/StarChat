@@ -1,0 +1,53 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: warm stores do not enumerate cache directories per object or reference
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_clear_test.dart: video miss cannot cross a clear boundary (cached=false)
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:01 +5: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart: corrupt database and interrupted mutation rebuild only owned cache objects
+error SqfliteFfiException(sqlite_error: 26, , SqliteException(26): while selecting from statement, file is not a database, file is not a database (code 26)
+  Causing statement: PRAGMA user_version}) sql PRAGMA user_version {details: {database: {path: C:\Users\Administrator\.codex\worktrees\im-media-budget\StarChat\docs\verification\artifacts\2026-10-11\im-media-cache-index\quota-85db4a0e\chat-media\quota-v1.sqlite, id: 2, readOnly: false, singleInstance: true}}} during open, closing...
+00:01 +6: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:01 +7: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:01 +8: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:01 +9: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:01 +11: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +12: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +13: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +14: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +15: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +16: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:02 +17: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 500MB 对象：首次完整校验一次，之后命中 0 全文件哈希
+00:09 +18: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 命中某对象不会扫描/校验同账号的其它对象（无启动全量扫描）
+[chatflow/mediaindex] degraded: SqfliteFfiException
+00:10 +19: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: P0-1：大文件缓存命中不再重算 SHA-256 小对象（< 1 MiB）命中仍做完整校验：同尺寸原地篡改必被发现
+00:10 +20: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 去重与变体 同字节两个房间：1 个对象 + 2 个引用
+00:10 +21: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 去重与变体 不同压缩版本（q80/q70）字节不同：2 个对象，且媒体族只是 metadata 关联
+00:10 +22: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 去重与变体 聊天与朋友圈同字节：1 个对象 + 2 个引用；不同字节则 2 个对象
+00:10 +23: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 账号隔离与两级配额 账号 A 触发淘汰不会影响账号 B（设备硬上限未达）
+00:10 +24: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 账号隔离与两级配额 设备硬上限是唯一会跨账号淘汰的场景
+00:10 +25: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: LRU 与访问时间 访问过的对象不会被优先淘汰（批量 touch 生效）
+00:11 +26: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: LRU 与访问时间 命中路径只登记内存 pending，不产生逐次落库
+00:11 +27: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 删引用不删对象；最后一个引用消失后才可回收
+00:11 +28: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 引用计数由 refs 重算（不依赖计数器，崩溃不漂移）
+00:11 +29: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 保护期内（对象刚写、ref 未写）不回收
+00:11 +30: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC 并发读（pin）期间 GC 不得删除对象
+00:11 +31: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 引用保护与 GC dryRun 只报告不删除
+00:11 +32: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 对象已写、索引缺失 → 首次访问完整校验后回填（lazy rebuild）
+00:11 +33: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 索引存在、对象缺失 → 失效索引并回退（不永久打不开）
+00:11 +34: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 索引存在、对象被截断 → 廉价校验发现尺寸不符并失效
+00:11 +35: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 崩溃恢复与索引一致性 索引损坏（降级）时仍可读写媒体（失败降级）
+[chatflow/mediaindex] degraded: UnsupportedError
+00:11 +36: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 并发 并发写同一个 hash：1 个对象、无损坏
+00:12 +37: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 并发 并发读 + GC：pin 保护生效
+00:12 +38: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 索引只存摘要：数据库文件中不含 roomId/eventId/accountId 明文
+00:12 +39: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 指标快照字段齐备且可重置
+00:12 +40: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 索引懒打开：构造时不创建数据库文件，首次查询才落盘
+00:12 +41: C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_index_phase2_test.dart: 索引 schema、指标与脱敏 索引按账号清理（clearAccount 同时清索引行）
+00:12 +42: All tests passed!

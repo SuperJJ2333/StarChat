@@ -315,7 +315,21 @@ final class MediaDiskQuotaIndex {
     await ready();
     _lastAttemptAt = DateTime.now();
     final revision = _revision;
-    final scanned = {for (final object in await _scan()) object.key: object};
+    late Map<String, MediaDiskObject> scanned;
+    try {
+      scanned = {for (final object in await _scan()) object.key: object};
+    } catch (_) {
+      // A previous complete snapshot must not remain eligible after a failed
+      // fresh walk. Preserve both files and accounting; only a complete retry
+      // can restore eviction, including after process restart.
+      _complete = false;
+      try {
+        await _dirty.writeAsString('1', flush: true);
+      } on FileSystemException {
+        // Preserve the original scan error and keep in-process eviction off.
+      }
+      rethrow;
+    }
     await mutate(() async {
       for (final object in objects) {
         if ((_changed[object.key] ?? 0) <= revision &&

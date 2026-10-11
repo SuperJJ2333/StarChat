@@ -237,6 +237,36 @@ void main() {
     }
   });
 
+  test(
+      'failed recalibration revokes existing eviction eligibility until recovery',
+      () async {
+    final entry = await object('a', 'already-indexed', 19);
+    final quota = index();
+    await quota.ready();
+    expect(quota.canEvict, isTrue);
+    await IOOverrides.runZoned(() async {
+      await expectLater(quota.reconcile(), throwsA(isA<FileSystemException>()));
+    },
+        fseGetType: realType,
+        createDirectory: (path) =>
+            _DirectoryCounter(_RealIo().createDirectory(path), () {
+              if (path.endsWith('v2')) {
+                throw const FileSystemException(
+                    'synthetic initialized scan failure');
+              }
+            }));
+    expect(quota.canEvict, isFalse,
+        reason:
+            'an old complete snapshot is unsafe after a failed calibration');
+    expect(await File(quota.pathFor(entry)).length(), 19);
+    expect(quota.totalBytes, 19,
+        reason: 'failure does not commit an empty snapshot');
+    await quota.reconcile();
+    expect(quota.canEvict, isTrue);
+    expect(quota.totalBytes, 19);
+    await quota.close();
+  });
+
   test('an unreadable calibration preserves files and can recover later',
       () async {
     final entry = await object('a', 'offline', 19);

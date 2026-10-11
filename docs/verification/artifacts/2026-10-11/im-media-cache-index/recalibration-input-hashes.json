@@ -1,0 +1,32 @@
+[
+  {
+    "path": "apps/mobile_flutter/lib/features/matrix/media_disk_quota_index.dart",
+    "modified": "2026-10-11T13:11:18.9602493+08:00",
+    "sha256": "EE9D75FFF31164FFFB24461CB8370D699256664C356F074927B999FD33F57011"
+  },
+  {
+    "path": "apps/mobile_flutter/test/features/matrix/media_disk_quota_index_test.dart",
+    "modified": "2026-10-11T13:11:20.4456955+08:00",
+    "sha256": "E85E5E979E69FAED7B6471C805423041E91794356DB127D5168D9EC46EDA994D"
+  },
+  {
+    "path": "apps/mobile_flutter/pubspec.lock",
+    "modified": "2026-10-11T11:59:22.8055008+08:00",
+    "sha256": "A43833C8E7C3D6FAA93D21BABDC61DFE4B3563C7AC00912006F26DAA8E0ECC5D"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-media-cache-index/recalibration-red.log",
+    "modified": "2026-10-11T13:18:48.0009344+08:00",
+    "sha256": "4AAD522BFA1AF760DC77555D5655417E9E612FE7B1228340C89B8A641E6397BA"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-media-cache-index/recalibration-green.log",
+    "modified": "2026-10-11T13:18:48.0112728+08:00",
+    "sha256": "857B3864D8BF58B70249FD0DA566F55F582DF2C1E9236DBB948E4E37E21C728A"
+  },
+  {
+    "path": "docs/verification/artifacts/2026-10-11/im-media-cache-index/recalibration-analyze.log",
+    "modified": "2026-10-11T13:18:48.0166687+08:00",
+    "sha256": "B24C476BD00721548DB2D129326E479D6035C3178D508D4180D1FF0447F37365"
+  }
+]
