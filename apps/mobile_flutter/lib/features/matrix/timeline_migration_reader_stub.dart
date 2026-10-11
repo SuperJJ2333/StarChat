@@ -10,6 +10,7 @@ Future<TimelineLegacyPage> readEncryptedTimelinePage(
         List<String>? findEventIds,
         bool reverse = false,
         bool Function()? isCancelled,
+        void Function(int sourceItemsRead)? onSourceItemsRead,
         String? userId,
         String? deviceId}) =>
     Future.error(UnsupportedError('Native timeline page unavailable'));

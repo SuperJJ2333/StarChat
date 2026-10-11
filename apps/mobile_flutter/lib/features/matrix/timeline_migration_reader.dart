@@ -215,6 +215,8 @@ typedef _BlobWriteNative = Int32 Function(
 typedef _BlobWriteDart = int Function(Pointer<Void>, Pointer<Void>, int, int);
 
 const _legacyBloomBytes = 2 * 1024 * 1024;
+const _legacyMembershipBlockSize = 1024;
+const _legacyMembershipBlockBytes = 2048;
 Iterable<int> _bloomLocations(String id) sync* {
   var first = 2166136261, second = 5381;
   for (final byte in utf8.encode(id)) {
@@ -354,6 +356,7 @@ Future<TimelineLegacyPage> readEncryptedTimelinePage(
     List<String>? findEventIds,
     bool reverse = false,
     bool Function()? isCancelled,
+    void Function(int sourceItemsRead)? onSourceItemsRead,
     String? userId,
     String? deviceId}) async {
   if (limit < 1 || limit > 256 || (findEventIds?.length ?? 0) > 256) {
@@ -366,6 +369,8 @@ Future<TimelineLegacyPage> readEncryptedTimelinePage(
     if (message is SendPort) {
       commands = message;
       if (isCancelled?.call() == true) commands!.send(false);
+    } else if (message is int) {
+      onSourceItemsRead?.call(message);
     } else if (!result.isCompleted) {
       result.complete(message is TimelineLegacyPage ? message : null);
     }
@@ -414,8 +419,8 @@ Future<void> _readLegacyWindowWorker(List<Object?> args) async {
   try {
     for (var attempt = 0; attempt < 10 && !cancelled; attempt++) {
       try {
-        final result =
-            await _readLegacyWindow(args.sublist(1), () => cancelled);
+        final result = await _readLegacyWindow(
+            args.sublist(1), () => cancelled, (count) => output.send(count));
         if (!cancelled) output.send(result);
         return;
       } on sqlite.SqliteException catch (error) {
@@ -434,10 +439,11 @@ Future<void> _readLegacyWindowWorker(List<Object?> args) async {
   }
 }
 
-Future<TimelineLegacyPage> _readLegacyWindow(
-    List<Object?> args, bool Function() isCancelled) async {
+Future<TimelineLegacyPage> _readLegacyWindow(List<Object?> args,
+    bool Function() isCancelled, void Function(int) reportSourceItems) async {
   sqlite.Database? db, cache;
   void Function()? sourceCleanup;
+  var sourceItems = 0;
   try {
     SQfLiteEncryptionHelper.ffiInit();
     final library = loader.open.openSqlite();
@@ -513,6 +519,11 @@ Future<TimelineLegacyPage> _readLegacyWindow(
     cache.execute(
         'CREATE TABLE IF NOT EXISTS matrix_timeline_legacy_bloom_parts '
         '(fragment_key TEXT NOT NULL,source_identity TEXT NOT NULL,part INTEGER NOT NULL,v BLOB NOT NULL,PRIMARY KEY(fragment_key,source_identity,part))');
+    cache.execute(
+        'CREATE TABLE IF NOT EXISTS matrix_timeline_legacy_membership_blocks '
+        '(fragment_key TEXT NOT NULL,source_identity TEXT NOT NULL,block_ordinal INTEGER NOT NULL,'
+        'byte_offset INTEGER NOT NULL,item_count INTEGER NOT NULL,v BLOB NOT NULL,'
+        'PRIMARY KEY(fragment_key,source_identity,block_ordinal))');
     final start = args[4] as int,
         limit = args[5] as int,
         reverse = args[7] as bool;
@@ -522,7 +533,8 @@ Future<TimelineLegacyPage> _readLegacyWindow(
     for (final table in [
       'matrix_timeline_legacy_seek',
       'matrix_timeline_legacy_bloom_parts',
-      'matrix_timeline_legacy_bloom_state'
+      'matrix_timeline_legacy_bloom_state',
+      'matrix_timeline_legacy_membership_blocks'
     ]) {
       cache.execute(
           'DELETE FROM $table WHERE rowid IN '
@@ -571,6 +583,83 @@ Future<TimelineLegacyPage> _readLegacyWindow(
         checkSource();
         return TimelineLegacyPage([], start: 0, hasMore: false);
       }
+      final total = filter.single['item_count'] as int;
+      final expectedBlocks = (total + _legacyMembershipBlockSize - 1) ~/
+          _legacyMembershipBlockSize;
+      final coverage = cache.select(
+          'SELECT COUNT(*) AS n,MIN(block_ordinal) AS lo,MAX(block_ordinal) AS hi '
+          'FROM matrix_timeline_legacy_membership_blocks '
+          'WHERE fragment_key=? AND source_identity=? AND length(v)=? '
+          'AND item_count=MIN(?,?-block_ordinal*?)',
+          [
+            fragment,
+            cacheSource,
+            _legacyMembershipBlockBytes,
+            _legacyMembershipBlockSize,
+            total,
+            _legacyMembershipBlockSize
+          ]).single;
+      if (expectedBlocks > 0 &&
+          coverage['n'] == expectedBlocks &&
+          coverage['lo'] == 0 &&
+          coverage['hi'] == expectedBlocks - 1) {
+        // Only complete, same-source block coverage may exclude a region.
+        // A missing/partial block falls through to the exact source scan.
+        final found = <String, int>{};
+        final probes = {
+          for (final id in requested)
+            id: _bloomLocations(id)
+                .map((v) => v & (_legacyMembershipBlockBytes * 8 - 1))
+                .toList()
+        };
+        for (var cursor = 0; cursor < expectedBlocks; cursor += 64) {
+          await Future<void>.delayed(Duration.zero);
+          if (isCancelled()) throw TimelineStorageClosed();
+          checkSource();
+          final blocks = cache.select(
+              'SELECT block_ordinal,byte_offset,item_count,v '
+              'FROM matrix_timeline_legacy_membership_blocks '
+              'WHERE fragment_key=? AND source_identity=? AND block_ordinal>=? '
+              'ORDER BY block_ordinal LIMIT 64',
+              [fragment, cacheSource, cursor]);
+          for (final block in blocks) {
+            final bits = block['v'] as Uint8List;
+            final candidates = probes.entries
+                .where((entry) =>
+                    !found.containsKey(entry.key) &&
+                    entry.value
+                        .every((bit) => bits[bit >> 3] & (1 << (bit & 7)) != 0))
+                .map((e) => e.key)
+                .toSet();
+            if (candidates.isEmpty) continue;
+            final begin =
+                (block['block_ordinal'] as int) * _legacyMembershipBlockSize;
+            var inBlock = 0;
+            for (final item in _legacyBlobItems(db, library, fragment,
+                byteOffset: block['byte_offset'] as int,
+                registerCleanup: (cleanup) => sourceCleanup = cleanup)) {
+              sourceItems++;
+              if (candidates.contains(item.id)) {
+                found.putIfAbsent(item.id, () => begin + inBlock);
+              }
+              inBlock++;
+              if (inBlock == block['item_count']) break;
+            }
+            sourceCleanup?.call();
+            sourceCleanup = null;
+            if (inBlock != block['item_count']) {
+              throw StateError('Incomplete timeline source');
+            }
+            await Future<void>.delayed(Duration.zero);
+            if (isCancelled()) throw TimelineStorageClosed();
+            checkSource();
+          }
+          if (found.length == requested.length) break;
+        }
+        checkSource();
+        return TimelineLegacyPage([],
+            start: 0, hasMore: false, positions: found);
+      }
     }
     final bitmap = requested != null && filter.isEmpty
         ? Uint8List(_legacyBloomBytes)
@@ -589,6 +678,28 @@ Future<TimelineLegacyPage> _readLegacyWindow(
     final byteOffset = seek.isEmpty ? 0 : seek.single['byte_offset'] as int;
     final result = <String>[], found = <String, int>{};
     final checkpoints = <(int, int)>[];
+    final membershipBlocks = <(int, int, int, Uint8List)>[];
+    Uint8List? blockBits;
+    var blockStart = 0, blockOffset = 0, blockCount = 0;
+    void flushMembershipBlocks() {
+      if (membershipBlocks.isEmpty) return;
+      cache!.execute('BEGIN IMMEDIATE');
+      try {
+        for (final block in membershipBlocks) {
+          cache.execute(
+              'INSERT OR REPLACE INTO matrix_timeline_legacy_membership_blocks '
+              '(fragment_key,source_identity,block_ordinal,byte_offset,item_count,v) '
+              'VALUES (?,?,?,?,?,?)',
+              [fragment, cacheSource, block.$1, block.$2, block.$3, block.$4]);
+        }
+        cache.execute('COMMIT');
+        membershipBlocks.clear();
+      } catch (_) {
+        cache.execute('ROLLBACK');
+        rethrow;
+      }
+    }
+
     void flushCheckpoints() {
       if (checkpoints.isEmpty) return;
       cache!.execute('BEGIN IMMEDIATE');
@@ -611,6 +722,7 @@ Future<TimelineLegacyPage> _readLegacyWindow(
     for (final item in _legacyBlobItems(db, library, fragment,
         byteOffset: byteOffset,
         registerCleanup: (cleanup) => sourceCleanup = cleanup)) {
+      sourceItems++;
       if (ordinal % 4096 == 0) {
         await Future<void>.delayed(Duration.zero);
         if (isCancelled()) throw TimelineStorageClosed();
@@ -620,9 +732,24 @@ Future<TimelineLegacyPage> _readLegacyWindow(
         checkpoints.add((ordinal, item.byteOffset));
         if (checkpoints.length == 64) flushCheckpoints();
       }
-      if (bitmap != null) {
+      if (requested != null) {
+        if (ordinal % _legacyMembershipBlockSize == 0) {
+          blockBits = Uint8List(_legacyMembershipBlockBytes);
+          blockStart = ordinal ~/ _legacyMembershipBlockSize;
+          blockOffset = item.byteOffset;
+          blockCount = 0;
+        }
         for (final location in _bloomLocations(item.id)) {
-          bitmap[location >> 3] |= 1 << (location & 7);
+          if (bitmap != null) bitmap[location >> 3] |= 1 << (location & 7);
+          final bit = location & (_legacyMembershipBlockBytes * 8 - 1);
+          blockBits![bit >> 3] |= 1 << (bit & 7);
+        }
+        blockCount++;
+        if (blockCount == _legacyMembershipBlockSize) {
+          membershipBlocks
+              .add((blockStart, blockOffset, blockCount, blockBits!));
+          blockBits = null;
+          if (membershipBlocks.length == 64) flushMembershipBlocks();
         }
       }
       if (requested != null) {
@@ -650,6 +777,10 @@ Future<TimelineLegacyPage> _readLegacyWindow(
     }
     checkSource();
     flushCheckpoints();
+    if (requested != null && exhausted && blockBits != null) {
+      membershipBlocks.add((blockStart, blockOffset, blockCount, blockBits));
+    }
+    flushMembershipBlocks();
     if (bitmap != null && exhausted) {
       // Persist fixed-size accelerator chunks, then publish coverage. Interrupted
       // chunks never establish absence, so a partial filter cannot hide an ID.
@@ -678,6 +809,7 @@ Future<TimelineLegacyPage> _readLegacyWindow(
         hasMore: reverse ? first - result.length >= 0 : more,
         positions: found);
   } finally {
+    reportSourceItems(sourceItems);
     sourceCleanup?.call();
     cache?.dispose();
     db?.dispose();
