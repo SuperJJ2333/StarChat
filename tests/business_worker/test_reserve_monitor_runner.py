@@ -67,10 +67,15 @@ def test_blocked_monitor_leaves_caller_free_for_outbox_work():
     outbox_work = []
 
     class Consumer:
+        completed = False
+
         def claim_batch(self, **_kwargs):
+            if self.completed:
+                return []
             return [SimpleNamespace(id="event-1", topic="wallet.alert")]
 
         def mark_succeeded(self, event_id, **_kwargs):
+            self.completed = True
             outbox_work.append(event_id)
 
     worker = import_module("worker").Worker(

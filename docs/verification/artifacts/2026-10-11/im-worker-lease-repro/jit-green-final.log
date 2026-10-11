@@ -1,0 +1,7 @@
+........................................................................ [ 28%]
+........................................................................ [ 57%]
+........................................................................ [ 86%]
+................x................                                        [100%]
+=========================== short test summary info ===========================
+XFAIL tests/business_worker/test_worker_lease_window.py::test_active_handler_is_not_reclaimed_while_original_handler_is_still_running - R9b unresolved: active handler can exceed lease; R9a only removes queued preclaims
+248 passed, 1 xfailed in 17.73s

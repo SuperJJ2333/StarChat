@@ -1,0 +1,91 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Administrator\.codex\worktrees\im-worker-lease-repro\StarChat
+plugins: anyio-4.14.2, asyncio-0.26.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 9 items
+
+tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[1-301] FAILED [ 11%]
+tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[49-7] FAILED [ 22%]
+tests/business_worker/test_worker_lease_window.py::test_active_handler_is_not_reclaimed_while_original_handler_is_still_running XFAILed
+preclaims)                                                               [ 33%]
+tests/business_worker/test_worker_lease_window.py::test_crashed_owner_is_reclaimable_only_at_lease_boundary PASSED [ 44%]
+tests/business_worker/test_worker_lease_window.py::test_run_once_keeps_limit_topics_maintenance_and_heartbeat_contract PASSED [ 55%]
+tests/business_worker/test_worker_lease_window.py::test_empty_or_nonpositive_limit_still_touches_heartbeat[0] PASSED [ 66%]
+tests/business_worker/test_worker_lease_window.py::test_empty_or_nonpositive_limit_still_touches_heartbeat[-1] PASSED [ 77%]
+tests/business_worker/test_worker_lease_window.py::test_empty_or_nonpositive_limit_still_touches_heartbeat[50] PASSED [ 88%]
+tests/business_worker/test_worker_lease_window.py::test_postgres_two_consumers_do_not_replay_unstarted_tail FAILED [100%]
+
+================================== FAILURES ===================================
+_ test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[1-301] _
+tests\business_worker\test_worker_lease_window.py:107: in test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker
+    assert dispatches == ["worker-b"], {
+E   AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+E   assert ['worker-b', 'worker-a'] == ['worker-b']
+E     
+E     Left contains one more item: 'worker-a'
+E     
+E     Full diff:
+E       [
+E           'worker-b',
+E     +     'worker-a',
+E       ]
+_ test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[49-7] __
+tests\business_worker\test_worker_lease_window.py:107: in test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker
+    assert dispatches == ["worker-b"], {
+E   AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+E   assert ['worker-b', 'worker-a'] == ['worker-b']
+E     
+E     Left contains one more item: 'worker-a'
+E     
+E     Full diff:
+E       [
+E           'worker-b',
+E     +     'worker-a',
+E       ]
+__________ test_postgres_two_consumers_do_not_replay_unstarted_tail ___________
+tests\business_worker\test_worker_lease_window.py:275: in test_postgres_two_consumers_do_not_replay_unstarted_tail
+    assert dispatches == ["worker-b"], {"dispatches": dispatches, "outcomes": outcomes}
+E   AssertionError: {'dispatches': ['worker-b', 'worker-a'], 'outcomes': ['OUTBOX_LOCK_MISMATCH']}
+E   assert ['worker-b', 'worker-a'] == ['worker-b']
+E     
+E     Left contains one more item: 'worker-a'
+E     
+E     Full diff:
+E       [
+E           'worker-b',
+E     +     'worker-a',
+E       ]
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[1-301] - AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+assert ['worker-b', 'worker-a'] == ['worker-b']
+  
+  Left contains one more item: 'worker-a'
+  
+  Full diff:
+    [
+        'worker-b',
+  +     'worker-a',
+    ]
+FAILED tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[49-7] - AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+assert ['worker-b', 'worker-a'] == ['worker-b']
+  
+  Left contains one more item: 'worker-a'
+  
+  Full diff:
+    [
+        'worker-b',
+  +     'worker-a',
+    ]
+FAILED tests/business_worker/test_worker_lease_window.py::test_postgres_two_consumers_do_not_replay_unstarted_tail - AssertionError: {'dispatches': ['worker-b', 'worker-a'], 'outcomes': ['OUTBOX_LOCK_MISMATCH']}
+assert ['worker-b', 'worker-a'] == ['worker-b']
+  
+  Left contains one more item: 'worker-a'
+  
+  Full diff:
+    [
+        'worker-b',
+  +     'worker-a',
+    ]
+=================== 3 failed, 5 passed, 1 xfailed in 1.88s ====================

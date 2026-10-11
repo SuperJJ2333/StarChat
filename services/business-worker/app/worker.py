@@ -149,11 +149,16 @@ class Worker:
     def run_once(self, limit: int = 50) -> int:
         self.run_maintenance_once()
         self._reap_undeliverable()
-        # C02：只领取本消费者声明主题的事件。
-        messages = self._consumer.claim_batch(
-            worker_id=self._worker_id, limit=limit, topics=self.handled_topics
-        )
-        for message in messages:
+        processed = 0
+        while processed < limit:
+            # Claim only when ready to dispatch: queued work must not consume
+            # its lease while an earlier handler is still running.
+            messages = self._consumer.claim_batch(
+                worker_id=self._worker_id, limit=1, topics=self.handled_topics
+            )
+            if not messages:
+                break
+            message = messages[0]
             try:
                 handler = self._handlers.get(message.topic)
                 if handler is None:
@@ -182,8 +187,9 @@ class Worker:
                     )
             else:
                 self._consumer.mark_succeeded(message.id, worker_id=self._worker_id)
+            processed += 1
         self._touch_heartbeat()
-        return len(messages)
+        return processed
 
     def _retry_backoff(self, attempt_count: int) -> timedelta:
         # 有界指数退避：30s, 60s, 120s, … 封顶 1 小时。

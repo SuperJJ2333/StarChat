@@ -1,0 +1,23 @@
+{
+  "source_base": "70dee9dd6b200ce3675bb6798be135d6ae594680",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "test_result": {
+    "passed": 248,
+    "strict_xfailed": 1,
+    "skipped": 0,
+    "exit_code": 0
+  },
+  "postgres_version": "PostgreSQL 18.3 on x86_64-windows, compiled by msvc-19.44.35225, 64-bit",
+  "files": {
+    "services/business-worker/app/worker.py": "96f67aa7ed95a98b91650cf487033dcf8237564ac4ce17a899ded05989a2d72d",
+    "services/business-api/app/core/outbox.py": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27",
+    "services/business-api/app/core/outbox_handover.py": "2b98dc5d02d630c64adc62fbd6d16d96a1aa4c87caa10b4ed231bbb86dcd932d",
+    "services/business-api/app/core/outbox_handover_models.py": "ddddb09214a964fb8f988e012c8a29b0de9e7fa4a42104ba4323bf16eb7c8223",
+    "services/business-worker/requirements.txt": "58ba514b43548c7fb964014a4368c0982406128b4b5b0a7f74a27b7faf1fe06e",
+    "services/business-api/pyproject.toml": "ad430fe077fa8443b511e9980739d106353ef6175d7615d60549e89cacdb28e0",
+    "tests/business_worker/test_worker_lease_window.py": "8ebdd2fc89f30648b3b6e91fa428720a8112d8406c0afd036fbd56bab13d4ca8",
+    "tests/business_worker/test_reserve_monitor_runner.py": "6b76ac1e9d88e96b894025625f74de62018ff8147c4ef9c7503153dcfd051efc",
+    "docs/verification/artifacts/2026-09-30/support-worker-compatibility/worker_probe.py": "335a739c829327402cd7ae383bc3aed2a06f0675a0fa66c21844c0c3167d84c8"
+  }
+}

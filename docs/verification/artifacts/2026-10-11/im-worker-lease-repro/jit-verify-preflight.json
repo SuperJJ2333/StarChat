@@ -1,0 +1,7 @@
+{
+  "script_exists": true,
+  "env_exists": false,
+  "full_verify_executed": false,
+  "reason": "render-only configuration requires missing .env; root owns shared integrated final gate; no production secrets copied",
+  "postgres_stopped": true
+}
