@@ -1,0 +1,113 @@
+{
+  "candidate": "3b8e1bd26ff562d6bfa695b1707127bc6cb9628b",
+  "base": "850710bd52d5763e8a3831e0665cb1eb5dbe44fd",
+  "candidate_tree": "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat",
+  "reviewer_tree": "C:\\Users\\Administrator\\.codex\\worktrees\\im-runtime-bounds\\StarChat",
+  "captured_utc": "2026-10-11T06:20:39.7114713Z",
+  "result": "CHANGES REQUIRED: new P1 duplicate preparation; original four findings resolved",
+  "commands": [
+    {
+      "test": "independent_edges_test.dart",
+      "command": "flutter test --no-pub <review-artifact>/independent_edges_test.dart --reporter expanded",
+      "exit_code": 0,
+      "passed": 4,
+      "failed": 0,
+      "log": "rereview-four-green.log"
+    },
+    {
+      "test": "media_outbox_review_regression_test.dart",
+      "command": "flutter test --no-pub test/core/outbox/media_outbox_review_regression_test.dart --name 'two preparation slots|replacement SQLite handles' --reporter expanded",
+      "exit_code": 0,
+      "passed": 2,
+      "failed": 0,
+      "log": "rereview-bounds-green.log"
+    },
+    {
+      "test": "duplicate_preparation_test.dart",
+      "command": "flutter test --no-pub <review-artifact>/duplicate_preparation_test.dart --reporter expanded",
+      "exit_code": 1,
+      "passed": 0,
+      "failed": 1,
+      "log": "rereview-duplicate-verified-red.log"
+    }
+  ],
+  "runtime": "Windows; C:/src/flutter/bin/flutter.bat; workdir owner apps/mobile_flutter; STARCHAT_REVIEW_TMP=<review-artifact>/tmp; actual SQLite/files, synthetic source and transport",
+  "owner_gate_accounting": "40 passed / 1 failed combined; after test-only fairness correction 14 recovery tests passed; aggregate coverage, not one 41-pass run",
+  "normalization": "Tracked logs normalize CRLF to LF and remove trailing horizontal whitespace; ignored raw/ retains originals. utf8_lf_sha256 is stable across checkout CRLF conversion.",
+  "sources": [
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart",
+      "git_blob": "57305afdae9540f637198d7696c9cd590fb47e5e"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_recovery_service.dart",
+      "git_blob": "44c159b468c93d60c81aea8c6a038c68eac597e3"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart",
+      "git_blob": "f3d47b971136a9433f28fea2f3ca2dea4a8bb197"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart",
+      "git_blob": "823974108635569a944e372611f36d5188bf1f9f"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/four-boundaries-review-fix.md",
+      "git_blob": "e0cffae684bfe397872496667719c596dd4cb637"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/review-input-hashes.json",
+      "git_blob": "cffa6f5e8034f9517550204495553c60c54e3d87"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "rereview-3b8-spec.md",
+      "recorded_utc": "2026-10-11T06:19:58.5857203Z",
+      "raw_sha256": "df4c84da0d29c029a70d7c25f443c856dbeddb039e428c74ae0c2486c4050fd3",
+      "utf8_lf_sha256": "df4c84da0d29c029a70d7c25f443c856dbeddb039e428c74ae0c2486c4050fd3"
+    },
+    {
+      "path": "rereview-3b8-quality.md",
+      "recorded_utc": "2026-10-11T06:19:58.5866942Z",
+      "raw_sha256": "6433d2cb61a6693d5a57ad99353785cc87b04abee834868cb533049240465fbd",
+      "utf8_lf_sha256": "6433d2cb61a6693d5a57ad99353785cc87b04abee834868cb533049240465fbd"
+    },
+    {
+      "path": "duplicate_preparation_test.dart",
+      "recorded_utc": "2026-10-11T06:10:46.6825219Z",
+      "raw_sha256": "27a09edf3d1b95b6bbce7e8810af18361e72f9b223e905a3ed561ec4f694db51",
+      "utf8_lf_sha256": "27a09edf3d1b95b6bbce7e8810af18361e72f9b223e905a3ed561ec4f694db51"
+    },
+    {
+      "path": "independent_edges_test.dart",
+      "recorded_utc": "2026-10-11T05:42:20.8498022Z",
+      "raw_sha256": "5f6434650daa1f3df7f14410fee5dbd4abbc82dee5f1361338df5a17fe88082d",
+      "utf8_lf_sha256": "5f6434650daa1f3df7f14410fee5dbd4abbc82dee5f1361338df5a17fe88082d"
+    },
+    {
+      "path": "rereview-four-green.log",
+      "recorded_utc": "2026-10-11T06:20:39.3479757Z",
+      "raw_sha256": "a915664c65eec4e3e64d1cbc945b1cb2689b961183379081811c80bdd9c799d8",
+      "utf8_lf_sha256": "a915664c65eec4e3e64d1cbc945b1cb2689b961183379081811c80bdd9c799d8",
+      "original_raw_sha256": "ab01ae9660a2bea91a0b4a284e528102b98de5189db83b828fdb3b6c8e1616c2",
+      "original_raw_location": "raw/rereview-four-green.log"
+    },
+    {
+      "path": "rereview-bounds-green.log",
+      "recorded_utc": "2026-10-11T06:20:39.3499282Z",
+      "raw_sha256": "c42c100be91f362436d0c869dff157e10089846c3dea59c926285115eb4e713f",
+      "utf8_lf_sha256": "c42c100be91f362436d0c869dff157e10089846c3dea59c926285115eb4e713f",
+      "original_raw_sha256": "56cc97e9cc4b1fc886daea6f8ef6da9901d5651a1c0419aeedb6715c8fba2908",
+      "original_raw_location": "raw/rereview-bounds-green.log"
+    },
+    {
+      "path": "rereview-duplicate-verified-red.log",
+      "recorded_utc": "2026-10-11T06:20:39.3518824Z",
+      "raw_sha256": "5777b1f89304efba8e834ab1178706255d412e9d9ed16d08d3946b57671f96e7",
+      "utf8_lf_sha256": "5777b1f89304efba8e834ab1178706255d412e9d9ed16d08d3946b57671f96e7",
+      "original_raw_sha256": "e6c396fcefd55f1d17ab459e0ed9c48994e72b7c353ab88289e74aa161b265cf",
+      "original_raw_location": "raw/rereview-duplicate-verified-red.log"
+    }
+  ]
+}

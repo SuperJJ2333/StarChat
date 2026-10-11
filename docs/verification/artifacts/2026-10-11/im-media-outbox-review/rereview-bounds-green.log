@@ -1,0 +1,5 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart
+00:00 +0: two preparation slots leave later intents durable without loading them
+00:00 +1: replacement SQLite handles atomically reserve the last pending slot
+00:02 +2: All tests passed!
