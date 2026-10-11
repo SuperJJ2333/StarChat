@@ -42,6 +42,21 @@ final class RoomMentionStore extends ChangeNotifier {
     }
   }
 
+  static Future<void> _persist(
+      SharedPreferences prefs, String key, String value) async {
+    try {
+      if (!await prefs.setString(key, value)) {
+        throw StateError('Mention state persistence failed');
+      }
+    } catch (_) {
+      // Legacy preferences update their cache before the platform acknowledges
+      // the write. Reload only the cache from storage so a rejected checkpoint
+      // cannot look committed to another store opened in this process.
+      await prefs.reload();
+      rethrow;
+    }
+  }
+
   Future<UnreadMentionTracker> open(Room room,
       {bool Function()? shouldContinue}) async {
     _check(shouldContinue);
@@ -59,7 +74,7 @@ final class RoomMentionStore extends ChangeNotifier {
           state.initializeEventBoundary(room.fullyRead);
         }
         _check(shouldContinue);
-        await prefs.setString(key, state.encode());
+        await _persist(prefs, key, state.encode());
         _check(shouldContinue);
         _states[key] = state;
         return state;
@@ -205,7 +220,7 @@ final class RoomMentionStore extends ChangeNotifier {
       if (state == null) return;
       final prefs = await SharedPreferences.getInstance();
       _check(shouldContinue);
-      await prefs.setString(_key(room), state.encode());
+      await _persist(prefs, _key(room), state.encode());
       _check(shouldContinue);
       notifyListeners();
     } on _MentionScanCanceled {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'package:liuhetong_mobile/features/matrix/room_mention_store.dart';
 import 'package:liuhetong_mobile/features/matrix/mention_history_scan.dart';
@@ -19,6 +20,18 @@ class _Database extends Fake implements DatabaseApi {
     opens++;
     return ListTimelineIdSnapshot(ids,
         afterEventId: afterEventId, direction: direction);
+  }
+}
+
+class _RejectingPreferences extends InMemorySharedPreferencesStore {
+  _RejectingPreferences() : super.empty();
+  bool rejectWrites = false;
+  int writes = 0;
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    writes++;
+    if (rejectWrites) return false;
+    return super.setValue(valueType, key, value);
   }
 }
 
@@ -204,6 +217,51 @@ void main() {
         isNot(contains('"completedScanHead":"e0"')));
   });
 
+  test('failed platform write retains pending and retries the uncommitted head',
+      () async {
+    final platform = _RejectingPreferences();
+    SharedPreferencesStorePlatform.instance = platform;
+    final room = _Room(2);
+    final store = RoomMentionStore();
+    final state = await store.open(room);
+    var published = 0;
+    store.addListener(() => published++);
+    platform.rejectWrites = true;
+    await store.scan(room);
+    expect(state.pendingCount, 2);
+    expect(published, 0);
+    expect(state.completedScanHead, isNull,
+        reason: 'a false platform result must not acknowledge a checkpoint');
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('chat-mentions-v2:@me:test:!room:test'),
+        isNot(contains('"completedScanHead":"e0"')),
+        reason: 'failed optimistic preference cache must not look committed');
+    platform.rejectWrites = false;
+    await store.scan(room);
+    expect(room.payloadReads, 4);
+    expect(state.pendingCount, 2);
+    expect(state.completedScanHead, 'e0');
+    expect(published, 1);
+    expect((await platform.getAll()).values.single,
+        contains('"completedScanHead":"e0"'));
+  });
+
+  test(
+      'failed initial platform write does not cache a successfully opened state',
+      () async {
+    final platform = _RejectingPreferences()..rejectWrites = true;
+    SharedPreferencesStorePlatform.instance = platform;
+    final room = _Room(1);
+    final store = RoomMentionStore();
+    await expectLater(store.open(room), throwsStateError);
+    expect((await platform.getAll()), isEmpty);
+    platform.rejectWrites = false;
+    await store.scan(room);
+    expect(platform.writes, 3,
+        reason: 'retry must reopen successfully before saving the scan');
+    expect((await store.open(room)).completedScanHead, 'e0');
+  });
+
   testWidgets('interaction stops page reads until 500ms quiet', (tester) async {
     var now = DateTime.utc(2026);
     final maintenance = MaintenanceActivity(clock: () => now);
@@ -316,6 +374,67 @@ void main() {
     expect(requests, 1);
     expect(room.reads.containsKey('live-newer'), isFalse);
     expect(room.payloadReads, 512);
+    expect((await store.open(room)).completedScanHead, 'e0');
+  });
+
+  testWidgets('hung history network does not hold another maintenance owner',
+      (tester) async {
+    final room = _Room(1)..prev_batch = 'older';
+    final network = Completer<int>();
+    var requesting = false;
+    room.historyRequest = () {
+      requesting = true;
+      return network.future;
+    };
+    var allowed = true;
+    var finished = false;
+    final store = RoomMentionStore();
+    unawaited(store
+        .scan(room, shouldContinue: () => allowed)
+        .then((_) => finished = true));
+    await tester.pump();
+    expect(requesting, isTrue);
+    MaintenanceLease? anotherOwner;
+    final maintenance = MaintenanceActivity.instance;
+    unawaited(maintenance.acquireHeavy().then((lease) => anotherOwner = lease));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    try {
+      expect(anotherOwner, isNotNull,
+          reason: 'network waiting must not consume the local heavy budget');
+      expect(room.payloadReads, 0);
+    } finally {
+      allowed = false;
+      anotherOwner?.release();
+      network.complete(0);
+      await tester.pump(const Duration(milliseconds: 200));
+      // On the RED implementation the queued owner only acquires after cancel.
+      anotherOwner?.release();
+    }
+    expect(finished, isTrue);
+    expect((await store.open(room)).completedScanHead, isNull);
+  });
+
+  testWidgets('history reply reacquires maintenance before any body read',
+      (tester) async {
+    final room = _Room(1)..prev_batch = 'older';
+    final network = Completer<int>();
+    room.historyRequest = () => network.future;
+    var finished = false;
+    final store = RoomMentionStore();
+    unawaited(store.scan(room).then((_) => finished = true));
+    await tester.pump();
+    final anotherOwner = await MaintenanceActivity.instance.acquireHeavy();
+    expect(anotherOwner, isNotNull);
+    room.prev_batch = null;
+    network.complete(0);
+    await tester.pump();
+    expect(room.payloadReads, 0);
+    expect(finished, isFalse);
+    anotherOwner!.release();
+    await tester.pump();
+    expect(room.payloadReads, 1);
+    expect(finished, isTrue);
     expect((await store.open(room)).completedScanHead, 'e0');
   });
 }

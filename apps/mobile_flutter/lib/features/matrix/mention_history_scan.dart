@@ -136,7 +136,7 @@ final class MentionHistoryScan {
     }
     final seen = <String>{};
     while (!reachedTarget && !exhausted) {
-      final lease = await _permit();
+      var lease = await _permit();
       try {
         if (_snapshot == null) {
           // An appended history fragment is anchored after the last captured
@@ -167,7 +167,12 @@ final class MentionHistoryScan {
           exhausted = true;
           continue;
         }
+        // The public SDK request owns its network/sync transaction; it does not
+        // consume this reader's local body budget. Do not hold the exclusive
+        // maintenance permit through an arbitrarily long network response.
+        lease.release();
         final received = await _guard(room.requestHistory(historyCount: 256));
+        lease = await _permit();
         await _afterRead(lease);
         if (received == 0 && before == room.prev_batch) {
           // Lack of progress is not proof that an inaccessible boundary was

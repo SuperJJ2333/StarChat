@@ -1,0 +1,37 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart
+00:00 +0: hung history network does not hold another maintenance owner
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: not null
+  Actual: <null>
+network waiting must not consume the local heavy budget
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart:398:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart line 398
+The test description was:
+  hung history network does not hold another maintenance owner
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: hung history network does not hold another maintenance owner [E]
+  Test failed. See exception logs above.
+  The test description was: hung history network does not hold another maintenance owner
+
+Warning: At least one test in this suite creates an HttpClient. When running a test suite that uses
+TestWidgetsFlutterBinding, all HTTP requests will return status code 400, and no network request
+will actually be made. Any test expecting a real network connection and status code will fail.
+To test code that needs an HttpClient, provide your own HttpClient implementation to the code under
+test, so that your test can consistently provide a testable response to the code under test.
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: hung history network does not hold another maintenance owner

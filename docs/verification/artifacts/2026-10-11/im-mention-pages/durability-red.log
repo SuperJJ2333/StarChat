@@ -1,0 +1,32 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart
+00:00 +0: failed platform write retains pending and retries the uncommitted head
+00:00 +0 -1: failed platform write retains pending and retries the uncommitted head [E]
+  Expected: null
+    Actual: 'e0'
+  a false platform result must not acknowledge a checkpoint
+
+  package:matcher                                            expect
+  package:flutter_test/src/widget_tester.dart 473:18         expect
+  test\features\matrix\mention_history_scan_test.dart 230:5  main.<fn>
+
+Warning: At least one test in this suite creates an HttpClient. When running a test suite that uses
+TestWidgetsFlutterBinding, all HTTP requests will return status code 400, and no network request
+will actually be made. Any test expecting a real network connection and status code will fail.
+To test code that needs an HttpClient, provide your own HttpClient implementation to the code under
+test, so that your test can consistently provide a testable response to the code under test.
+00:00 +0 -1: failed initial platform write does not cache a successfully opened state
+00:00 +0 -2: failed initial platform write does not cache a successfully opened state [E]
+  Expected: throws <Instance of 'StateError'>
+    Actual: <Instance of 'Future<UnreadMentionTracker>'>
+     Which: emitted <Instance of 'UnreadMentionTracker'>
+
+  package:matcher                                             expectLater
+  package:flutter_test/src/widget_tester.dart 507:8           expectLater
+  test\features\matrix\mention_history_scan_test.dart 251:11  main.<fn>
+
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: failed initial platform write does not cache a successfully opened state
+  C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart: failed platform write retains pending and retries the uncommitted head

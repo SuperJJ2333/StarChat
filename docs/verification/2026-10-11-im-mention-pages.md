@@ -5,7 +5,7 @@
 - 按已批准 `docs/superpowers/plans/2026-10-11-im-reliability-remediation.md` R7a，主任务授权此子任务实现、测试及提交；不部署。
 - 独立工作树 `C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat`，分支 `codex/im-mention-pages`，起点 `8475a0b4`；为保留已经释放的 R8cap 接线，先 cherry-pick `ffe49562` 为 `b611c1ba546d8a87d3419b4bbd446bce3e6b9daf`。只把此后的 R7a 提交交给集成者。
 - 所有权：`room_mention_store.dart`、`unread_mention_tracker.dart`、新 `mention_history_scan.dart`、提及测试；`matrix_e2ee_client.dart` 已获 R8 owner 释放，只调整扫描组合。未改 AppHome/main、媒体、密钥或加密合同。
-- 当前：专项 51 PASS，7 个修改 Dart 文件范围 analyze exit 0、无问题；等待主任务独立 SPEC → QUALITY 审查。全量 Flutter、原生构建/真机由最终候选统一执行。
+- 首次冻结：专项 51 PASS，7 个修改 Dart 文件范围 analyze exit 0、无问题。主任务独立 SPEC 基本符合，QUALITY 指出持久化返回值和网络等待占许可两项，后续修复与复核见下节。全量 Flutter、原生构建/真机由最终候选统一执行。
 
 ## 根因、实施与兼容边界
 
@@ -51,3 +51,12 @@ Windows 10.0.19045 / PowerShell 7.6.5，全部 terminal 为 pwsh + UTF-8 无 BOM
 - 精确主动/工具时长未连续计时；测试日志执行约 6 秒不等于任务总墙钟。
 
 下一步：按冻结输入完成独立规格审查后质量审查，修复发现项，再交主任务合入。回退只回退扫描器接线/实现，不清库、不删除聊天正文或恢复密钥、不重建账号。最终真机快滑/键盘/切房、弱网与原生 SDK 读写仍待最终候选验收。
+
+## 独立审查后的修复
+
+基于冻结 `fe2ccd350e825bc8dc0e18dc3ccc31fe64031555` 的 QUALITY 反馈补两个真实失败回归：
+
+- SharedPreferences 平台 `setValue` 返回 false 时，正式 `scan` 错把 checkpoint 确认为 e0，`open` 也返回了成功状态（`durability-red.log` 两项预期失败）。现在 `open` / `save` 检查平台确认；失败只读 reload 偏好缓存，避免插件先更新的乐观缓存被另一个 store 当成已提交。扫描保留 pending、恢复原 checkpoint，平台恢复后重新完整扫描并保存；没有删除持久数据。
+- 挂起历史网络请求占住全局 heavy lease，第二个维护 owner 在 200ms 内拿不到许可（`network-budget-red.log` 预期失败）。核对本提交 SDK `Room.requestHistory`（`third_party/matrix/lib/src/room.dart`）：先等 `client.getRoomEvents`，响应后 SDK 自己执行同步与数据库事务，不依赖 reader 的本地正文许可。现在网络前释放 lease，返回后重新申请并检查账号/history generation；正文页读取至 ingest 完成仍持有同一许可。额外用例验证响应到达时另一 owner 未释放，正文读取仍为 0，释放后才继续。
+
+后续专项仍运行上面的七个测试文件，新增四项后共 **55 PASS**；7 个修改 Dart 文件范围 analyze 无问题。证据 `followup-focused-green.log` / `followup-analyze.log`，输入身份 `followup-input-hashes.json`。`followup-green.log` 为新 reader 文件内 15 项通过的较窄定位证据。此次只修改原 owner 的 store、reader、测试与专属证据，等待主任务针对 follow-up 复核。

@@ -1,0 +1,18 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-mention-pages/StarChat/apps/mobile_flutter/test/features/matrix/mention_history_scan_test.dart
+00:00 +0: 100000 history rows retain at most one body page and read each once
+00:04 +1: 1000 row reader releases all consumed page bodies
+00:04 +2: 10000 row reader releases all consumed page bodies
+00:05 +3: 100000 row reader releases all consumed page bodies
+00:08 +4: captured read marker and head survive receipt and newer sync changes
+00:08 +5: unreachable read marker resolves without rereading any body
+00:08 +6: revocation before checkpoint persistence cannot move in-memory head
+00:08 +7: failed platform write retains pending and retries the uncommitted head
+00:08 +8: failed initial platform write does not cache a successfully opened state
+00:08 +9: interaction stops page reads until 500ms quiet
+00:09 +10: metadata registration yields at 256 IDs and cancels while interactive
+00:09 +11: cancel hung body read completes within 200ms without checkpoint
+00:09 +12: server history extends only behind the captured tail
+00:09 +13: hung history network does not hold another maintenance owner
+00:09 +14: history reply reacquires maintenance before any body read
+00:09 +15: All tests passed!
