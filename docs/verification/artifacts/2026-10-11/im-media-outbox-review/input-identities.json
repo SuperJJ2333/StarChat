@@ -1,0 +1,94 @@
+{
+  "runtime": "Flutter 3.44.9, Dart 3.12.2, Windows 10, PowerShell 7 UTF8",
+  "source_identity_kind": "git blob IDs are independent of checkout line endings",
+  "recorded": "2026-10-11T13:46:11.9924316+08:00",
+  "evidence": [
+    {
+      "modified": "2026-10-11T13:46:11.1205432+08:00",
+      "raw_sha256": "11A4BEF0FD8507B2E1AE3C79B6AFB7910A8DC740531F7B2937E5BE228A0335E9",
+      "lf_utf8_sha256": "11A4BEF0FD8507B2E1AE3C79B6AFB7910A8DC740531F7B2937E5BE228A0335E9",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\review-spec.md"
+    },
+    {
+      "modified": "2026-10-11T13:45:01.9655449+08:00",
+      "raw_sha256": "CB14E5F89175483ECC6515F6D20F9D02A4DFBDCABBE14927DD1A5B50FE39EB8B",
+      "lf_utf8_sha256": "CB14E5F89175483ECC6515F6D20F9D02A4DFBDCABBE14927DD1A5B50FE39EB8B",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\review-quality.md"
+    },
+    {
+      "modified": "2026-10-11T13:42:20.8498022+08:00",
+      "raw_sha256": "5F6434650DAA1F3DF7F14410FEE5DBD4ABBC82DEE5F1361338DF5A17FE88082D",
+      "lf_utf8_sha256": "5F6434650DAA1F3DF7F14410FEE5DBD4ABBC82DEE5F1361338DF5A17FE88082D",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\independent_edges_test.dart"
+    },
+    {
+      "modified": "2026-10-11T13:46:11.4764294+08:00",
+      "raw_sha256": "972987ED45CDD1D6C5ECA789D3C544D7F9291A2309ED9F23A8DA58FE168D7993",
+      "lf_utf8_sha256": "693135D14D754FFFE9F845F03F53A84C52E1FBEECACBF40FE99A62420624022E",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\independent-edges-red.log"
+    },
+    {
+      "modified": "2026-10-11T13:46:11.4803354+08:00",
+      "raw_sha256": "971C4CC51F4D1E13147C8237BB141A6F01342D1225EEAD0081BFF08C840FAB7A",
+      "lf_utf8_sha256": "D11A489695C0EF601FA3196223A44924D18A0B40AEF7EA8B89387FD5F408B059",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\replacement-copy-red.log"
+    },
+    {
+      "modified": "2026-10-11T13:46:11.4842454+08:00",
+      "raw_sha256": "E156EE7A09E3A34A225B983D84939699D8FF7C67195090DC3CFCF5DC972CC95A",
+      "lf_utf8_sha256": "DAB93867CC0DB888FFBE45AB8A9474760E02CC72AA48185BEA6B4F308B72FE46",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\replacement-copy-verified-red.log"
+    },
+    {
+      "modified": "2026-10-11T13:46:11.4871724+08:00",
+      "raw_sha256": "3D93CBE97D48DDD1510A2FBDC08C6EFF7DA1905DEB803B734F5D4364545D5410",
+      "lf_utf8_sha256": "C1514F6B14401B2D8318B7B500E53D5F78E81E1726441B7D92B646D9C4A6B824",
+      "path": "docs\\verification\\artifacts\\2026-10-11\\im-media-outbox-review\\replacement-flight-red.log"
+    }
+  ],
+  "active_wait_duration": "not measured",
+  "command": "flutter test --no-pub <absolute independent_edges_test.dart> --reporter expanded; later probes selected by --plain-name",
+  "source": [
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart",
+      "git_blob": "225ae2928d85643bed9cb1c8c77f91e00b62fd33"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_recovery_service.dart",
+      "git_blob": "c56049aa8d34adb239e769755790cdc1b44eccfc"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_outbox_sender.dart",
+      "git_blob": "fb3dfddbe0ae153f77a076a0f9127cc8c06092bf"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_outbox_pending_view.dart",
+      "git_blob": "03404390fae860b6669c7a68487531b47b4a6f69"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "git_blob": "24000ee3d9a89f793e00ff12ed23a93849b2043e"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "git_blob": "ac9815cd70040cbf8aae042cf60f6d80afe8a46e"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/app_home.dart",
+      "git_blob": "c58633bc631667ce7b77499af7b63fc3b3e699ac"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "git_blob": "7b5941422c32d5d26666802641576f4945f283f2"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart",
+      "git_blob": "87528151937f0d6e100dc419f18b4df5ce8e5198"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart",
+      "git_blob": "457a74a66a36b602467edd6c4ce165be273aa7c3"
+    }
+  ],
+  "candidate": "850710bd52d5763e8a3831e0665cb1eb5dbe44fd"
+}

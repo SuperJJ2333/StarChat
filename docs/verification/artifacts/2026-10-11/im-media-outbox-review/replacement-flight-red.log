@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart
+00:00 +0: replacement recovery retries a suspended same-owner flight after settle
+00:00 +0 -1: replacement recovery retries a suspended same-owner flight after settle [E]
+  Expected: <1>
+    Actual: <0>
+  settled orphan must become ACK-unknown, not permanent not-admitted
+
+  package:matcher                                                                                                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                                                      expect
+  ..\..\..\..\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-media-outbox-review\independent_edges_test.dart 156:5  main.<fn>
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart: replacement recovery retries a suspended same-owner flight after settle

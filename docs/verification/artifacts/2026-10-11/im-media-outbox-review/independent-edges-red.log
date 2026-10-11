@@ -1,0 +1,27 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart
+00:00 +0: a hanging resolver does not prevent another durable intent
+00:00 +0 -1: a hanging resolver does not prevent another durable intent [E]
+  Expected: not null
+    Actual: <null>
+  B must at least commit intent while A resolver is pending
+
+  package:matcher                                                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                                                     expect
+  ..\..\..\..\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-media-outbox-review\independent_edges_test.dart 46:5  main.<fn>
+
+00:00 +0 -1: earlier automatic retry replaces an existing later timer
+00:03 +0 -2: earlier automatic retry replaces an existing later timer [E]
+  Expected: <2>
+    Actual: <1>
+  B two-second retry must not wait for A five-second deadline
+
+  package:matcher                                                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                                                     expect
+  ..\..\..\..\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-media-outbox-review\independent_edges_test.dart 70:5  main.<fn>
+
+00:03 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart: a hanging resolver does not prevent another durable intent
+  C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart: earlier automatic retry replaces an existing later timer

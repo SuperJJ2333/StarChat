@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart
+00:00 +0: replacement owner cancellation retains an active source copy
+00:00 +0 -1: replacement owner cancellation retains an active source copy [E]
+  Expected: null
+    Actual: PathAccessException:<PathAccessException: Cannot delete file, path = 'C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/tmp\durable-e4dcf329\555b025b394c13903194713daee4cd8834f2652c1c782bafbe3549e069b6f6fd\sources\6f5a6034e770acbfb3f797e6a7eb7948d470d45f9928f92b7d72dc7c45e6d0cd.bin.part' (OS Error: 另一个程序正在使用此文件，进程无法访问。, errno = 32)>
+  cancellation must defer cleanup instead of deleting an active copy
+
+  package:matcher                                                                                                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                                                      expect
+  ..\..\..\..\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-media-outbox-review\independent_edges_test.dart 124:5  main.<fn>
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart: replacement owner cancellation retains an active source copy

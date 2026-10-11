@@ -1,0 +1,26 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart
+00:00 +0: replacement owner cancellation retains an active source copy
+00:00 +0 -1: replacement owner cancellation retains an active source copy [E]
+  PathAccessException: Cannot delete file, path = 'C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/tmp\durable-e7d032b3\555b025b394c13903194713daee4cd8834f2652c1c782bafbe3549e069b6f6fd\sources\6f5a6034e770acbfb3f797e6a7eb7948d470d45f9928f92b7d72dc7c45e6d0cd.bin.part' (OS Error: 另一个程序正在使用此文件，进程无法访问。, errno = 32)
+  dart:io                                                                                                                                  FileSystemEntity.delete
+  package:liuhetong_mobile/core/outbox/media_outbox_store.dart 613:43                                                                      SqliteMediaOutboxStore.releaseTerminalSource
+  ===== asynchronous gap ===========================
+  dart:async                                                                                                                               _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/core/outbox/media_outbox_store.dart 610:18                                                                      SqliteMediaOutboxStore.releaseTerminalSource
+  package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart 426:19                                                           MediaOutboxRecoveryService.cancel
+  ===== asynchronous gap ===========================
+  dart:async                                                                                                                               _CustomZone.registerUnaryCallback
+  package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart 418:5                                                            MediaOutboxRecoveryService.cancel
+  ..\..\..\..\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-media-outbox-review\independent_edges_test.dart 111:23  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                                                               _CustomZone.registerUnaryCallback
+  ..\..\..\..\im-runtime-bounds\StarChat\docs\verification\artifacts\2026-10-11\im-media-outbox-review\independent_edges_test.dart 75:5    main.<fn>
+
+  TimeoutException after 0:00:30.000000: Test timed out after 30 seconds. See https://pub.dev/packages/test#timeouts
+  dart:isolate  _RawReceivePort._handleMessage
+
+00:53 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-runtime-bounds/StarChat/docs/verification/artifacts/2026-10-11/im-media-outbox-review/independent_edges_test.dart: replacement owner cancellation retains an active source copy
