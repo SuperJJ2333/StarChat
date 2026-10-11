@@ -17,3 +17,11 @@ Flutter集成测试仅analyze通过，尚未在手机/模拟器执行。新增iO
 独立首审发现两项边界：Swift未拒绝目录占据普通文件名；两端exists跟随链接会漏过悬空optional WAL/part。Android旧实现新增专项得到6项中1项预期行为RED，修复为NOFOLLOW_LINKS属性类型检查后6存储+11相邻原生测试=17PASS（native-storage-boundary-*-test/green.txt）。首次错误任务名testDebugUnitTest在flavor下歧义，留native-storage-boundary-red.txt作为环境失败，不算行为RED。iOS改用lstat并增加同类XCTest，仍待macOS编译/执行。文件操作限定固定sandbox，无法据此声称对同进程恶意并发替换提供原子防护。新增测试nullable警告改为requireNotNull，历史第三方/Gradle警告保留。
 
 新增独立macOS工作流im-native-storage.yml，精确源码与锁文件存证，真实XCTest读回目录策略；诊断host仅排除当前不支持arm64 simulator的mobile_scanner/MLKit，最终生产包仍须全插件构建。尚未执行前不标PASS，亦不替代真实设备备份/锁屏验收。
+
+## 2026-10-11 13:12+08 后续结果
+
+前文为分阶段历史结果。Android完整JVM89PASS之后改用Os.lstat，冻结41c86084。Robolectric4.14.1默认lstat对不存在文件返回mode0，与真实ENOENT不同；以实际host NOFOLLOW属性实现API24 Posix及API35 Linux shadows，最终12PASS。中间final.txt为Kotlin静态override编译失败，正式绿色证据是android-native-storage-api24-35-posix.txt，不混用。API28现有模拟器运行仅含合成文件的Os.lstat shell probe，regular/directory/dangling/ENOENT PASS，已清理其固定临时目录；此证据不能替代真实私有目录及备份验收。独立审查41c86084 SPEC→QUALITY PASS。
+
+iOS run38112151641（bdbaab66）编译及运行成功但3项XCTest失败，不是PASS。run38113138721仅提取该次xcresult：后两例重复目录创建Code516，首例Failure.unavailable。原始artifact SHA65778296a8fa6eca633adaca1e29b0e7024e3982ea79278852dea352eb0e6046；诊断artifact SHAb0c0c12cbba2b5a249bb73236b144c940c169d87fc4c7255d76ebd38b5d1fb9e。c8dba609保留已有目录并复核策略，新增重复调用和能力诊断，内部错误区分保护/备份/容量，channel对外仍统一脱敏错误。run38113845125继续验证；没有降低iOS保护门禁或把模拟器缺能力直接视为生产通过。
+
+41c86084最终Android完整JVM执行：Gradle exit0，13类95项中**94 PASS / 1条件skip / 0失败**。skip为历史DeltaApplier真实签名APK互通夹具未提供，不是存储测试；存储12项全执行通过。前文“89PASS”是未扣除同一历史skip的总用例数，修正为88PASS/1skip。原始第一次全量命令误排除不存在的packJniLibs任务导致配置失败，改为仅排除Flutter编译后完成；两日志分别full.txt及full-corrected.txt保留。最终XML统计和hash见android-native-41c86084-results.json；不以Gradle success推断所有条件用例执行。

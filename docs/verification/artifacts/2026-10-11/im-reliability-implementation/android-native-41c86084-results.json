@@ -1,0 +1,26 @@
+{
+  "source_commit": "41c86084f9accf9a0fa6eef26968ed47b63adbad",
+  "classes": 13,
+  "tests": 95,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 1,
+  "skipped_cases": [
+    "TEST-com.liuhetong.mobile.update.DeltaApplierTest.xml:real signed APK protocol interoperability when explicit fixtures supplied"
+  ],
+  "xml_sha256": {
+    "TEST-com.dexterous.flutterlocalnotifications.ForegroundServiceLifecycleTest.xml": "75cc9ec6a4fb7fd7f6b0322e1f863b054cd4012aae220995f162b68102b76023",
+    "TEST-com.liuhetong.mobile.call.BackgroundCallPresentationTest.xml": "fde810c106f9313221fff4a5d06dde4bfe9a2bbbfa1ad050015300030e554c42",
+    "TEST-com.liuhetong.mobile.call.IncomingCallNotificationTest.xml": "6d383e3742ba1d0dfa9ab31f705652746e8ce1b3e47ba949bd7c52aa40dcac9e",
+    "TEST-com.liuhetong.mobile.call.LockScreenCallPresentationTest.xml": "758e921d28e3ab68ff15223352eda9bc254703f21b0f27a52d012bfa1cb9ae7a",
+    "TEST-com.liuhetong.mobile.call.PendingCallActionsTest.xml": "6e18a0609d9cf73f60468558d924e674978da0d6760905f3c97abb4d75c028e2",
+    "TEST-com.liuhetong.mobile.media.BackgroundMediaDownloadsTest.xml": "f95f1aad01ddf20c7ac606b959b40b0ab15a0d076b9b3959158196a4c17bd73b",
+    "TEST-com.liuhetong.mobile.media.BackgroundMediaPolicyTest.xml": "49b789c51e3e2636a77c871e4b446c542a40833a38d78c24628b51759c34b2df",
+    "TEST-com.liuhetong.mobile.media.MediaStoragePolicyTest.xml": "56d05d831973d46a2aed1f7dbf2c2c2c5eb569e226d379db4d7f8b53de6878f2",
+    "TEST-com.liuhetong.mobile.push.NativeMessageNotificationsTest.xml": "25d919e0c44e53481cc759ad0b657f51c210a2aaa69ee0fcfeaf271425a253c4",
+    "TEST-com.liuhetong.mobile.push.NativePushBridgeTest.xml": "64859b93ad85fbc61e86aa51ddc4c09c1260d637976d4e7c60a4015e9fdf4b5e",
+    "TEST-com.liuhetong.mobile.SyncKeepAliveResourceOwnerTest.xml": "44a92a8ac5a3e63e9ff502d84ccf0558c63b858ee25ce7762d92daf814fd7277",
+    "TEST-com.liuhetong.mobile.update.DeltaApplierTest.xml": "1b007335977863d20cabb05da9595cdb97d3e6acddd6ea729cdfe2618fd3dfd6",
+    "TEST-io.flutter.plugins.imagepicker.SystemCameraUriGrantTest.xml": "290bf00fdc47c24b37bb941a6a2f2c9deeab5498e710da5a2fab390418c327c9"
+  }
+}

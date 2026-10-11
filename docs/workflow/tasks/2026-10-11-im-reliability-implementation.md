@@ -22,9 +22,9 @@
 | R7c | 已提交及双审 | root；7454986f；40PASS/analyze0，独立17PASS | 共享候选与真实冷温热启动 |
 | R7d | 热查询块索引已集成双审；冷查询待后续 | b888e282；43相邻+8独立PASS；1M warm仅2624 ID；冷构建仍O(N) | 实机profile、cold/提及元数据另验 |
 | R8a | 上传前预检及SDK/lease接线已集成双审 | 8475a0b4/8d3a38f3/3e0ce735；独立14PASS | 最终共享候选 |
-| R8其余 | 活动预算候选已集成；持久任务/缓存索引实施中 | 9b9ab4d7（原82a8eca5），127专项PASS；native53bd03f4+bdbaab66，6+11相邻Android PASS；durable独立owner | 预算双审、native复审/macOS、真实持久接线后共享候选 |
-| R9 | 日志轮转已部署；其余待实施 | root；commit b307704a | 峰值观测/隔离冗余/历史治理仍待 |
-| R10 | 有界脱敏运行采样实施中 | fix_scheduler_r6；固定分桶、守恒分母、不输出原始URL/正文 | 采样器测试/独立审查；实机/群容量单列 |
+| R8其余 | 活动预算双审通过；缓存索引已集成待审查修正；持久任务实施中 | 9b9ab4d7独立46PASS；43acaaca缓存134专项PASS；Android41c86084独立双审；iOS实际CI失败待修复 | 缓存失败校准修正、durable冻结、iOS原生GREEN后共享候选 |
+| R9 | 日志轮转已部署；worker整批租约已复现并实施最小修复 | root / fix_scheduler_r6；b307704a；隔离70dee9dd | R9a逐条临执行领取；active超时R9b与峰值/冗余/历史治理单列 |
+| R10 | 首版采样与生产聚合完成；独立审查发现两项需修 | 3b52c632独立10PASS；review_media_android修统计命名/继承stdout超时 | 修正后独立审查；不以零DB fetch推断空响应 |
 | R11 | 外部审核依赖 | 厂商通道申请 | 获批后按固定包名签名接入 |
 
 并行实现使用独立工作树及不相交文件；实现者不部署。root 汇总后按规格/领域→质量安全顺序审查。历史脚本/证据不能代替当前候选门禁，未完成的测试不标通过。
@@ -66,3 +66,19 @@ R7d精确数据：旧百万未知ID冷/热10726/10926ms；新首次构建13081ms
 R8活动逻辑预算192MiB不是RSS上限；普通文件48MiB、图片/视频31.5MiB还取现有业务限制较小值。超过限制必须明确提示且不无限重试，RoomPage/pending UI由持久任务owner一并联测。当前队列驻留/相册native originalBytes入口仍待文件化，不声称OOM已经解决。
 
 后续按序：预算与原生复审→持久任务/目录索引冻结集成→一次完整共享门禁及两端原生→递增版本构建/固定Android重建验证→授权范围内分平台交付。外部签名/设备仅阻断依赖步骤；R9 7–14天资源、隔离冗余/RPO/RTO、历史财务DEAD及R11厂商资质仍为明确未完成项。
+
+## 13:12+08 阶段更新（仍未发布客户端）
+
+2026-10-11T05:10:51Z 只读生产设置再次确认两端 `0.4.44+2213`，Android registry SHA `08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271`；服务器无2214文件，现有本地worktree pubspec无高于2213版本，近期CI无其他更高候选。准备后续 `0.4.45+2214`，实际冻结前仍核验源输入；尚未修改线上版本或宣称完成包。
+
+Android原生完整JVM门禁在bdbaab66基础上89 PASS。随后为消除最低API工具链不确定性，把NOFOLLOW类型检查换成API21已有的Os.lstat；先观察到Robolectric缺失文件模型错误，再补精确host no-follow shadows，41c86084在API24/35共12专项PASS，独立SPEC→QUALITY通过。真实API28模拟器shell调用Os.lstat确认普通文件、目录、悬空链接和ENOENT，已清理本次固定临时目录。它不是app-private/备份/加密或真实手机验收。最终全原生仍绑定新候选执行。
+
+iOS run38112151641原生源码编译成功，3个XCTest失败。使用独立run38113138721提取原xcresult而未重复构建，确认重复createDirectory(withIntermediateDirectories:false)触发Code516，另首个unavailable尚需区分保护/备份排除/容量。c8dba609只在目录缺失时创建，增加重复初始化保持内容测试、合成能力诊断和始终导出结果；run38113845125执行中。保持实际属性读回与失败拒绝，不为模拟器放宽生产策略。
+
+缓存索引c3050684集成为43acaaca，已有134专项PASS及analyze0；root审查发现背景扫描失败时canEvict仍保持true，与承诺不符，已交owner新增RED修正。持久附件已验证跨房公平、真实SDK上传/同txid重试、页面销毁后迟到ACK，等待最终源码及独立双审，不提前将作者测试写成集成PASS。
+
+R10采样窗口04:30:44–04:35:44UTC，business 576行=366HTTP完成+210未匹配；Synapse167=111+56，sync worker40=23+17，Getui0行。所有分母保留，HTTP200不等于真实用户恢复/设备到达。独立审查确认 `[0 dbevts]` 仅为DB fetch数量，原“idle”解释撤回，修正为长轮询且零DB fetch候选；另run_bounded的继承stdout子进程可导致close等待超出预算，需行为RED与修正后重新审查。首版10测试通过不掩盖上述新发现。
+
+R9隔离真实Worker/consumer合成时钟复现：单慢301秒或49×7秒使预领尾部被其他consumer接管后仍被旧worker执行；另单active301秒过期是独立缺陷。已批准R9a仅worker逐条临执行claim，保留topic/退避/维护/幂等；R9b续租/fencing另审，不改变金融handler、schema或重放历史DEAD。对单个handler的调用重复不能据此推断业务重复记账。
+
+Android最终XML复核修正计数：41c86084全套95项为94PASS/1条件skip（历史DeltaApplier签名APK夹具未提供），无失败/错误，存储12全部执行。此前“89PASS”也是含该skip总数，准确为88PASS/1skip。已在原生报告同步纠正，原始日志保留。
