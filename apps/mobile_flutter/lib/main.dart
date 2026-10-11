@@ -88,37 +88,48 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
   installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: trimOptionalMediaMemoryCaches).install();
   PerformanceMetrics.instance.startFrameObservation();
-  await AppConfig.loadRuntimeVersion();
-  startupDiagnostics.updateVersion(
-      AppConfig.appVersionName.split('-').first, AppConfig.appBuildNumber);
-  final themeController = ThemeController(
-    store: SharedPreferencesThemePreferenceStore(
-      await SharedPreferences.getInstance(),
-    ),
-  );
-  await themeController.load();
-  // BUG-08：「减少动态效果」是本地设置，启动即读取，并由根组件投影到
-  // MediaQuery，使所有动效组件与页面转场在首帧就遵循该设置。
-  motionPreferences.attachStore(SharedPreferencesMotionPreferenceStore(
-    await SharedPreferences.getInstance(),
-  ));
-  await motionPreferences.load();
-  // BUG-40：「语音自动连播」（默认开）本地设置启动即读取。
-  voiceAutoPlayPreferences.attachStore(SharedPreferencesVoiceAutoPlayStore(
-    await SharedPreferences.getInstance(),
-  ));
-  await voiceAutoPlayPreferences.load();
-  final diagnosticsSpool = SharedPreferencesChatDiagnosticSpoolStore(
-      await SharedPreferences.getInstance());
-  final store = SecureSessionStore();
-  final installationReconciler = InstallationReconciler(
-    marker: SharedPreferencesInstallationMarker(
-      await SharedPreferences.getInstance(),
-    ),
-    probe: FileSystemInstallationContainerProbe(),
-    store: store,
-    onFailure: recordStartupFailure,
-  );
+  late ThemeController themeController;
+  late SharedPreferencesChatDiagnosticSpoolStore diagnosticsSpool;
+  late SecureSessionStore store;
+  late InstallationReconciler installationReconciler;
+  var shellPrepared = false;
+
+  Future<void> prepareApplication() async {
+    await observeStartupOperation(AppConfig.loadRuntimeVersion,
+        boundary: StartupFailureBoundary.versionLoad);
+    startupDiagnostics.updateVersion(
+        AppConfig.appVersionName.split('-').first, AppConfig.appBuildNumber);
+    final preferences = await SharedPreferences.getInstance();
+    final loadedThemeController = ThemeController(
+      store: SharedPreferencesThemePreferenceStore(
+        preferences,
+      ),
+    );
+    await loadedThemeController.load();
+    // BUG-08：「减少动态效果」是本地设置，启动即读取，并由根组件投影到
+    // MediaQuery，使所有动效组件与页面转场在首帧就遵循该设置。
+    motionPreferences.attachStore(SharedPreferencesMotionPreferenceStore(
+      preferences,
+    ));
+    await motionPreferences.load();
+    // BUG-40：「语音自动连播」（默认开）本地设置启动即读取。
+    voiceAutoPlayPreferences.attachStore(SharedPreferencesVoiceAutoPlayStore(
+      preferences,
+    ));
+    await voiceAutoPlayPreferences.load();
+    diagnosticsSpool = SharedPreferencesChatDiagnosticSpoolStore(preferences);
+    store = SecureSessionStore();
+    installationReconciler = InstallationReconciler(
+      marker: SharedPreferencesInstallationMarker(
+        preferences,
+      ),
+      probe: FileSystemInstallationContainerProbe(),
+      store: store,
+      onFailure: recordStartupFailure,
+    );
+    themeController = loadedThemeController;
+    shellPrepared = true;
+  }
 
   Future<Widget> startApplication() async {
     final api = BusinessApiClient(
@@ -331,19 +342,20 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
     return gate;
   }
 
-  runApp(LiuhetongApp(
-    home: InstallationStartupGate(
-      reconcile: () async {
-        final outcome = await installationReconciler.reconcile();
-        if (outcome == InstallationResetOutcome.failed && kDebugMode) {
-          debugPrint('[installation] generation reset did not settle');
-        }
-        return outcome;
-      },
-      start: startApplication,
-      onFailure: recordStartupFailure,
-    ),
-    themeController: themeController,
+  runApp(InstallationStartupGate(
+    prepare: prepareApplication,
+    shellBuilder: (child) => shellPrepared
+        ? LiuhetongApp(home: child, themeController: themeController)
+        : CupertinoApp(title: '畅聊 ChatFlow', home: child),
+    reconcile: () async {
+      final outcome = await installationReconciler.reconcile();
+      if (outcome == InstallationResetOutcome.failed && kDebugMode) {
+        debugPrint('[installation] generation reset did not settle');
+      }
+      return outcome;
+    },
+    start: startApplication,
+    onFailure: recordStartupFailure,
   ));
 }
 
@@ -381,10 +393,19 @@ PerformanceTrace? scheduleAppStartupFirstFrame({
   }
   if (!active.recordingEnabled) return null;
   final trace = active.start(PerformanceOperationType.appStartup);
-  WidgetsBinding.instance.addPostFrameCallback((_) {
+  void finishVisibleFrame(Duration _) {
+    // Deferred frames perform layout but never reach the engine. Waiting for
+    // the shell budget must remain part of startup latency, not disappear from
+    // the metric because an invisible frame was built first.
+    if (!WidgetsBinding.instance.sendFramesToEngine) {
+      WidgetsBinding.instance.addPostFrameCallback(finishVisibleFrame);
+      return;
+    }
     trace.mark(PerformanceStage.firstFrameRendered);
     trace.finish();
-  });
+  }
+
+  WidgetsBinding.instance.addPostFrameCallback(finishVisibleFrame);
   return trace;
 }
 

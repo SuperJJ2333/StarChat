@@ -30,6 +30,165 @@ final class _FreshInstallProbe implements InstallationContainerProbe {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('held reconciliation releases a safe shell after one second',
+      (tester) async {
+    final checked = Completer<InstallationResetOutcome>();
+    var checks = 0;
+    var starts = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: InstallationStartupGate(
+        reconcile: () {
+          checks++;
+          return checked.future;
+        },
+        start: () async {
+          starts++;
+          return const Text('account-content');
+        },
+      ),
+    ));
+    await tester.pump(const Duration(milliseconds: 999));
+    expect(find.text('正在启动畅聊'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('正在启动畅聊'), findsOneWidget);
+    expect(tester.binding.sendFramesToEngine, isTrue);
+    expect(find.text('account-content'), findsNothing);
+    expect(find.byKey(const Key('installation-startup-retry')), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('正在检查本地安装状态，请稍候'), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(checks, 1);
+    expect(starts, 0);
+    checked.complete(InstallationResetOutcome.notNeeded);
+    await tester.pumpAndSettle();
+    expect(starts, 1);
+    expect(find.text('account-content'), findsOneWidget);
+  });
+
+  testWidgets(
+      'held application start reports its actual phase without reopening',
+      (tester) async {
+    final loaded = Completer<Widget>();
+    var starts = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: InstallationStartupGate(
+        reconcile: () async => InstallationResetOutcome.notNeeded,
+        start: () {
+          starts++;
+          return loaded.future;
+        },
+      ),
+    ));
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('正在打开本地聊天，请稍候'), findsOneWidget);
+    expect(find.byKey(const Key('installation-startup-retry')), findsNothing);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(starts, 1);
+    loaded.complete(const Text('late-account-content'));
+    await tester.pumpAndSettle();
+    expect(find.text('late-account-content'), findsOneWidget);
+    expect(starts, 1);
+  });
+
+  testWidgets('disposing a held gate cancels shell timers and releases frame',
+      (tester) async {
+    final checked = Completer<InstallationResetOutcome>();
+    await tester.pumpWidget(CupertinoApp(
+      home: InstallationStartupGate(
+        reconcile: () => checked.future,
+        start: () async => const Text('must-not-publish'),
+      ),
+    ));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 4));
+    checked.complete(InstallationResetOutcome.notNeeded);
+    await tester.pump();
+    expect(tester.binding.sendFramesToEngine, isTrue);
+    expect(find.text('must-not-publish'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('pre-app preferences share the same total shell budget',
+      (tester) async {
+    final preferences = Completer<void>();
+    final checked = Completer<InstallationResetOutcome>();
+    var checks = 0;
+    await tester.pumpWidget(InstallationStartupGate(
+      shellBuilder: (child) => CupertinoApp(home: child),
+      prepare: () => preferences.future,
+      reconcile: () {
+        checks++;
+        return checked.future;
+      },
+      start: () async => const Text('account-content'),
+    ));
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('正在读取本地设置，请稍候'), findsOneWidget);
+    expect(checks, 0);
+    expect(find.text('account-content'), findsNothing);
+    preferences.complete();
+    await tester.pump();
+    expect(find.text('正在检查本地安装状态，请稍候'), findsOneWidget);
+    expect(checks, 1);
+    expect(tester.binding.sendFramesToEngine, isTrue);
+    checked.complete(InstallationResetOutcome.notNeeded);
+    await tester.pumpAndSettle();
+    expect(find.text('account-content'), findsOneWidget);
+  });
+
+  testWidgets('failed preparation retries once and never opens account early',
+      (tester) async {
+    var preparations = 0;
+    var checks = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: InstallationStartupGate(
+        prepare: () async {
+          preparations++;
+          if (preparations == 1) throw StateError('private-setting');
+        },
+        reconcile: () async {
+          checks++;
+          return InstallationResetOutcome.notNeeded;
+        },
+        start: () async => const Text('account-content'),
+      ),
+    ));
+    await tester.pump();
+    expect(checks, 0);
+    expect(find.textContaining('private-setting'), findsNothing);
+    await tester.tap(find.byKey(const Key('installation-startup-retry')));
+    await tester.tap(find.byKey(const Key('installation-startup-retry')));
+    await tester.pumpAndSettle();
+    expect(preparations, 2);
+    expect(checks, 1);
+    expect(find.text('account-content'), findsOneWidget);
+  });
+
+  testWidgets('completed preparation is retained after a reconciliation retry',
+      (tester) async {
+    var preparations = 0;
+    var checks = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: InstallationStartupGate(
+        prepare: () async {
+          preparations++;
+        },
+        reconcile: () async => ++checks == 1
+            ? InstallationResetOutcome.failed
+            : InstallationResetOutcome.notNeeded,
+        start: () async => const Text('account-content'),
+      ),
+    ));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('installation-startup-retry')));
+    await tester.pumpAndSettle();
+    expect(preparations, 1);
+    expect(checks, 2);
+  });
+
   testWidgets('local startup has no intermediate checking page',
       (tester) async {
     final checked = Completer<InstallationResetOutcome>();

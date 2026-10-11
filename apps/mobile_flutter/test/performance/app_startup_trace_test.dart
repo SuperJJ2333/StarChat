@@ -3,9 +3,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
+import 'package:liuhetong_mobile/core/installation_startup_gate.dart';
+import 'package:liuhetong_mobile/core/installation_reconciler.dart';
+import 'dart:async';
 import 'package:liuhetong_mobile/main.dart' as app;
 
 void main() {
+  testWidgets('deferred startup frames do not report a visible shell',
+      (tester) async {
+    var nowUs = 0;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      clockUs: () => nowUs,
+      onRecord: records.add,
+    );
+    final checking = Completer<InstallationResetOutcome>();
+    app.scheduleAppStartupFirstFrame(recorder: recorder);
+    await tester.pumpWidget(CupertinoApp(
+        home: InstallationStartupGate(
+      reconcile: () => checking.future,
+      start: () async => const Text('ready'),
+    )));
+    expect(records, isEmpty);
+    nowUs = 1000000;
+    await tester.pump(const Duration(seconds: 1));
+    expect(records, hasLength(1));
+    expect(records.single.totalMs, 1000);
+    checking.complete(InstallationResetOutcome.notNeeded);
+    await tester.pumpAndSettle();
+    expect(records, hasLength(1));
+  });
   testWidgets('app startup trace finishes once after the first Flutter frame',
       (tester) async {
     var nowUs = 0;

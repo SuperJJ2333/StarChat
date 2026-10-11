@@ -14,11 +14,19 @@ final class InstallationStartupGate extends StatefulWidget {
     required this.reconcile,
     required this.start,
     this.onFailure,
+    this.prepare,
+    this.shellBuilder,
   });
 
   final Future<InstallationResetOutcome> Function() reconcile;
   final Future<Widget> Function() start;
   final StartupFailureObserver? onFailure;
+
+  /// Local version/preferences initialization. It must not open account data.
+  final Future<void> Function()? prepare;
+
+  /// Also wraps the account-free pending view when used above the app root.
+  final Widget Function(Widget child)? shellBuilder;
 
   @override
   State<InstallationStartupGate> createState() =>
@@ -33,12 +41,17 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
   var _started = false;
   String? _startFailure;
   bool _firstFrameDeferred = false;
+  bool _prepared = false;
+  bool _safeShellVisible = false;
+  bool _pendingDetails = false;
+  Timer? _shellTimer;
+  Timer? _detailsTimer;
 
   @override
   void initState() {
     super.initState();
-    // Keep the platform launch surface until local startup is ready. This
-    // removes the intermediate checking page without bypassing reconciliation.
+    // Short startup keeps the platform launch surface. A slow local operation
+    // releases only an account-free view; it never bypasses reconciliation.
     WidgetsBinding.instance.deferFirstFrame();
     _firstFrameDeferred = true;
     WidgetsBinding.instance.addObserver(this);
@@ -47,9 +60,28 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
 
   @override
   void dispose() {
+    _cancelPendingTimers();
     _releaseFirstFrame();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _cancelPendingTimers() {
+    _shellTimer?.cancel();
+    _detailsTimer?.cancel();
+  }
+
+  void _beginPending() {
+    _cancelPendingTimers();
+    _pendingDetails = false;
+    _shellTimer = Timer(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() => _safeShellVisible = true);
+      _releaseFirstFrame();
+    });
+    _detailsTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _pendingDetails = true);
+    });
   }
 
   void _releaseFirstFrame() {
@@ -69,6 +101,29 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
   Future<void> _reconcileAndStart() async {
     if (_checking || _started) return;
     _checking = true;
+    _beginPending();
+    if (!_prepared && widget.prepare != null) {
+      setState(() => _phase = _GatePhase.preparing);
+      try {
+        await widget.prepare!();
+        _prepared = true;
+      } catch (error) {
+        _checking = false;
+        _cancelPendingTimers();
+        final failure = safeStartupFailure(error,
+            boundary: StartupFailureBoundary.preferencesLoad);
+        notifyStartupFailure(widget.onFailure, failure);
+        if (!mounted) return;
+        setState(() {
+          _startFailure =
+              sessionFailureCategoryMessage(failure.category, stage: 'startup');
+          _phase = _GatePhase.startFailed;
+        });
+        _releaseFirstFrame();
+        return;
+      }
+      if (!mounted) return;
+    }
     if (mounted) setState(() => _phase = _GatePhase.checking);
 
     InstallationResetOutcome outcome;
@@ -85,6 +140,7 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
     }
     if (!mounted) return;
     if (outcome == InstallationResetOutcome.failed) {
+      _cancelPendingTimers();
       setState(() => _phase = _GatePhase.failed);
       _releaseFirstFrame();
       return;
@@ -95,6 +151,7 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
     try {
       final child = await widget.start();
       if (!mounted) return;
+      _cancelPendingTimers();
       setState(() {
         _child = child;
         _phase = _GatePhase.ready;
@@ -102,6 +159,7 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
       _releaseFirstFrame();
     } catch (error) {
       _started = false;
+      _cancelPendingTimers();
       final failure = safeStartupFailure(error,
           boundary: StartupFailureBoundary.applicationStart);
       notifyStartupFailure(widget.onFailure, failure);
@@ -117,9 +175,41 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
 
   @override
   Widget build(BuildContext context) {
+    final child = _buildPhase();
+    return widget.shellBuilder?.call(child) ?? child;
+  }
+
+  Widget _buildPhase() {
     if (_phase == _GatePhase.ready) return _child!;
-    if (_phase == _GatePhase.checking || _phase == _GatePhase.starting) {
-      return const SizedBox.shrink();
+    if (_phase == _GatePhase.preparing ||
+        _phase == _GatePhase.checking ||
+        _phase == _GatePhase.starting) {
+      if (!_safeShellVisible) return const SizedBox.shrink();
+      return CupertinoPageScaffold(
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(WeChatSpacing.xl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CupertinoActivityIndicator(),
+                  const SizedBox(height: WeChatSpacing.lg),
+                  Text(
+                      _pendingDetails
+                          ? switch (_phase) {
+                              _GatePhase.preparing => '正在读取本地设置，请稍候',
+                              _GatePhase.checking => '正在检查本地安装状态，请稍候',
+                              _ => '正在打开本地聊天，请稍候',
+                            }
+                          : '正在启动畅聊',
+                      textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
     final failed = _phase == _GatePhase.failed;
     return CupertinoPageScaffold(
@@ -158,4 +248,4 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
   }
 }
 
-enum _GatePhase { checking, failed, starting, startFailed, ready }
+enum _GatePhase { preparing, checking, failed, starting, startFailed, ready }
