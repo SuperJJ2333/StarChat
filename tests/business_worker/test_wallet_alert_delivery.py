@@ -19,14 +19,14 @@ def test_receipt_survives_ack_loss_and_retry_is_idempotent(monkeypatch):
     WalletIncidentService(factory, now_factory=lambda: clock[0]).observe([
         dict(fingerprint='FIXTURE:global', code='FIXTURE', severity='P0', subject_id='global')])
     consumer = OutboxConsumer(factory, now_factory=lambda: clock[0])
-    original = consumer.mark_succeeded
+    original = consumer.mark_claim_succeeded
     attempts = []
-    def lost_ack(id, *, worker_id):
+    def lost_ack(id, *, worker_id, attempt_count):
         attempts.append(id)
         if len(attempts) == 1:
             raise RuntimeError('SANDBOX_ACK_LOSS')
-        original(id, worker_id=worker_id)
-    monkeypatch.setattr(consumer, 'mark_succeeded', lost_ack)
+        original(id, worker_id=worker_id, attempt_count=attempt_count)
+    monkeypatch.setattr(consumer, 'mark_claim_succeeded', lost_ack)
     worker = Worker(consumer=consumer, handlers={'wallet.alert': SandboxWalletAlertHandler(factory)},
         worker_id='fixture', now_factory=lambda: clock[0])
     with pytest.raises(RuntimeError, match='SANDBOX_ACK_LOSS'):

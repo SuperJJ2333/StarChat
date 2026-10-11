@@ -16,18 +16,19 @@ BACKOFF_CAP = timedelta(hours=1)
 class OutboxConsumerProtocol(Protocol):
     def claim_batch(self, *, worker_id: str, limit: int, topics: list[str] | None = None) -> list[Any]: ...
 
-    def mark_succeeded(self, event_id: str, *, worker_id: str) -> None: ...
+    def mark_claim_succeeded(self, event_id: str, *, worker_id: str, attempt_count: int) -> None: ...
 
-    def mark_failed(
+    def mark_claim_failed(
         self,
         event_id: str,
         *,
         worker_id: str,
+        attempt_count: int,
         error: str,
         retry_at: datetime,
     ) -> None: ...
 
-    def mark_dead(self, event_id: str, *, worker_id: str, error: str) -> None: ...
+    def mark_claim_dead(self, event_id: str, *, worker_id: str, attempt_count: int, error: str) -> None: ...
 
 
 class MaintenanceHealth:
@@ -65,6 +66,9 @@ class Worker:
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         reap_undeliverable_age: timedelta | None = None,
     ) -> None:
+        for method in ("mark_claim_succeeded", "mark_claim_failed", "mark_claim_dead"):
+            if not callable(getattr(consumer, method, None)):
+                raise TypeError(f"consumer requires generation-fenced claim completion: {method}")
         self._consumer = consumer
         self._handlers = dict(handlers)
         self._worker_id = worker_id
@@ -168,8 +172,9 @@ class Worker:
                 error = str(exc) or exc.__class__.__name__
                 if message.attempt_count >= self._max_attempts:
                     # 死信终态：保留事件与错误供人工重放。
-                    self._consumer.mark_dead(
-                        message.id, worker_id=self._worker_id, error=error
+                    self._consumer.mark_claim_dead(
+                        message.id, worker_id=self._worker_id,
+                        attempt_count=message.attempt_count, error=error
                     )
                     logger.error(
                         "outbox event dead-lettered id=%s topic=%s attempts=%s error=%s",
@@ -179,14 +184,17 @@ class Worker:
                         error,
                     )
                 else:
-                    self._consumer.mark_failed(
+                    self._consumer.mark_claim_failed(
                         message.id,
                         worker_id=self._worker_id,
+                        attempt_count=message.attempt_count,
                         error=error,
                         retry_at=self._now_factory() + self._retry_backoff(message.attempt_count),
                     )
             else:
-                self._consumer.mark_succeeded(message.id, worker_id=self._worker_id)
+                self._consumer.mark_claim_succeeded(
+                    message.id, worker_id=self._worker_id, attempt_count=message.attempt_count
+                )
             processed += 1
         self._touch_heartbeat()
         return processed

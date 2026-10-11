@@ -1,0 +1,86 @@
+FFFFFFFFFF                                                               [100%]
+================================== FAILURES ===================================
+__ test_postgres_worker_cannot_finalize_reclaimed_same_worker_id[success-10] __
+tests\business_worker\test_worker_claim_fencing_postgres.py:110: in test_postgres_worker_cannot_finalize_reclaimed_same_worker_id
+    assert len(outcomes) == 1 and isinstance(outcomes[0], AppError), outcomes
+E   AssertionError: [1]
+E   assert (1 == 1 and False)
+E    +  where 1 = len([1])
+E    +  and   False = isinstance(1, AppError)
+__ test_postgres_worker_cannot_finalize_reclaimed_same_worker_id[failure-10] __
+tests\business_worker\test_worker_claim_fencing_postgres.py:110: in test_postgres_worker_cannot_finalize_reclaimed_same_worker_id
+    assert len(outcomes) == 1 and isinstance(outcomes[0], AppError), outcomes
+E   AssertionError: [1]
+E   assert (1 == 1 and False)
+E    +  where 1 = len([1])
+E    +  and   False = isinstance(1, AppError)
+__ test_postgres_worker_cannot_finalize_reclaimed_same_worker_id[failure-1] ___
+tests\business_worker\test_worker_claim_fencing_postgres.py:110: in test_postgres_worker_cannot_finalize_reclaimed_same_worker_id
+    assert len(outcomes) == 1 and isinstance(outcomes[0], AppError), outcomes
+E   AssertionError: [1]
+E   assert (1 == 1 and False)
+E    +  where 1 = len([1])
+E    +  and   False = isinstance(1, AppError)
+------------------------------ Captured log call ------------------------------
+ERROR    business-worker:worker.py:174 outbox event dead-lettered id=8561a5c5-1c37-4612-ad04-953a09b94fe2 topic=synthetic.claim attempts=1 error=synthetic failure
+_ test_postgres_claim_completion_race_checks_generation_under_lock[claim-mark_claim_succeeded-PUBLISHED] _
+tests\business_worker\test_worker_claim_fencing_postgres.py:125: in test_postgres_claim_completion_race_checks_generation_under_lock
+    assert callable(getattr(consumer, operation, None)), "generation-fenced completion interface required"
+E   AssertionError: generation-fenced completion interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x0000029961BEA240>, 'mark_claim_succeeded', None)
+_ test_postgres_claim_completion_race_checks_generation_under_lock[claim-mark_claim_failed-FAILED] _
+tests\business_worker\test_worker_claim_fencing_postgres.py:125: in test_postgres_claim_completion_race_checks_generation_under_lock
+    assert callable(getattr(consumer, operation, None)), "generation-fenced completion interface required"
+E   AssertionError: generation-fenced completion interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x0000029961AE94C0>, 'mark_claim_failed', None)
+_ test_postgres_claim_completion_race_checks_generation_under_lock[claim-mark_claim_dead-DEAD] _
+tests\business_worker\test_worker_claim_fencing_postgres.py:125: in test_postgres_claim_completion_race_checks_generation_under_lock
+    assert callable(getattr(consumer, operation, None)), "generation-fenced completion interface required"
+E   AssertionError: generation-fenced completion interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x00000299610B9370>, 'mark_claim_dead', None)
+_ test_postgres_claim_completion_race_checks_generation_under_lock[completion-mark_claim_succeeded-PUBLISHED] _
+tests\business_worker\test_worker_claim_fencing_postgres.py:125: in test_postgres_claim_completion_race_checks_generation_under_lock
+    assert callable(getattr(consumer, operation, None)), "generation-fenced completion interface required"
+E   AssertionError: generation-fenced completion interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x0000029961BFE720>, 'mark_claim_succeeded', None)
+_ test_postgres_claim_completion_race_checks_generation_under_lock[completion-mark_claim_failed-FAILED] _
+tests\business_worker\test_worker_claim_fencing_postgres.py:125: in test_postgres_claim_completion_race_checks_generation_under_lock
+    assert callable(getattr(consumer, operation, None)), "generation-fenced completion interface required"
+E   AssertionError: generation-fenced completion interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x0000029961AEBB30>, 'mark_claim_failed', None)
+_ test_postgres_claim_completion_race_checks_generation_under_lock[completion-mark_claim_dead-DEAD] _
+tests\business_worker\test_worker_claim_fencing_postgres.py:125: in test_postgres_claim_completion_race_checks_generation_under_lock
+    assert callable(getattr(consumer, operation, None)), "generation-fenced completion interface required"
+E   AssertionError: generation-fenced completion interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x0000029961C51BE0>, 'mark_claim_dead', None)
+_______ test_postgres_renew_fails_nowait_without_mutating_locked_claim ________
+tests\business_worker\test_worker_claim_fencing_postgres.py:177: in test_postgres_renew_fails_nowait_without_mutating_locked_claim
+    assert callable(getattr(consumer, "renew_claim", None)), "fenced renewal interface required"
+E   AssertionError: fenced renewal interface required
+E   assert False
+E    +  where False = callable(None)
+E    +    where None = getattr(<app.core.outbox.OutboxConsumer object at 0x0000029961C54230>, 'renew_claim', None)
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_worker_cannot_finalize_reclaimed_same_worker_id[success-10]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_worker_cannot_finalize_reclaimed_same_worker_id[failure-10]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_worker_cannot_finalize_reclaimed_same_worker_id[failure-1]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_claim_completion_race_checks_generation_under_lock[claim-mark_claim_succeeded-PUBLISHED]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_claim_completion_race_checks_generation_under_lock[claim-mark_claim_failed-FAILED]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_claim_completion_race_checks_generation_under_lock[claim-mark_claim_dead-DEAD]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_claim_completion_race_checks_generation_under_lock[completion-mark_claim_succeeded-PUBLISHED]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_claim_completion_race_checks_generation_under_lock[completion-mark_claim_failed-FAILED]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_claim_completion_race_checks_generation_under_lock[completion-mark_claim_dead-DEAD]
+FAILED tests/business_worker/test_worker_claim_fencing_postgres.py::test_postgres_renew_fails_nowait_without_mutating_locked_claim
+10 failed in 1.97s

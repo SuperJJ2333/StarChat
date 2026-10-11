@@ -1,0 +1,328 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                               [100%]
+================================== FAILURES ===================================
+_____ test_same_worker_id_cannot_mutate_reclaimed_generation[renew_claim] _____
+tests\business_worker\test_worker_claim_fencing.py:69: in test_same_worker_id_cannot_mutate_reclaimed_generation
+    apply_claim(consumer, operation, event_id, clock,
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_same_worker_id_cannot_mutate_reclaimed_generation[mark_claim_succeeded] _
+tests\business_worker\test_worker_claim_fencing.py:69: in test_same_worker_id_cannot_mutate_reclaimed_generation
+    apply_claim(consumer, operation, event_id, clock,
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+__ test_same_worker_id_cannot_mutate_reclaimed_generation[mark_claim_failed] __
+tests\business_worker\test_worker_claim_fencing.py:69: in test_same_worker_id_cannot_mutate_reclaimed_generation
+    apply_claim(consumer, operation, event_id, clock,
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+___ test_same_worker_id_cannot_mutate_reclaimed_generation[mark_claim_dead] ___
+tests\business_worker\test_worker_claim_fencing.py:69: in test_same_worker_id_cannot_mutate_reclaimed_generation
+    apply_claim(consumer, operation, event_id, clock,
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[None-renew_claim] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[None-mark_claim_succeeded] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[None-mark_claim_failed] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[None-mark_claim_dead] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[0-renew_claim] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[0-mark_claim_succeeded] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[0-mark_claim_failed] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[0-mark_claim_dead] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[-1-renew_claim] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[-1-mark_claim_succeeded] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[-1-mark_claim_failed] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[-1-mark_claim_dead] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[True-renew_claim] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[True-mark_claim_succeeded] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[True-mark_claim_failed] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[True-mark_claim_dead] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[1-renew_claim] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[1-mark_claim_succeeded] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[1-mark_claim_failed] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+_ test_new_claim_api_rejects_invalid_generation_without_mutation[1-mark_claim_dead] _
+tests\business_worker\test_worker_claim_fencing.py:82: in test_new_claim_api_rejects_invalid_generation_without_mutation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=attempt)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+_____________ test_new_claim_api_requires_generation[renew_claim] _____________
+tests\business_worker\test_worker_claim_fencing.py:92: in test_new_claim_api_requires_generation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker")
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+________ test_new_claim_api_requires_generation[mark_claim_succeeded] _________
+tests\business_worker\test_worker_claim_fencing.py:92: in test_new_claim_api_requires_generation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker")
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+__________ test_new_claim_api_requires_generation[mark_claim_failed] __________
+tests\business_worker\test_worker_claim_fencing.py:92: in test_new_claim_api_requires_generation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker")
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+___________ test_new_claim_api_requires_generation[mark_claim_dead] ___________
+tests\business_worker\test_worker_claim_fencing.py:92: in test_new_claim_api_requires_generation
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker")
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+______ test_claim_api_rejects_wrong_owner_and_unknown_event[renew_claim] ______
+tests\business_worker\test_worker_claim_fencing.py:103: in test_claim_api_rejects_wrong_owner_and_unknown_event
+    apply_claim(consumer, operation, requested_id, clock, worker_id=worker, attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_claim_api_rejects_wrong_owner_and_unknown_event[mark_claim_succeeded] __
+tests\business_worker\test_worker_claim_fencing.py:103: in test_claim_api_rejects_wrong_owner_and_unknown_event
+    apply_claim(consumer, operation, requested_id, clock, worker_id=worker, attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+___ test_claim_api_rejects_wrong_owner_and_unknown_event[mark_claim_failed] ___
+tests\business_worker\test_worker_claim_fencing.py:103: in test_claim_api_rejects_wrong_owner_and_unknown_event
+    apply_claim(consumer, operation, requested_id, clock, worker_id=worker, attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+____ test_claim_api_rejects_wrong_owner_and_unknown_event[mark_claim_dead] ____
+tests\business_worker\test_worker_claim_fencing.py:103: in test_claim_api_rejects_wrong_owner_and_unknown_event
+    apply_claim(consumer, operation, requested_id, clock, worker_id=worker, attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+______ test_renew_extends_only_current_lease_and_postpones_crash_reclaim ______
+tests\business_worker\test_worker_claim_fencing.py:113: in test_renew_extends_only_current_lease_and_postpones_crash_reclaim
+    consumer.renew_claim(event_id, worker_id="worker", attempt_count=message.attempt_count)
+    ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+______________ test_renew_cannot_resurrect_expired_lease[False] _______________
+tests\business_worker\test_worker_claim_fencing.py:141: in test_renew_cannot_resurrect_expired_lease
+    consumer.renew_claim(event_id, worker_id="worker", attempt_count=1)
+    ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_______________ test_renew_cannot_resurrect_expired_lease[True] _______________
+tests\business_worker\test_worker_claim_fencing.py:141: in test_renew_cannot_resurrect_expired_lease
+    consumer.renew_claim(event_id, worker_id="worker", attempt_count=1)
+    ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'renew_claim'
+_ test_expired_but_unreclaimed_generation_can_finalize_once[mark_claim_succeeded-PUBLISHED] _
+tests\business_worker\test_worker_claim_fencing.py:156: in test_expired_but_unreclaimed_generation_can_finalize_once
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_succeeded'. Did you mean: 'mark_succeeded'?
+_ test_expired_but_unreclaimed_generation_can_finalize_once[mark_claim_failed-FAILED] _
+tests\business_worker\test_worker_claim_fencing.py:156: in test_expired_but_unreclaimed_generation_can_finalize_once
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_failed'
+_ test_expired_but_unreclaimed_generation_can_finalize_once[mark_claim_dead-DEAD] _
+tests\business_worker\test_worker_claim_fencing.py:156: in test_expired_but_unreclaimed_generation_can_finalize_once
+    apply_claim(consumer, operation, event_id, clock, worker_id="worker", attempt_count=1)
+tests\business_worker\test_worker_claim_fencing.py:51: in apply_claim
+    getattr(consumer, operation)(event_id, **token, **extra)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OutboxConsumer' object has no attribute 'mark_claim_dead'
+____ test_worker_uses_original_generation_for_every_completion[success-10] ____
+tests\business_worker\test_worker_claim_fencing.py:190: in test_worker_uses_original_generation_for_every_completion
+    with pytest.raises(AppError) as failure:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE <class 'app.core.errors.AppError'>
+____ test_worker_uses_original_generation_for_every_completion[failure-10] ____
+tests\business_worker\test_worker_claim_fencing.py:190: in test_worker_uses_original_generation_for_every_completion
+    with pytest.raises(AppError) as failure:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE <class 'app.core.errors.AppError'>
+____ test_worker_uses_original_generation_for_every_completion[failure-1] _____
+tests\business_worker\test_worker_claim_fencing.py:190: in test_worker_uses_original_generation_for_every_completion
+    with pytest.raises(AppError) as failure:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE <class 'app.core.errors.AppError'>
+------------------------------ Captured log call ------------------------------
+ERROR    business-worker:worker.py:174 outbox event dead-lettered id=8f3ee7bb-dfb0-4662-b3e6-f58a380e2e99 topic=synthetic.claim attempts=1 error=synthetic handler failure
+___ test_worker_rejects_unfenced_consumer_before_any_handler_or_maintenance ___
+tests\business_worker\test_worker_claim_fencing.py:208: in test_worker_rejects_unfenced_consumer_before_any_handler_or_maintenance
+    with pytest.raises(TypeError, match="claim completion"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE <class 'TypeError'>
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_same_worker_id_cannot_mutate_reclaimed_generation[renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_same_worker_id_cannot_mutate_reclaimed_generation[mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_same_worker_id_cannot_mutate_reclaimed_generation[mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_same_worker_id_cannot_mutate_reclaimed_generation[mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[None-renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[None-mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[None-mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[None-mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[0-renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[0-mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[0-mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[0-mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[-1-renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[-1-mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[-1-mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[-1-mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[True-renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[True-mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[True-mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[True-mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[1-renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[1-mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[1-mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_rejects_invalid_generation_without_mutation[1-mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_requires_generation[renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_requires_generation[mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_requires_generation[mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_new_claim_api_requires_generation[mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_claim_api_rejects_wrong_owner_and_unknown_event[renew_claim]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_claim_api_rejects_wrong_owner_and_unknown_event[mark_claim_succeeded]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_claim_api_rejects_wrong_owner_and_unknown_event[mark_claim_failed]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_claim_api_rejects_wrong_owner_and_unknown_event[mark_claim_dead]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_renew_extends_only_current_lease_and_postpones_crash_reclaim
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_renew_cannot_resurrect_expired_lease[False]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_renew_cannot_resurrect_expired_lease[True]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_expired_but_unreclaimed_generation_can_finalize_once[mark_claim_succeeded-PUBLISHED]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_expired_but_unreclaimed_generation_can_finalize_once[mark_claim_failed-FAILED]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_expired_but_unreclaimed_generation_can_finalize_once[mark_claim_dead-DEAD]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_worker_uses_original_generation_for_every_completion[success-10]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_worker_uses_original_generation_for_every_completion[failure-10]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_worker_uses_original_generation_for_every_completion[failure-1]
+FAILED tests/business_worker/test_worker_claim_fencing.py::test_worker_rejects_unfenced_consumer_before_any_handler_or_maintenance
+42 failed in 1.56s

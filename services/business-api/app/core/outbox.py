@@ -137,6 +137,7 @@ class OutboxConsumer:
             return [self._to_message(event) for event in events]
 
     def mark_succeeded(self, event_id: str, *, worker_id: str) -> None:
+        """Legacy owner-only completion; new workers must use mark_claim_succeeded."""
         now = self._now_factory()
         with self._session_factory.begin() as session:
             event = self._locked_event(session, event_id, worker_id)
@@ -154,6 +155,7 @@ class OutboxConsumer:
         error: str,
         retry_at: datetime,
     ) -> None:
+        """Legacy owner-only completion; new workers must use mark_claim_failed."""
         with self._session_factory.begin() as session:
             event = self._locked_event(session, event_id, worker_id)
             event.status = "FAILED"
@@ -163,9 +165,61 @@ class OutboxConsumer:
             event.last_error = error[:4000]
 
     def mark_dead(self, event_id: str, *, worker_id: str, error: str) -> None:
-        """C02：死信终态（超过最大尝试次数）——保留事件供人工重放。"""
+        """Legacy owner-only completion; new workers must use mark_claim_dead."""
         with self._session_factory.begin() as session:
             event = self._locked_event(session, event_id, worker_id)
+            event.status = "DEAD"
+            event.locked_at = None
+            event.locked_by = None
+            event.last_error = error[:4000]
+
+    def renew_claim(self, event_id: str, *, worker_id: str, attempt_count: int) -> None:
+        """Renew only a live generation; DB/lock failures propagate to the caller.
+
+        This does not fence handler side effects or start a renewal lifecycle.
+        Sample time after acquiring the lock so an expired claim cannot revive.
+        """
+        with self._session_factory.begin() as session:
+            event = self._claimed_event(session, event_id, worker_id, attempt_count, nowait=True)
+            now = self._now_factory()
+            locked_at = event.locked_at
+            if locked_at is not None and locked_at.tzinfo is None:
+                locked_at = locked_at.replace(tzinfo=timezone.utc)
+            if locked_at is None or locked_at <= now - self._lease_timeout:
+                raise AppError(
+                    code="OUTBOX_LEASE_EXPIRED",
+                    message="outbox claim lease has expired",
+                    status_code=409,
+                )
+            event.locked_at = now
+
+    def mark_claim_succeeded(self, event_id: str, *, worker_id: str, attempt_count: int) -> None:
+        """Complete this generation, including expired claims not yet reclaimed."""
+        with self._session_factory.begin() as session:
+            event = self._claimed_event(session, event_id, worker_id, attempt_count)
+            event.status = "PUBLISHED"
+            event.published_at = self._now_factory()
+            event.locked_at = None
+            event.locked_by = None
+            event.last_error = None
+
+    def mark_claim_failed(
+        self, event_id: str, *, worker_id: str, attempt_count: int,
+        error: str, retry_at: datetime,
+    ) -> None:
+        with self._session_factory.begin() as session:
+            event = self._claimed_event(session, event_id, worker_id, attempt_count)
+            event.status = "FAILED"
+            event.available_at = retry_at
+            event.locked_at = None
+            event.locked_by = None
+            event.last_error = error[:4000]
+
+    def mark_claim_dead(
+        self, event_id: str, *, worker_id: str, attempt_count: int, error: str,
+    ) -> None:
+        with self._session_factory.begin() as session:
+            event = self._claimed_event(session, event_id, worker_id, attempt_count)
             event.status = "DEAD"
             event.locked_at = None
             event.locked_by = None
@@ -203,6 +257,31 @@ class OutboxConsumer:
                 event.locked_at = None
                 event.locked_by = None
             return len(events)
+
+    @staticmethod
+    def _claimed_event(
+        session: Session, event_id: str, worker_id: str, attempt_count: int,
+        *, nowait: bool = False,
+    ) -> OutboxEvent:
+        if type(attempt_count) is not int or attempt_count < 1:
+            raise ValueError("attempt_count must be a positive integer from the original claim")
+        event = session.scalar(
+            select(OutboxEvent)
+            .where(
+                OutboxEvent.id == event_id,
+                OutboxEvent.status == "PROCESSING",
+                OutboxEvent.locked_by == worker_id,
+                OutboxEvent.attempt_count == attempt_count,
+            )
+            .with_for_update(nowait=nowait)
+        )
+        if event is None:
+            raise AppError(
+                code="OUTBOX_LOCK_MISMATCH",
+                message="outbox event is not locked by this worker and claim generation",
+                status_code=409,
+            )
+        return event
 
     @staticmethod
     def _locked_event(session: Session, event_id: str, worker_id: str) -> OutboxEvent:

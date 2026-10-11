@@ -72,11 +72,17 @@ def test_blocked_monitor_leaves_caller_free_for_outbox_work():
         def claim_batch(self, **_kwargs):
             if self.completed:
                 return []
-            return [SimpleNamespace(id="event-1", topic="wallet.alert")]
+            return [SimpleNamespace(id="event-1", topic="wallet.alert", attempt_count=1)]
 
-        def mark_succeeded(self, event_id, **_kwargs):
+        def mark_claim_succeeded(self, event_id, *, worker_id, attempt_count):
             self.completed = True
             outbox_work.append(event_id)
+
+        def mark_claim_failed(self, *args, **kwargs):
+            pytest.fail("synthetic successful delivery must not fail")
+
+        def mark_claim_dead(self, *args, **kwargs):
+            pytest.fail("synthetic successful delivery must not dead-letter")
 
     worker = import_module("worker").Worker(
         consumer=Consumer(),

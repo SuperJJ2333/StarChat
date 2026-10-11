@@ -1,0 +1,87 @@
+{
+  "base": "dc409a5e4652207f89b74eff2bf0b495c1795a6d",
+  "python": "3.12.10",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "packages": {
+    "pytest": "8.4.2",
+    "SQLAlchemy": "2.0.52",
+    "psycopg": "3.3.4"
+  },
+  "imports": {
+    "outbox": "C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-claim-fencing\\StarChat\\services\\business-api\\app\\core\\outbox.py",
+    "worker": "C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-claim-fencing\\StarChat\\services\\business-worker\\app\\worker.py"
+  },
+  "sha256": {
+    "services/business-api/app/core/outbox.py": "a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680",
+    "services/business-worker/app/worker.py": "f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299",
+    "tests/business_worker/test_worker_claim_fencing.py": "57626b3d7d6a31669c7c876908e863ca36c7fe8cbe64313e599bfbc32db9d29d",
+    "tests/business_worker/test_worker_claim_fencing_postgres.py": "582359564dc2d4c39024749f15a9256cf10420e5336d1c5f0df4ec86e0e3e288",
+    "tests/business_worker/test_reserve_monitor_runner.py": "5f0b706c97d885dab7e9fb6fe1472bf1b73b38facd5065c7544913af1354fac1",
+    "tests/business_worker/test_wallet_alert_delivery.py": "2b3aa176394b43dd7f36b6fa1039be7d78eadbb964ddd14b495747e67698630e",
+    "tests/business_worker/test_worker_lease_window.py": "8ebdd2fc89f30648b3b6e91fa428720a8112d8406c0afd036fbd56bab13d4ca8",
+    "services/business-api/app/core/outbox_handover.py": "2b98dc5d02d630c64adc62fbd6d16d96a1aa4c87caa10b4ed231bbb86dcd932d",
+    "services/business-api/app/core/outbox_handover_models.py": "ddddb09214a964fb8f988e012c8a29b0de9e7fa4a42104ba4323bf16eb7c8223",
+    "services/business-worker/app/tasks/internal_publication.py": "854700515fdc48e3373676429ef164d76c9f8511f8460830712aab3c6f5429d4",
+    "services/business-worker/app/tasks/wallet_alert_email.py": "d51ca627b8a9aea4b5c41485b8318cdea13c2df0e6138cbb55b3107b651a4b5b",
+    "services/business-api/requirements.lock": "f64b119c66265cb59b3272d074afe32b4560da1715f30499580c3a046346bf8f",
+    "services/business-worker/requirements.txt": "58ba514b43548c7fb964014a4368c0982406128b4b5b0a7f74a27b7faf1fe06e",
+    "docs/verification/artifacts/2026-09-30/support-worker-compatibility/worker_probe.py": "335a739c829327402cd7ae383bc3aed2a06f0675a0fa66c21844c0c3167d84c8"
+  },
+  "postgres": "18.3 local isolated fixture; not production PostgreSQL version or load evidence",
+  "stages": {
+    "baseline": {
+      "exit": 0,
+      "passed": 11,
+      "skipped": 1,
+      "xfailed": 1,
+      "log": "baseline.log"
+    },
+    "red_sqlite": {
+      "exit": 1,
+      "failed": 42,
+      "log": "red.log"
+    },
+    "red_postgres": {
+      "exit": 1,
+      "failed": 10,
+      "log": "red-postgres.log"
+    },
+    "green_focused": {
+      "exit": 0,
+      "passed": 64,
+      "xfailed": 1,
+      "log": "green-focused.log"
+    },
+    "green_regression": {
+      "exit": 0,
+      "passed": 319,
+      "skipped": 1,
+      "xfailed": 1,
+      "log": "green-final.log"
+    },
+    "green_final_test_refinement": {
+      "exit": 0,
+      "passed": 10,
+      "log": "green-postgres-lock-observed.log"
+    },
+    "postgres_stop": {
+      "exit": 0,
+      "log": "postgres-stop.log"
+    },
+    "full_verify": {
+      "status": "not run; preflight .env missing"
+    },
+    "static_typing": {
+      "status": "not run; mypy unavailable locally/offline"
+    }
+  },
+  "evidence_sha256": {
+    "baseline.log": "22d4ece8f1b2ba7c90a20c2c87463e86eea3005727c0338e562885e7adcc768a",
+    "red.log": "849993cb5bd970b30eb72c2ae6e416e312dc7890ebff459851361a3047481b93",
+    "red-postgres.log": "f46aa09d32c5923ad9a5a0c2a7dd9b3a1ed30bfadb5287cfe30922b823759ed1",
+    "green-focused.log": "03eed2176d8ff5cadcd860ead05f5b99ff4938afe39166b17eba321c4297c13d",
+    "green-final.log": "e41bb68755805e99a098d6c9ea7c60a96014789b6dfcd299509ee55b97cdac69",
+    "green-postgres-lock-observed.log": "b356a4119da5ad6159efe9013e40ba60538212bacbeeae10caa4f1d2078941b1",
+    "postgres-stop.log": "3589d2bd01f8295cc7c9ec3f5e07625fcd347ccb6f33f2d80edafe5f5217c1fb"
+  }
+}
