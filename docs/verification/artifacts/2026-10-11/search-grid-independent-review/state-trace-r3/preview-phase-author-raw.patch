@@ -1,0 +1,64 @@
+diff --git a/apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart b/apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart
+index cc16b897..3f8c6eec 100644
+--- a/apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart
++++ b/apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart
+@@ -1,4 +1,5 @@
+ import 'dart:typed_data';
++import 'package:flutter/foundation.dart';
+ import 'dart:async';
+ import 'dart:convert';
+ import 'emoji_preview_cache.dart';
+@@ -139,14 +140,23 @@ final class RoomImagePreviewCache {
+     _sessionMemory.clear();
+   }
+ 
++  void _trace(String stage, String key) {
++    if (const bool.fromEnvironment('SEARCH_MEDIA_DIAGNOSTICS')) {
++      debugPrint('SYNTHETIC_PREVIEW $key $stage');
++    }
++  }
++
+   Future<void> _persist(String key, Uint8List bytes, int generation) {
++    _trace('persist-enqueue', key);
+     // The shared encrypted store retains its newest file during eviction.
+     // Include the AES-GCM nonce/tag overhead so one legacy original cannot
+     // exceed the entire quota by itself.
+     if (bytes.length > 64 * 1024 * 1024 - 28) return Future<void>.value();
+     final work = _writes.then((_) async {
++      _trace('persist-start', key);
+       if (!_disposed && _memory?.generation == generation) {
+         await _write(key, bytes);
++        _trace('persist-done', key);
+       }
+     });
+     _writes = work.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+@@ -249,21 +259,28 @@ final class RoomImagePreviewCache {
+       if (bytes == null || bytes.isEmpty) {
+         sourceLoads++;
+         bytes = await source();
++        _trace('source-done', key);
+         if (_disposed || memory.generation != generation) {
+           throw StateError('Image cache cleared');
+         }
+         try {
+           await _persist(key, bytes, generation);
+-        } catch (_) {/* retain memory hit */}
++        } catch (error) {
++          _trace('persist-error: '+error.toString(), key);
++        }
+       }
+       if (_disposed || memory.generation != generation) {
+         throw StateError('Image cache cleared');
+       }
++      _trace('memory-start', key);
+       bytes = await memory.putAsync(key, bytes);
++      _trace('memory-done', key);
+       if (_disposed || memory.generation != generation) {
+         throw StateError('Image cache cleared');
+       }
++      _trace('session-start', key);
+       await _completedSessionMemory?.putAsync(_sessionKey(eventId), bytes);
++      _trace('session-done', key);
+       return bytes;
+     });
+   }

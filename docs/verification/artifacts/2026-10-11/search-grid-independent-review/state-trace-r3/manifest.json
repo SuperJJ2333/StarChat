@@ -1,0 +1,36 @@
+{
+  "base": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "candidate_gate": false,
+  "files": [
+    {
+      "path": "milestone-phase.patch",
+      "sha256": "b6939218a90b7cb69c21b3d66437d1dfc42ecd621493051f1173bd7fe3f5077c",
+      "bytes": 2017
+    },
+    {
+      "path": "phase-trace.log",
+      "sha256": "cdc05541c1c90f20b9087a1e07e3a12f3a83d1d414b743a33b5dcce417eee73f",
+      "bytes": 8800
+    },
+    {
+      "path": "preview-phase-author-raw.patch",
+      "sha256": "f02910d798625fd88ce604003e91cdb885d5724942d0512cf67f83dc9fcb5061",
+      "bytes": 2617
+    },
+    {
+      "path": "preview-phase-diagnostic.patch",
+      "sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+      "bytes": 2553
+    },
+    {
+      "path": "receipt.json",
+      "sha256": "24f64dd15b25d1cfe751a2fb8fb014a23a890b1e595b81fcbc8b0be04cc18f68",
+      "bytes": 1549
+    },
+    {
+      "path": "review.md",
+      "sha256": "20d7bef495548a3f3c3e72973235ba736e66a1bfb8d8adcfa984612716b472ff",
+      "bytes": 1958
+    }
+  ]
+}

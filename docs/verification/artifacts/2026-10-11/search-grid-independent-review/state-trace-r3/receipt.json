@@ -1,0 +1,27 @@
+{
+  "base": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "elapsed_seconds": 21.5453897,
+  "phase_patch_sha256": "8c586cadccd1845696ebbc407943890df0851f42de8f8aa84e3021434dca8951",
+  "probe_sha256": "5209f50f43f229b2ebf4e3f20a1470d9e8328f7c35c385d70edcc86048dd4887",
+  "command": "flutter test --no-pub --dart-define=SEARCH_MEDIA_SCENARIO=current image --dart-define=SEARCH_MEDIA_DIAGNOSTICS=true ../../docs/verification/artifacts/2026-10-11/search-grid-independent-review/state-trace-r3/milestone_phase_test.dart --reporter expanded",
+  "exit_code": 1,
+  "candidate_gate": false,
+  "ended_utc": "2026-10-11T09:28:30.3002930Z",
+  "started_utc": "2026-10-11T09:28:08.7549033Z",
+  "sources": [
+    {
+      "restored_source_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+      "restoration_match": true,
+      "before_source_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+      "diagnostic_source_sha256": "06d90e54ff578b52d9b6b99761416db81519e6df96e708bb03d9d5d5021ddcd7",
+      "path": "apps/mobile_flutter/lib/ui/chat/contain_image_bubble.dart"
+    },
+    {
+      "restored_source_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+      "restoration_match": true,
+      "before_source_sha256": "12a9f20c703be5346a556720054e97934bbcc87914b8890f4e0a5d8b627d0ecd",
+      "diagnostic_source_sha256": "98d02fd854b119e42e7c209d051e949edda9d7174c8c7e40b92717e17dee2ca7",
+      "path": "apps/mobile_flutter/lib/features/matrix/room_image_preview_cache.dart"
+    }
+  ]
+}
