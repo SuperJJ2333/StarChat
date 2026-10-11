@@ -2,6 +2,14 @@
 
 Verdict: **PASS for the bounded candidate scripts at the exact identities below**. Reviewer `/root/fix_scheduler_r6` did not edit root, invoke the scripts' top-level bodies, use Docker/DB/network, send signals, or deploy.
 
+## Subsequent finding: r1 did not cover the real import location
+
+The original verdict above is retained as historical evidence and is **superseded for deployment readiness**. The first `13f3c67...` candidate failed its production startup and the recorded deployment receipt reports `FAILED`, `RuntimeError`, `rolled_back: true`. Root reports the worker restored to the previous `18a88c4d...` image, healthy with zero restarts after rollback.
+
+This review checked the requested Worker and `/opt/business-api` Consumer bytes but missed that the worker image installs the API package into `site-packages`; its default `python main.py` therefore imported the old Consumer from `/usr/local/lib/python3.12/site-packages/app/core/outbox.py`. The earlier isolated pytest invocation overrode `PYTHONPATH=/opt/business-api` and concealed this mismatch. Its 49 passing tests cannot establish the default production entry point. The new Worker correctly failed closed on the old Consumer's missing fenced completion API. This was a deployment-overlay/gate-fidelity gap, not a reason to weaken that fail-closed check.
+
+r2 separately overlays identical reviewed Consumer bytes into both the real installed location and the source copy, and requires default-import identity/hash/constructor evidence without a PYTHONPATH override. Its independent review lives in `../im-worker-fence-v2-independent-review/`; it must not be inferred from the r1 mock results below.
+
 ## Inputs and specification
 
 - `prepare.py` SHA256: `e0e90fe3111b594b3b2cce42537db330fc7b9b43c3bf4ae6a07807717e95a99f`.

@@ -1,0 +1,53 @@
+{
+  "source": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-worker-fence-v2-deployment\\deploy.py",
+  "source_sha256": "1dd4023f4f63fedf2c1080013e5535838a3afda95330a58cbe4cc01f5906ea73",
+  "scope": "Actual AST-selected function/except bodies with inert subprocess/os/filesystem substitutes; no deploy module top-level, Docker, DB, network, or real signal executed",
+  "passed": 11,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "successful_guard_starts_separate_session",
+      "result": "PASS"
+    },
+    {
+      "name": "outer_timeout_cleans_only_fake_session_and_withholds_rollback",
+      "result": "PASS"
+    },
+    {
+      "name": "missing_session_is_safe_but_still_uncertain",
+      "result": "PASS"
+    },
+    {
+      "name": "inner_guard_timeout_exit1_withholds_rollback",
+      "result": "PASS"
+    },
+    {
+      "name": "timeout_cleanup_failure_withholds_rollback",
+      "result": "PASS"
+    },
+    {
+      "name": "unexpected_wait_error_withholds_rollback",
+      "result": "PASS"
+    },
+    {
+      "name": "completed_switch_postcondition_failure_uses_guarded_rollback",
+      "result": "PASS"
+    },
+    {
+      "name": "uncertain_rollback_not_reported_success",
+      "result": "PASS"
+    },
+    {
+      "name": "DB_query_readonly_connect3_statement5_exec12",
+      "result": "PASS"
+    },
+    {
+      "name": "processing_count_and_exec_timeout_propagate",
+      "result": "PASS"
+    },
+    {
+      "name": "inspect_timeout10",
+      "result": "PASS"
+    }
+  ]
+}

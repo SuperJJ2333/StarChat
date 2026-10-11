@@ -1,0 +1,21 @@
+{
+  "verdict": "PASS",
+  "scope": "read-only argv/image/import/probe/output consistency checks; no container execution",
+  "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+  "checks": [
+    "default image cwd retained",
+    "python -c preserves default import origin",
+    "no PYTHONPATH override",
+    "probe checks actual Consumer and Worker identities/hashes",
+    "pytest appends tooling only; installed Consumer assertion precedes pytest.main",
+    "tool ZIP hash verified and has no main.py/worker.py/app package",
+    "49 PASS with explicit SKIP and known XFAIL retained"
+  ],
+  "inputs_sha256": {
+    "default-runtime-receipt.json": "0791e11b4b97ccd043626f7640834a51e257bbd7a5cf2686298ff213ec0482e6",
+    "validate_default_runtime.py": "1d0db7583f9ee2f61824306581be17b373b69b6910dedd171a347e5cb9bde41e",
+    "default_entry_probe.py": "63c686248b66a867aaf2d00e16528323f69ece94b01e8f4b44ce20b1cd2b00c8",
+    "prepare-result.txt": "6776f0a2834273b8eacd34085baf0546fdfecab74c630eaf5da80b29f9c6b353",
+    "validation-result.txt": "8ae0b46a2dda5bc09a391310d5dad074e04b8f300819ecd67e9e84ae07a1d7b3"
+  }
+}

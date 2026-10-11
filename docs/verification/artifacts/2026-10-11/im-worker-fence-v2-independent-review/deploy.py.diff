@@ -1,0 +1,5 @@
+--- r1/deploy.py
++++ r2/deploy.py
+@@ -4 +4 @@
+-ROOT=Path('/opt/starchat/releases/im-worker-fence-20261011')
++ROOT=Path('/opt/starchat/releases/im-worker-fence-v2-20261011')

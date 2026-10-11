@@ -1,0 +1,58 @@
+{
+  "source_sha256": {
+    "prepare.py": "3b2dde8b075154c761cb3180556e9927bb9fad2adc0528ef53659c76b7ac98b5",
+    "deploy.py": "1dd4023f4f63fedf2c1080013e5535838a3afda95330a58cbe4cc01f5906ea73"
+  },
+  "payloads_equal_domain_review_commit": true,
+  "api_unchanged": true,
+  "paired_receipt": {
+    "worker.py": "f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299",
+    "outbox.py": "a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680",
+    "outbox-source.py": "a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680"
+  },
+  "scope": "AST-only switch with inert mocks; local Git read; no Docker/DB/network/signal/deploy top level",
+  "passed": 8,
+  "failed": 0,
+  "checks": [
+    {
+      "operation": "deploy",
+      "corrupt_file": null,
+      "result": "PASS"
+    },
+    {
+      "operation": "deploy",
+      "corrupt_file": "worker.py",
+      "result": "PASS"
+    },
+    {
+      "operation": "deploy",
+      "corrupt_file": "outbox.py",
+      "result": "PASS"
+    },
+    {
+      "operation": "deploy",
+      "corrupt_file": "outbox-source.py",
+      "result": "PASS"
+    },
+    {
+      "operation": "rollback",
+      "corrupt_file": null,
+      "result": "PASS"
+    },
+    {
+      "operation": "rollback",
+      "corrupt_file": "worker.py",
+      "result": "PASS"
+    },
+    {
+      "operation": "rollback",
+      "corrupt_file": "outbox.py",
+      "result": "PASS"
+    },
+    {
+      "operation": "rollback",
+      "corrupt_file": "outbox-source.py",
+      "result": "PASS"
+    }
+  ]
+}
