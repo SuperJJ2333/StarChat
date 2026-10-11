@@ -1,0 +1,335 @@
+{
+  "commit": "4341d84451d632988921fad627d237ad56000ef8",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "git_sha256": "34d10c20696de9411652cdd4405ea58e47d5da8c0b27fc63312e0bb11ddca953",
+      "workspace_sha256": "34d10c20696de9411652cdd4405ea58e47d5da8c0b27fc63312e0bb11ddca953",
+      "same_bytes": true
+    },
+    {
+      "path": "README.md",
+      "git_sha256": "4e7754a313fb4aa79843b7f13e26db3061cef30ff44efe873784a29d543296bd",
+      "workspace_sha256": "4e7754a313fb4aa79843b7f13e26db3061cef30ff44efe873784a29d543296bd",
+      "same_bytes": true
+    },
+    {
+      "path": "baseline/bucket-policy-before.json",
+      "git_sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561",
+      "workspace_sha256": "e71bfe128f0c797a9fd568c39ccbf44f14681886035d4e79041828be1a885153",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/cloudfront-before.json",
+      "git_sha256": "2d253b366439943fd03a1a6b5006045647e3e92ba96b33382fe3bd52681bd504",
+      "workspace_sha256": "8c5f94536c179e764ad6888150bd58ced213045c459ad6b6783f18cd47ce5a86",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/freeze_current.py",
+      "git_sha256": "de972095e967ee18b8b7166ea2d39c632881e3bdc2121e2c424cdcebfbc99fa2",
+      "workspace_sha256": "e7b99bac24f3dce6a5a552a1608a2ab66621c8be1eb8c6842566b5d13f93aac9",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/hk-live-snapshot.json",
+      "git_sha256": "ef5c478e4bd261c31c78fad7acb1e2d9bf3e62224c2804979a3597f9ca758232",
+      "workspace_sha256": "d3988e3e667c158fae4b45c74d24f74263625b5b0bd509e88d98559d1aa5179d",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/hk-projection-metadata.json",
+      "git_sha256": "a557f7389d4eda5e08da00abc954be2bdde8181fe780eb9429b7356c48189a25",
+      "workspace_sha256": "917b914ce4fa629a6a6f1f62537300ac3f9427b647876945bc65ba0dcb104b9a",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/hk-projection-source.py",
+      "git_sha256": "b18b88019df7adc4c89fe4a709ed8690d02c2da0293bfb17a9a48e9448d93df2",
+      "workspace_sha256": "2f66bc5b65b423ef73d0908c13a1b41c7892db3ba4e9a28faa0aab8c005ff9a1",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/hk-snapshot/download.html",
+      "git_sha256": "a0590dd331e4e4fa6809333c0bb01b297cf5ca8f70ffe7927dbcd6d3cbd2b7ea",
+      "workspace_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/hk-snapshot/downloads/android-release.json",
+      "git_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "workspace_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "same_bytes": true
+    },
+    {
+      "path": "baseline/hk-snapshot/downloads/ios/manifest.plist",
+      "git_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "workspace_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "same_bytes": true
+    },
+    {
+      "path": "baseline/hk-snapshot/src/admin-home.js",
+      "git_sha256": "9b33d96f01ee09398deae7f2f4b635ca0b644f311397bf1e0a4489e58a9cf5de",
+      "workspace_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-network-selector.js",
+      "git_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "workspace_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "same_bytes": true
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-network.js",
+      "git_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "workspace_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "same_bytes": true
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-redirect.js",
+      "git_sha256": "2dd91eb31b8c308d2ae9d4f45ee54bea9d91d7ff8b598362f782adb7458dfeef",
+      "workspace_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/settings-before.json",
+      "git_sha256": "4ff4d1e0088ee14c690f7b55443660db8417a119b62dc0499f51f9e68744d190",
+      "workspace_sha256": "1d0e57c9ba23978f2c64d9e0a8bf06d08796cde038a53674647ba57ab7b3cad4",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/sg-live-snapshot.json",
+      "git_sha256": "c361bad4851244e8efe13b1f84752ea06f04c81e6cbf14aaf4f25b74b7b610f6",
+      "workspace_sha256": "50bf48b1d0655cc37cf3adad3c31cd459f2b915c2050af5c5ada6caac4dc06c3",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/sg-projection-metadata.json",
+      "git_sha256": "3627c4e8b13ad143d4efc82bc525ab9ef665e6c3ef90692a2f00be203f726f35",
+      "workspace_sha256": "baba0e5e2d166407de8deb0311d66e04e9ad9510f34ca38ffcb96da590cbc7f3",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/sg-projection-source.py",
+      "git_sha256": "2f868f1e62b5593dd3c462f187b086de4d2845db584b4eaa2e70613aa411838e",
+      "workspace_sha256": "f9e1ba5e958f9fd2a471c2c2215702cb3edb22dbcf1bd0ce196e08cfffd6a6ed",
+      "same_bytes": false
+    },
+    {
+      "path": "baseline/static-baseline.json",
+      "git_sha256": "e3a65e5c075c17c961675502b6a3141c3610e6142cdc251f867c9246c448245c",
+      "workspace_sha256": "80ce2c45900dd0b00ee3eec7b650c166adaa9532b638b85f1c830fd7b285a494",
+      "same_bytes": false
+    },
+    {
+      "path": "contracts-green.log",
+      "git_sha256": "ba145d5ebc2d785ac6f179b4ad146bf0945288c0db826c210d7b495062f6a7cd",
+      "workspace_sha256": "74556195b5037f6e35d6abbe5e4e10992725bd4457263ad262435114b1da51a6",
+      "same_bytes": false
+    },
+    {
+      "path": "contracts-red.log",
+      "git_sha256": "2b87da8f285511cb0a82abd54d6c01ce8d05b93a2a4473e3af878452583b90e0",
+      "workspace_sha256": "fd7940078b3ba583c859c907f96b77a15b4aa72c97607357c788b8ece306a951",
+      "same_bytes": false
+    },
+    {
+      "path": "execute_release.py",
+      "git_sha256": "1285d349d6bedcfb3144034db7e445c1ea790ab17e59730e3f7970760bb30d51",
+      "workspace_sha256": "1285d349d6bedcfb3144034db7e445c1ea790ab17e59730e3f7970760bb30d51",
+      "same_bytes": true
+    },
+    {
+      "path": "execution-red.log",
+      "git_sha256": "8705dc16b74fb462089276a2b359ab249a976b122735dc385dda71240a65fe01",
+      "workspace_sha256": "9fd3e2649658a6068234a683cd695b2481b973b0bb88958f2a0f1efcc74551f0",
+      "same_bytes": false
+    },
+    {
+      "path": "package-execution-expanded.log",
+      "git_sha256": "029ae614b45ef581e373322c58838a7263195f41b2723000f6e3f68ab3ad2199",
+      "workspace_sha256": "e65af72506facfb134663168688f0b12a15c7b6cc3a3babca22cfd3c29fec40d",
+      "same_bytes": false
+    },
+    {
+      "path": "package-execution-first-green.log",
+      "git_sha256": "65d56e1132b6503f5391d410fec81bdf2c41d6806b44f9d851a42dae799b8fd8",
+      "workspace_sha256": "47f87a5d7d16a965c9793c775ffa3591a24935f751c45cb323614e7203806664",
+      "same_bytes": false
+    },
+    {
+      "path": "package-red.log",
+      "git_sha256": "efa924ade1bd6e3d6d0671a1923edd2d2993cc41a03c18c5156dfdcd428551a2",
+      "workspace_sha256": "7b3e9967799cd51f6f53c254568e33baa9c0a1d3dc133ee6d9ebe03fe4090ecc",
+      "same_bytes": false
+    },
+    {
+      "path": "package-takeover-red.log",
+      "git_sha256": "3c958f69148be7a25e28945fe43ae6342419793af6f273a078bb23de86a42e2a",
+      "workspace_sha256": "708f34556e43ca1e96b91f9d35746914c139a905d6246c5edd50ed9927da433f",
+      "same_bytes": false
+    },
+    {
+      "path": "package_release.py",
+      "git_sha256": "841f748f91881749c214833e80728b3f110758b691a634faa337ce18d34aaa12",
+      "workspace_sha256": "841f748f91881749c214833e80728b3f110758b691a634faa337ce18d34aaa12",
+      "same_bytes": true
+    },
+    {
+      "path": "payload/bucket-policy-before.json",
+      "git_sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561",
+      "workspace_sha256": "e71bfe128f0c797a9fd568c39ccbf44f14681886035d4e79041828be1a885153",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/cloudfront-before.json",
+      "git_sha256": "2d253b366439943fd03a1a6b5006045647e3e92ba96b33382fe3bd52681bd504",
+      "workspace_sha256": "8c5f94536c179e764ad6888150bd58ced213045c459ad6b6783f18cd47ce5a86",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/delivery_2214.py",
+      "git_sha256": "0697a59e026c40d2ca42bf48870314f4444d1f0b86064ee5804d5dc4d89266cf",
+      "workspace_sha256": "5049eac67fe362f55c20cc7b163516f4f599e4ee56216c0470792ff29e13232f",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/hk-live-snapshot.json",
+      "git_sha256": "ef5c478e4bd261c31c78fad7acb1e2d9bf3e62224c2804979a3597f9ca758232",
+      "workspace_sha256": "d3988e3e667c158fae4b45c74d24f74263625b5b0bd509e88d98559d1aa5179d",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/hk-snapshot/download.html",
+      "git_sha256": "a0590dd331e4e4fa6809333c0bb01b297cf5ca8f70ffe7927dbcd6d3cbd2b7ea",
+      "workspace_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/hk-snapshot/downloads/android-release.json",
+      "git_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "workspace_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "same_bytes": true
+    },
+    {
+      "path": "payload/hk-snapshot/downloads/ios/manifest.plist",
+      "git_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "workspace_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "same_bytes": true
+    },
+    {
+      "path": "payload/hk-snapshot/src/admin-home.js",
+      "git_sha256": "9b33d96f01ee09398deae7f2f4b635ca0b644f311397bf1e0a4489e58a9cf5de",
+      "workspace_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-network-selector.js",
+      "git_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "workspace_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "same_bytes": true
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-network.js",
+      "git_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "workspace_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "same_bytes": true
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-redirect.js",
+      "git_sha256": "2dd91eb31b8c308d2ae9d4f45ee54bea9d91d7ff8b598362f782adb7458dfeef",
+      "workspace_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/release_2214.py",
+      "git_sha256": "71b4c62b9b153c6dde921a36dd0f30f2efbe1e90d1f4b765fc72314ea89adff8",
+      "workspace_sha256": "7e608e8aafb5da2701df457adcddea1d79e455aba0057c5b83e3e1bdcd154520",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/settings-before.json",
+      "git_sha256": "4ff4d1e0088ee14c690f7b55443660db8417a119b62dc0499f51f9e68744d190",
+      "workspace_sha256": "1d0e57c9ba23978f2c64d9e0a8bf06d08796cde038a53674647ba57ab7b3cad4",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/settings_2214.py",
+      "git_sha256": "2ce834bb06ef59ce3a30e54894859f2a5f2ebb21dafa1ee4c13c260fd9741734",
+      "workspace_sha256": "0477915e559ab5f9e83a1cf67d1325e487d25a5436ebdca54056e16e19d587d4",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/sg-live-snapshot.json",
+      "git_sha256": "c361bad4851244e8efe13b1f84752ea06f04c81e6cbf14aaf4f25b74b7b610f6",
+      "workspace_sha256": "50bf48b1d0655cc37cf3adad3c31cd459f2b915c2050af5c5ada6caac4dc06c3",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/static-baseline.json",
+      "git_sha256": "e3a65e5c075c17c961675502b6a3141c3610e6142cdc251f867c9246c448245c",
+      "workspace_sha256": "80ce2c45900dd0b00ee3eec7b650c166adaa9532b638b85f1c830fd7b285a494",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/test_settings_postgres_2214.py",
+      "git_sha256": "6db36c515389fc26471dbb78ac0a7080a0ad7143419c9c8bbf43e3670031c075",
+      "workspace_sha256": "392c44b81491bd687893b3018c544455b03102ec21b5e2333a32b5ac04d1b597",
+      "same_bytes": false
+    },
+    {
+      "path": "payload/verify_production_2214.py",
+      "git_sha256": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14",
+      "workspace_sha256": "bfaed9cd45c2ecfcd29d04dc42cc64a29cf345d2187bec2af01d13c7342d3443",
+      "same_bytes": false
+    },
+    {
+      "path": "postgres.log",
+      "git_sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966",
+      "workspace_sha256": "a616ceeb7bbdd77aa7441f823a01ecb3d21e0c016630801b44664bfc347bd2e2",
+      "same_bytes": false
+    },
+    {
+      "path": "preparation-green.log",
+      "git_sha256": "dc376900dc2be5c61dbc75b187283e7cb7bdeea05cb737a780272e85e4ae5f5e",
+      "workspace_sha256": "c0cd3d2bb9c5345a0e662e97f655ec414758d5a3d6640ac298a2b5feab4c1751",
+      "same_bytes": false
+    },
+    {
+      "path": "preparation-input-hashes.json",
+      "git_sha256": "71e33594accae24023ff60a0bca5c5aa96cf5fdf5ecbbb5ca252289100c6f962",
+      "workspace_sha256": "b85c1fd002438b42d3fd1eefdd3c084a81429141fcaac8c5c90fb40e6e69d02c",
+      "same_bytes": false
+    },
+    {
+      "path": "preparation-review.md",
+      "git_sha256": "577b7c859d3e17f3124ba0ad48c25f5e681cb4f4619d3702185db87207734fe0",
+      "workspace_sha256": "577b7c859d3e17f3124ba0ad48c25f5e681cb4f4619d3702185db87207734fe0",
+      "same_bytes": true
+    },
+    {
+      "path": "test_execution_gate.py",
+      "git_sha256": "3de9e7c3f5fc79f1326722d4a673914c27265ffc64386d1c1bf925f2a3b8412a",
+      "workspace_sha256": "3de9e7c3f5fc79f1326722d4a673914c27265ffc64386d1c1bf925f2a3b8412a",
+      "same_bytes": true
+    },
+    {
+      "path": "test_package_gate.py",
+      "git_sha256": "0317213fe44e6277c18923862d3f34ad4d108d73ce62289ec744a4736ecc6136",
+      "workspace_sha256": "0317213fe44e6277c18923862d3f34ad4d108d73ce62289ec744a4736ecc6136",
+      "same_bytes": true
+    },
+    {
+      "path": "test_release_contract.py",
+      "git_sha256": "71caf059eb8ded84284065070e2974fd35b296ae7bf66e8a0c4060eafbb7902b",
+      "workspace_sha256": "71caf059eb8ded84284065070e2974fd35b296ae7bf66e8a0c4060eafbb7902b",
+      "same_bytes": true
+    },
+    {
+      "path": "usage.md",
+      "git_sha256": "c2f22c807f1538240b837a6647902d61209b7ff6edcf631c41d7bd2d5a6ad666",
+      "workspace_sha256": "c2f22c807f1538240b837a6647902d61209b7ff6edcf631c41d7bd2d5a6ad666",
+      "same_bytes": true
+    }
+  ]
+}

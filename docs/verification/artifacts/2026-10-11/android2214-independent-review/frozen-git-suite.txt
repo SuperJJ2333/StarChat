@@ -1,0 +1,256 @@
+.....FFFFF.FFFF.FF.........                                              [100%]
+================================== FAILURES ===================================
+_ ExecutionGate.test_changed_review_evidence_and_operation_id_refused_before_transport _
+
+self = <test_execution_gate.ExecutionGate testMethod=test_changed_review_evidence_and_operation_id_refused_before_transport>
+
+    def test_changed_review_evidence_and_operation_id_refused_before_transport(self):
+>       self.prepare(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmp5i6kyiaa/.2214-package-31p6lvpc/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmp5i6kyiaa\.2214-package-31p6lvpc\runtime\release_2214.py:240: ValueError
+_ ExecutionGate.test_default_plan_never_calls_transport_or_creates_execution __
+
+self = <test_execution_gate.ExecutionGate testMethod=test_default_plan_never_calls_transport_or_creates_execution>
+
+    def test_default_plan_never_calls_transport_or_creates_execution(self):
+>       self.prepare(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:81: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmp3l6csuqp/.2214-package-qam3l58g/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmp3l6csuqp\.2214-package-qam3l58g\runtime\release_2214.py:240: ValueError
+_________ ExecutionGate.test_fresh_baseline_drift_blocks_first_write __________
+
+self = <test_execution_gate.ExecutionGate testMethod=test_fresh_baseline_drift_blocks_first_write>
+
+    def test_fresh_baseline_drift_blocks_first_write(self):
+>       self.prepare(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:107: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmpoz3htwpc/.2214-package-_6xxzaq5/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmpoz3htwpc\.2214-package-_6xxzaq5\runtime\release_2214.py:240: ValueError
+_ ExecutionGate.test_guarded_remote_programs_compile_and_verify_before_import _
+
+self = <test_execution_gate.ExecutionGate testMethod=test_guarded_remote_programs_compile_and_verify_before_import>
+
+    def test_guarded_remote_programs_compile_and_verify_before_import(self):
+>       self.prepare(); execute=executor()
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmp0jf4trdk/.2214-package-0twu9phu/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmp0jf4trdk\.2214-package-0twu9phu\runtime\release_2214.py:240: ValueError
+_____ ExecutionGate.test_live_cdn_pending_blocks_alias_before_hk_mutation _____
+
+self = <test_execution_gate.ExecutionGate testMethod=test_live_cdn_pending_blocks_alias_before_hk_mutation>
+
+    def test_live_cdn_pending_blocks_alias_before_hk_mutation(self):
+>       self.prepare(); execute=executor(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmpvj57zlfb/.2214-package-mzakaxxr/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmpvj57zlfb\.2214-package-mzakaxxr\runtime\release_2214.py:240: ValueError
+_ ExecutionGate.test_missing_review_bad_identity_and_changed_package_never_call_transport _
+
+self = <test_execution_gate.ExecutionGate testMethod=test_missing_review_bad_identity_and_changed_package_never_call_transport>
+
+    def test_missing_review_bad_identity_and_changed_package_never_call_transport(self):
+>       self.prepare(); calls=[]; execute=executor()
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmpzae_0ads/.2214-package-x5n4w8er/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmpzae_0ads\.2214-package-x5n4w8er\runtime\release_2214.py:240: ValueError
+_____ ExecutionGate.test_out_of_order_mutation_refused_without_transport ______
+
+self = <test_execution_gate.ExecutionGate testMethod=test_out_of_order_mutation_refused_without_transport>
+
+    def test_out_of_order_mutation_refused_without_transport(self):
+>       self.prepare(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:100: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmpnqio0ta9/.2214-package-cvqzdaqo/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmpnqio0ta9\.2214-package-cvqzdaqo\runtime\release_2214.py:240: ValueError
+______ ExecutionGate.test_package_exact_two_file_backfill_and_all_hashes ______
+
+self = <test_execution_gate.ExecutionGate testMethod=test_package_exact_two_file_backfill_and_all_hashes>
+
+    def test_package_exact_two_file_backfill_and_all_hashes(self):
+>       self.prepare()
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmptuhix3af/.2214-package-qbtkjnh5/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmptuhix3af\.2214-package-qbtkjnh5\runtime\release_2214.py:240: ValueError
+____ ExecutionGate.test_real_local_stream_receiver_and_archive_extraction _____
+
+self = <test_execution_gate.ExecutionGate testMethod=test_real_local_stream_receiver_and_archive_extraction>
+
+    def test_real_local_stream_receiver_and_archive_extraction(self):
+>       self.prepare(); execute=executor(); paths=execute.stages('test-20261011-123456')
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:143: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmpqlaw2ku6/.2214-package-7h818dtg/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmpqlaw2ku6\.2214-package-7h818dtg\runtime\release_2214.py:240: ValueError
+__ ExecutionGate.test_uncertain_mutation_is_recorded_and_cannot_be_replayed ___
+
+self = <test_execution_gate.ExecutionGate testMethod=test_uncertain_mutation_is_recorded_and_cannot_be_replayed>
+
+    def test_uncertain_mutation_is_recorded_and_cannot_be_replayed(self):
+>       self.prepare(); execute=executor(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmp8owe3w8v/.2214-package-be9lkqfi/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmp8owe3w8v\.2214-package-be9lkqfi\runtime\release_2214.py:240: ValueError
+_ ExecutionGate.test_unknown_publication_allows_readonly_inspect_without_publish_receipt _
+
+self = <test_execution_gate.ExecutionGate testMethod=test_unknown_publication_allows_readonly_inspect_without_publish_receipt>
+
+    def test_unknown_publication_allows_readonly_inspect_without_publish_receipt(self):
+>       self.prepare(); execute=executor(); calls=[]
+        ^^^^^^^^^^^^^^
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test_execution_gate.py:45: in prepare
+    self.pkg.create_package(self.args)
+docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\package_release.py:167: in create_package
+    release.prepare(SimpleNamespace(sha256=record['artifact_sha256'], bytes=record['artifact_bytes'],
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+args = namespace(sha256='a8713edcedf30d548c58448d6c1aa9244a3c9a8143dd0b85eda8f4e53e1d722f', bytes=30, signing_confirmed_by='s...6-10-11/android2214-independent-review/subject/test-scratch/tmpy703pwzi/.2214-package-jhbhivvl/runtime/prepared-2214'))
+
+>   ???
+E   ValueError: frozen seven-file snapshot drift: download.html
+
+C:\Users\Administrator\.codex\worktrees\im-worker-entry-guard\StarChat\docs\verification\artifacts\2026-10-11\android2214-independent-review\subject\test-scratch\tmpy703pwzi\.2214-package-jhbhivvl\runtime\release_2214.py:240: ValueError
+=========================== short test summary info ===========================
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_changed_review_evidence_and_operation_id_refused_before_transport
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_default_plan_never_calls_transport_or_creates_execution
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_fresh_baseline_drift_blocks_first_write
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_guarded_remote_programs_compile_and_verify_before_import
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_live_cdn_pending_blocks_alias_before_hk_mutation
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_missing_review_bad_identity_and_changed_package_never_call_transport
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_out_of_order_mutation_refused_without_transport
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_package_exact_two_file_backfill_and_all_hashes
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_real_local_stream_receiver_and_archive_extraction
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_uncertain_mutation_is_recorded_and_cannot_be_replayed
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/subject/test_execution_gate.py::ExecutionGate::test_unknown_publication_allows_readonly_inspect_without_publish_receipt
+11 failed, 16 passed in 2.66s

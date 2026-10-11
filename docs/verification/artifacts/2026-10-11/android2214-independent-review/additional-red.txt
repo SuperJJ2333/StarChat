@@ -1,0 +1,28 @@
+F..                                                                      [100%]
+================================== FAILURES ===================================
+_____________ test_apply_failure_never_restores_corrupted_backup ______________
+
+tmp_path = WindowsPath('C:/Users/Administrator/.codex/worktrees/im-worker-entry-guard/StarChat/docs/verification/artifacts/2026-10-11/android2214-independent-review/tmp/test_apply_failure_never_resto0')
+release = <module 'reviewed_android_release' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-guard\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-independent-review\\subject\\payload\\release_2214.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000028268403110>
+
+    def test_apply_failure_never_restores_corrupted_backup(tmp_path, release, monkeypatch):
+        root, stage, backup, plan = static_files(tmp_path, release)
+        atomic = release.atomic
+        def fault(path, data):
+            if path.name == 'registry' and data == b'new-registry':
+                (backup / 'page').write_bytes(b'CORRUPTED_BACKUP')
+                raise OSError('second static write failed')
+            atomic(path, data)
+        monkeypatch.setattr(release, 'atomic', fault)
+        with pytest.raises(OSError):
+            release.apply_static(plan, root, stage, backup, lock=lambda _: nullcontext())
+>       assert (root / 'page').read_bytes() in (b'old-page', b'new-page')
+E       AssertionError: assert b'CORRUPTED_BACKUP' in (b'old-page', b'new-page')
+E        +  where b'CORRUPTED_BACKUP' = read_bytes()
+E        +    where read_bytes = (WindowsPath('C:/Users/Administrator/.codex/worktrees/im-worker-entry-guard/StarChat/docs/verification/artifacts/2026-10-11/android2214-independent-review/tmp/test_apply_failure_never_resto0/root') / 'page').read_bytes
+
+docs\verification\artifacts\2026-10-11\android2214-independent-review\test_independent_boundaries.py:46: AssertionError
+=========================== short test summary info ===========================
+FAILED docs/verification/artifacts/2026-10-11/android2214-independent-review/test_independent_boundaries.py::test_apply_failure_never_restores_corrupted_backup
+1 failed, 2 passed in 0.34s

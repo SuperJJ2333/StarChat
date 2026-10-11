@@ -1,0 +1,198 @@
+--- release_2213.py
++++ release_2214.py
+@@ -1,3 +1,3 @@
+-"""One record: offline prepare, read-only check, guarded Android 2213 publish.
++"""One record: offline prepare, read-only check, guarded Android 2214 publish.
+ 
+ No command is executed merely by importing this module. Cloud/binary installation
+@@ -17,8 +17,8 @@
+ INSTALL = 'https://www.liuhetong888.com/download?platform=android&install=1'
+ IOS_INSTALL = 'https://www.liuhetong888.com/download?platform=ios&install=1'
+-NOTES = '优化启动和切换会话时的缓存显示，修复连续快滑历史跳转；表情面板默认静态并增加最近16个表情；提高回到最新消息按钮的出现距离。'
+-OLD_NAME = 'ChatFlow-0.4.42-build2211-arm64.apk'
+-NAME = 'ChatFlow-0.4.44-build2213-arm64.apk'
+-OLD_SHA = '4eb0f8bb7fc3dd9f1f3f85cb4a73489b3cc8ae5841f0114a6d9cb7766d80751e'
++NOTES = '改进发送队列、历史加载和媒体缓存，增加媒体任务恢复和大小预检，优化Android后台运行稳定性。当前普通附件最高48MiB，图片因解码预算上限更低；过大时请压缩或缩小后重试。'
++OLD_NAME = 'ChatFlow-0.4.44-build2213-arm64.apk'
++NAME = 'ChatFlow-0.4.45-build2214-arm64.apk'
++OLD_SHA = '08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271'
+ OLD_PATHS = ['downloads/ChatFlow-0.4.19-build2188-arm64.apk','downloads/ChatFlow-0.4.21-build2190-arm64.apk','downloads/ChatFlow-0.4.24-build2193-arm64.apk','downloads/ChatFlow-0.4.25-build2194-arm64.apk']
+ RHP = 'fb8eb155-a1ae-4012-950c-c94d570e5efe'
+@@ -57,5 +57,5 @@
+ 
+ def host_preservation(root):
+-    """Reject other ABI alias drift and API/worker replacement; never deploy services."""
++    """Reject other ABI aliases and any running-container drift; never deploy services."""
+     for name, target in FROZEN_HOST['aliases'].items():
+         if name == 'latest-arm64.apk':
+@@ -64,21 +64,21 @@
+         if not alias.is_symlink() or os.readlink(alias) != target:
+             raise ValueError('preserved ABI alias drift: ' + name)
+-    names = ('starchat-business-api-1', 'starchat-business-worker-1')
+-    frozen = {x['name']: (x['id'], x['image']) for x in FROZEN_HOST['runtime'] if x['name'] in names}
++    names = subprocess.check_output(['docker', 'ps', '-q'], text=True).split()
++    frozen = {x['name']: (x['id'], x['image'], x['restart_count'], x['started_at']) for x in FROZEN_HOST['runtime']}
+     actual = json.loads(subprocess.check_output(['docker', 'inspect', *names]))
+-    current = {x['Name'].lstrip('/'): (x['Id'], x['Image']) for x in actual}
++    current = {x['Name'].lstrip('/'): (x['Id'], x['Image'], x['RestartCount'], x['State']['StartedAt']) for x in actual}
+     if current != frozen:
+-        raise ValueError('current API/worker identity drift; freeze again, never revert old images')
++        raise ValueError('running-container identity drift; freeze again, never revert old images')
+ 
+ def settings_target(before):
+     if set(before) != SETTINGS or any(not isinstance(v, str) or not v for v in before.values()):
+         raise ValueError('exact nonempty ten-setting snapshot required')
+-    expected = {'app_latest_version': '0.4.42', 'app_latest_build': '2211',
++    expected = {'app_latest_version': '0.4.44', 'app_latest_build': '2213',
+                 'app_min_supported_build': '3', 'app_apk_url': INSTALL,
+-                'app_ios_latest_version': '0.4.36', 'app_ios_latest_build': '2205',
++                'app_ios_latest_version': '0.4.44', 'app_ios_latest_build': '2213',
+                 'app_ios_min_supported_build': '3', 'app_ios_download_url': IOS_INSTALL}
+     if any(before[k] != v for k, v in expected.items()):
+-        raise ValueError('2211 Android / 2205 iOS / minimum / URL baseline drift')
+-    return before | {'app_latest_version': '0.4.44', 'app_latest_build': '2213', 'app_update_notes': NOTES}
++        raise ValueError('2213 Android / 2213 iOS / minimum / URL baseline drift')
++    return before | {'app_latest_version': '0.4.45', 'app_latest_build': '2214', 'app_update_notes': NOTES}
+ 
+ def classify(before, after, current):
+@@ -93,8 +93,8 @@
+         raise ValueError("frozen source commit and source manifest SHA256 required")
+     if (not isinstance(artifact_sha, str) or not re.fullmatch('[a-f0-9]{64}', artifact_sha)
+-            or type(artifact_bytes) is not int or artifact_bytes <= 0 or artifact_sha == OLD_SHA
++            or type(artifact_bytes) is not int or artifact_bytes <= 0 or artifact_sha in (OLD_SHA, '0'*64)
+             or not isinstance(signing_confirmed_by, str) or not signing_confirmed_by.strip()):
+         raise ValueError('final signed artifact SHA/bytes and actual gate evidence required')
+-    return {'platform': 'android', 'version': '0.4.44', 'build': 2213,
++    return {'platform': 'android', 'version': '0.4.45', 'build': 2214,
+             'artifact_sha256': artifact_sha, 'artifact_bytes': artifact_bytes,
+             'artifact_url': DIRECT, 'cdn_url': CDN, 'network_selection': True,
+@@ -108,10 +108,10 @@
+     old = f'id="android-direct-download" href="/downloads/{OLD_NAME}" download'.encode()
+     new = f'id="android-direct-download" href="/downloads/{NAME}" download'.encode()
+-    script = b'src="/src/download-redirect.js?v=2211-network"'
++    script = b'src="/src/download-redirect.js?v=2213-network"'
+     if page.count(expected) != 1 or page.count(old) != 1 or page.count(script) != 1:
+         raise ValueError('live Android network HTML baseline drift')
+     if page.count(b'href="/downloads/latest-arm64.apk"') != 1:
+         raise ValueError('native latest fallback drift')
+-    return page.replace(old, new).replace(script, b'src="/src/download-redirect.js?v=2213-network"')
++    return page.replace(old, new).replace(script, b'src="/src/download-redirect.js?v=2214-network"')
+ 
+ def expected_policy(paths):
+@@ -176,5 +176,5 @@
+ 
+ def atomic(path, data):
+-    fd, temporary = tempfile.mkstemp(prefix='.2213-', dir=path.parent)
++    fd, temporary = tempfile.mkstemp(prefix='.2214-', dir=path.parent)
+     try:
+         with os.fdopen(fd, 'wb') as target:
+@@ -243,11 +243,11 @@
+     cf_after = cloudfront_target(cf['DistributionConfig']); policy_after = policy_target(policy)
+     old_registry = read_json(safe_file(snapshot, 'downloads/android-release.json'))
+-    expected_registry = {'platform': 'android', 'version': '0.4.42', 'build': 2211,
++    expected_registry = {'platform': 'android', 'version': '0.4.44', 'build': 2213,
+         'artifact_bytes': OLD_BYTES, 'sha256': OLD_SHA,
+         'cdn_url': CDN.replace(NAME, OLD_NAME), 'direct_url': DIRECT.replace(NAME, OLD_NAME)}
+-    if old_registry != expected_registry: raise ValueError('2211 live registry identity drift')
++    if old_registry != expected_registry: raise ValueError('2213 live registry identity drift')
+     targets = {'download.html': page_target(safe_file(snapshot, 'download.html').read_bytes()),
+-               'downloads/android-release.json': json_bytes({'platform': 'android', 'version': '0.4.44',
+-                   'build': 2213, 'artifact_bytes': args.bytes, 'sha256': args.sha256, 'cdn_url': CDN, 'direct_url': DIRECT})}
++               'downloads/android-release.json': json_bytes({'platform': 'android', 'version': '0.4.45',
++                   'build': 2214, 'artifact_bytes': args.bytes, 'sha256': args.sha256, 'cdn_url': CDN, 'direct_url': DIRECT})}
+     preserved = {name: digest(safe_file(snapshot, name)) for name in PRESERVED}
+     home = safe_file(snapshot, 'src/admin-home.js').read_bytes()
+@@ -280,5 +280,5 @@
+         raise ValueError('frozen page input identity drift')
+     expected_payloads = {'download.html': page_target(page.read_bytes()),
+-        'downloads/android-release.json': json_bytes({'platform':'android', 'version':'0.4.44', 'build':2213,
++        'downloads/android-release.json': json_bytes({'platform':'android', 'version':'0.4.45', 'build':2214,
+             'artifact_bytes':r['artifact_bytes'], 'sha256':r['artifact_sha256'], 'cdn_url':CDN, 'direct_url':DIRECT})}
+     expected_static = {name: {'before':FROZEN_STATIC[name]['sha256'], 'after':sha(payload)}
+@@ -297,5 +297,5 @@
+     payload = {'mode': mode, 'expected': r['deployment']['settings_before'],
+                'after': r['deployment']['settings_after'], 'trace': trace}
+-    code = Path(__file__).with_name('settings_2213.py').read_bytes()
++    code = Path(__file__).with_name('settings_2214.py').read_bytes()
+     result = subprocess.check_output(['docker', 'exec', '-i', '-w', '/opt/business-api',
+         'starchat-business-api-1', 'python3', '-', json.dumps(payload)], input=code)
+--- delivery_2213.py
++++ delivery_2214.py
+@@ -8,5 +8,5 @@
+ import subprocess
+ import tempfile
+-import release_2213 as release
++import release_2214 as release
+ 
+ CHUNK=16*1024*1024
+@@ -23,5 +23,5 @@
+     stage=Path(stage)
+     if not stage.is_dir() or stage.is_symlink():raise ValueError('private stage missing/linked')
+-    with (stage/'.delivery-2213.lock').open('a') as handle:
++    with (stage/'.delivery-2214.lock').open('a') as handle:
+         fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB);yield
+ 
+@@ -50,5 +50,5 @@
+         if destination.exists() or destination.is_symlink():
+             verify_artifact(r,destination);return {'status':'already_exact','sha256':r['artifact_sha256']}
+-        fd,temporary=tempfile.mkstemp(prefix='.2213-assemble-',dir=stage)
++        fd,temporary=tempfile.mkstemp(prefix='.2214-assemble-',dir=stage)
+         try:
+             with os.fdopen(fd,'wb') as output:
+@@ -83,5 +83,5 @@
+         if mode=='hk-install':
+             if not before['installed']:
+-                fd,temporary=tempfile.mkstemp(prefix='.2213-apk-',dir=downloads)
++                fd,temporary=tempfile.mkstemp(prefix='.2214-apk-',dir=downloads)
+                 try:
+                     with os.fdopen(fd,'wb') as target,source.open('rb') as input_file:
+@@ -93,5 +93,5 @@
+             release.public_check(r,completed=False)
+             if before['alias']==release.OLD_NAME:
+-                fd,name=tempfile.mkstemp(prefix='.2213-alias-',dir=downloads);os.close(fd);Path(name).unlink()
++                fd,name=tempfile.mkstemp(prefix='.2214-alias-',dir=downloads);os.close(fd);Path(name).unlink()
+                 try:
+                     os.symlink(release.NAME,name)
+@@ -137,5 +137,5 @@
+             if before['cloudfront']=='complete' and before['status']=='Deployed':before['public']=cloud_probe(r)
+             return before
+-        backup=stage/'cloud-2213-before.json'
++        backup=stage/'cloud-2214-before.json'
+         if backup.exists() and release.read_json(backup).get('plan')!=r['deployment']:
+             raise ValueError('previous cloud backup belongs to another plan; inspect')
+@@ -146,5 +146,5 @@
+             current=cloud_state(r,stage)
+             if current['cloudfront']!='before' or current['etag']!=before['etag']:raise ValueError('distribution changed; inspect')
+-            target=stage/'cloudfront-2213-target.json';target.write_bytes(release.json_bytes(r['deployment']['cloudfront_after']))
++            target=stage/'cloudfront-2214-target.json';target.write_bytes(release.json_bytes(r['deployment']['cloudfront_after']))
+             updated=aws('cloudfront','update-distribution','--id',release.DIST,'--if-match',before['etag'],'--distribution-config','file://'+str(target))
+             if updated['Distribution']['DistributionConfig']!=r['deployment']['cloudfront_after']:raise ValueError('CloudFront update readback mismatch')
+@@ -153,5 +153,5 @@
+         if after['status']=='Deployed':after['public']=cloud_probe(r)
+         else:after['next']='Wait for Deployed, then cdn-check must pass public HEAD/CORS before HK alias switch'
+-        (stage/'cloud-2213-result.json').write_bytes(release.json_bytes(after))
++        (stage/'cloud-2214-result.json').write_bytes(release.json_bytes(after))
+         return after
+ 
+--- settings_2213.py
++++ settings_2214.py
+@@ -5,5 +5,5 @@
+ import sys
+ 
+-NOTES = '优化启动和切换会话时的缓存显示，修复连续快滑历史跳转；表情面板默认静态并增加最近16个表情；提高回到最新消息按钮的出现距离。'
++NOTES = '改进发送队列、历史加载和媒体缓存，增加媒体任务恢复和大小预检，优化Android后台运行稳定性。当前普通附件最高48MiB，图片因解码预算上限更低；过大时请压缩或缩小后重试。'
+ INSTALL='https://www.liuhetong888.com/download?platform=android&install=1'
+ IOS_INSTALL='https://www.liuhetong888.com/download?platform=ios&install=1'
+@@ -17,8 +17,8 @@
+     if not isinstance(before,dict) or set(before)!=set(KEYS) or any(not isinstance(v,str) or not v for v in before.values()):
+         raise ValueError('exact ten-setting baseline required')
+-    fixed={'app_latest_version':'0.4.42','app_latest_build':'2211','app_min_supported_build':'3','app_apk_url':INSTALL,
+-           'app_ios_latest_version':'0.4.36','app_ios_latest_build':'2205','app_ios_min_supported_build':'3','app_ios_download_url':IOS_INSTALL}
+-    if any(before[k]!=v for k,v in fixed.items()):raise ValueError('2211 settings baseline drift')
+-    values={'app_latest_version':'0.4.44','app_latest_build':'2213','app_update_notes':NOTES}
++    fixed={'app_latest_version':'0.4.44','app_latest_build':'2213','app_min_supported_build':'3','app_apk_url':INSTALL,
++           'app_ios_latest_version':'0.4.44','app_ios_latest_build':'2213','app_ios_min_supported_build':'3','app_ios_download_url':IOS_INSTALL}
++    if any(before[k]!=v for k,v in fixed.items()):raise ValueError('2213 settings baseline drift')
++    values={'app_latest_version':'0.4.45','app_latest_build':'2214','app_update_notes':NOTES}
+     if after!=before|values:raise ValueError('only exact Android version/build/notes change allowed')
+     if payload['mode']=='apply' and (not isinstance(payload['trace'],str) or not re.fullmatch('[A-Za-z0-9_.:-]{8,100}',payload['trace'])):
