@@ -1,0 +1,22 @@
+{
+  "reviewed": "44dabcc9d6428e38adfe93f572deeec0c64e8653",
+  "base": "9902d35079e9cb051125808a251ae479b06893cb",
+  "candidate_exit": 1,
+  "base_exit": 1,
+  "candidate_counts": {
+    "passed": 1,
+    "failed": 1
+  },
+  "base_counts": {
+    "passed": 1,
+    "failed": 1
+  },
+  "test_command": "flutter test --no-pub ../../docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/late-store-cancel_test.dart --reporter expanded",
+  "base_extra_argument": "--dart-define=REVIEW_BASE=true",
+  "hashes": {
+    "late-store-cancel_test.dart": "981b7a8dd15c517a6ffc0542fe97a23b32de3f32c16147f04fac9fe5fa06ceca",
+    "candidate-final.log": "906c9b61dfd9b2b5ff0364dfb16496edc5f7217b1cbab9ddf586e2a57abb5a15",
+    "base-final.log": "c32949d9b679ae665c55d05dac6d185acea5f19c600e257d59176170f5484f99",
+    "identity-check.json": "5d0fee8acf294b7596e6e1a321d11e5a1c8af2598f60bbc118438ae00e20da26"
+  }
+}

@@ -1,0 +1,26 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/late-store-cancel_test.dart
+00:00 +0: store preparation observer cancellation (false)
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +0 -1: store preparation observer cancellation (false) [E]
+  PathNotFoundException: Directory listing failed, path = 'C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\apps\mobile_flutter\../../docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/fixtures\late-cancel-3aa27219\chat-media\v2\249e3cf5a90cbdea07838929cf1e11eee0987a00a5c289aa70258e307de0ecfa\*' (OS Error: 系统找不到指定的路径。, errno = 3)
+  dart:async                                                                                                        Stream.length
+  ..\..\docs\verification\artifacts\2026-10-11\im-media-cache-independent-review\late-store-cancel_test.dart 65:98  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                                        _CustomZone.registerUnaryCallback
+  ..\..\docs\verification\artifacts\2026-10-11\im-media-cache-independent-review\late-store-cancel_test.dart 47:25  main.<fn>
+  
+00:00 +0 -1: store preparation observer cancellation (true)
+00:00 +0 -2: store preparation observer cancellation (true) [E]
+  PathNotFoundException: Directory listing failed, path = 'C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\apps\mobile_flutter\../../docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/fixtures\late-cancel-8b677893\chat-media\v2\249e3cf5a90cbdea07838929cf1e11eee0987a00a5c289aa70258e307de0ecfa\*' (OS Error: 系统找不到指定的路径。, errno = 3)
+  dart:async                                                                                                        Stream.length
+  ..\..\docs\verification\artifacts\2026-10-11\im-media-cache-independent-review\late-store-cancel_test.dart 65:98  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                                                                        _CustomZone.registerUnaryCallback
+  ..\..\docs\verification\artifacts\2026-10-11\im-media-cache-independent-review\late-store-cancel_test.dart 47:25  main.<fn>
+  
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/late-store-cancel_test.dart: store preparation observer cancellation (false)
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/late-store-cancel_test.dart: store preparation observer cancellation (true)

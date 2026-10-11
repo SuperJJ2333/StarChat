@@ -1,0 +1,18 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/late-store-cancel_test.dart
+00:00 +0: store preparation observer cancellation (false)
+[chatflow/mediaindex] degraded: UnimplementedError
+synthetic_cancel=false cache_published=true
+00:00 +1: store preparation observer cancellation (true)
+00:00 +1 -1: store preparation observer cancellation (true) [E]
+  Expected: <0>
+    Actual: <4096>
+  
+  package:matcher                                                                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                               expect
+  ..\..\docs\verification\artifacts\2026-10-11\im-media-cache-independent-review\late-store-cancel_test.dart 83:9  main.<fn>
+  
+00:00 +1 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/late-store-cancel_test.dart: store preparation observer cancellation (true)
