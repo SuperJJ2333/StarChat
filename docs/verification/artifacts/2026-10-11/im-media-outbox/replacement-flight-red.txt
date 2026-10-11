@@ -1,0 +1,17 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart
+00:00 +0: replacement owner cancellation retains an active source copy
+00:00 +1: replacement recovery retries a suspended same-owner flight after settle
+00:00 +1 -1: replacement recovery retries a suspended same-owner flight after settle [E]
+  Expected: <1>
+    Actual: <0>
+  settled orphan must become ACK-unknown, not permanent not-admitted
+  
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\core\outbox\media_outbox_review_regression_test.dart 198:5  main.<fn>
+  
+00:00 +1 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement recovery retries a suspended same-owner flight after settle

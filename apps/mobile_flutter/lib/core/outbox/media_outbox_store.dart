@@ -163,16 +163,42 @@ final class SqliteMediaOutboxStore {
   final Future<void> Function(String boundary)? checkpoint;
   Future<Database>? _opening;
   Directory? _root;
-  Future<void> _writes = Future<void>.value();
-  final _writingSources = <String>{};
-  final _canceledSources = <String>{};
+  final _writes = <Future<MediaOutboxTask>>{};
+  // Pins follow the fixed root across replacement store instances. Neither
+  // owner suspension nor a second handle may unlink an active original.
+  static final _writingSources = <(String, String)>{};
+  static final _canceledSources = <(String, String)>{};
+  static final _preparationSlots = _MediaPreparationSlots();
+  static final _metadataTails = <String, Future<void>>{};
+  (String, String) _sourceKey(String txid) => (_root!.absolute.path, txid);
   static const chunkBytes = 64 * 1024;
   static const reserveBytes = 16 * 1024 * 1024;
   static const maxPending = 128;
 
-  Future<T> _serial<T>(Future<T> Function() operation) {
-    final result = _writes.then((_) => operation());
-    _writes = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+  Future<MediaOutboxTask> _trackPreparation(
+      Future<MediaOutboxTask> Function() operation) {
+    final result = operation();
+    _writes.add(result);
+    result.then<void>((_) => _writes.remove(result),
+        onError: (Object _, StackTrace __) {
+      _writes.remove(result);
+    });
+    return result;
+  }
+
+  // sqflite's FFI worker cannot interleave transactions on separate handles:
+  // BEGIN IMMEDIATE on the replacement otherwise sees SQLITE_BUSY. Only local
+  // database mutations share this short chain; resolver/copy/seal never do.
+  Future<T> _metadata<T>(Future<T> Function() operation) {
+    final key = _root!.absolute.path;
+    final result =
+        (_metadataTails[key] ?? Future<void>.value()).then((_) => operation());
+    final tail =
+        result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _metadataTails[key] = tail;
+    tail.then((_) {
+      if (identical(_metadataTails[key], tail)) _metadataTails.remove(key);
+    });
     return result;
   }
 
@@ -196,34 +222,36 @@ final class SqliteMediaOutboxStore {
           p.join(root.path, 'manifest-v1.db$suffix'), FileSystemEntityType.file,
           allowMissing: true);
     }
-    final db = await _factory.openDatabase(p.join(root.path, 'manifest-v1.db'),
-        options: OpenDatabaseOptions(
-            version: 2,
-            singleInstance: false,
-            onUpgrade: (db, old, _) async {
-              if (old < 2) {
-                await db.execute(
-                    'ALTER TABLE media_tasks ADD COLUMN prepared INTEGER NOT NULL DEFAULT 0');
-                await db.execute(
-                    'ALTER TABLE media_tasks ADD COLUMN as_file INTEGER NOT NULL DEFAULT 0');
-                await db.execute(
-                    'ALTER TABLE media_tasks ADD COLUMN width INTEGER');
-                await db.execute(
-                    'ALTER TABLE media_tasks ADD COLUMN height INTEGER');
-              }
-            },
-            onCreate: (db, _) async {
-              await db.execute('CREATE TABLE media_tasks ('
-                  'txid TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, room_id TEXT NOT NULL, '
-                  'mime_type TEXT NOT NULL, filename TEXT NOT NULL, duration_ms INTEGER, '
-                  'prepared INTEGER NOT NULL DEFAULT 0, as_file INTEGER NOT NULL DEFAULT 0, width INTEGER, height INTEGER, '
-                  'length INTEGER NOT NULL, digest TEXT, stage TEXT NOT NULL, '
-                  'attempts INTEGER NOT NULL DEFAULT 0, failure TEXT, event_id TEXT, '
-                  'next_retry_at INTEGER, created_at INTEGER NOT NULL)');
-            }));
+    final db = await _metadata(
+        () => _factory.openDatabase(p.join(root.path, 'manifest-v1.db'),
+            options: OpenDatabaseOptions(
+                version: 2,
+                singleInstance: false,
+                onUpgrade: (db, old, _) async {
+                  if (old < 2) {
+                    await db.execute(
+                        'ALTER TABLE media_tasks ADD COLUMN prepared INTEGER NOT NULL DEFAULT 0');
+                    await db.execute(
+                        'ALTER TABLE media_tasks ADD COLUMN as_file INTEGER NOT NULL DEFAULT 0');
+                    await db.execute(
+                        'ALTER TABLE media_tasks ADD COLUMN width INTEGER');
+                    await db.execute(
+                        'ALTER TABLE media_tasks ADD COLUMN height INTEGER');
+                  }
+                },
+                onCreate: (db, _) async {
+                  await db.execute('CREATE TABLE media_tasks ('
+                      'txid TEXT PRIMARY KEY, owner_scope TEXT NOT NULL, room_id TEXT NOT NULL, '
+                      'mime_type TEXT NOT NULL, filename TEXT NOT NULL, duration_ms INTEGER, '
+                      'prepared INTEGER NOT NULL DEFAULT 0, as_file INTEGER NOT NULL DEFAULT 0, width INTEGER, height INTEGER, '
+                      'length INTEGER NOT NULL, digest TEXT, stage TEXT NOT NULL, '
+                      'attempts INTEGER NOT NULL DEFAULT 0, failure TEXT, event_id TEXT, '
+                      'next_retry_at INTEGER, created_at INTEGER NOT NULL)');
+                })));
     try {
-      await db.execute('CREATE INDEX IF NOT EXISTS media_retained '
-          'ON media_tasks(owner_scope) WHERE length > 0');
+      await _metadata(
+          () => db.execute('CREATE INDEX IF NOT EXISTS media_retained '
+              'ON media_tasks(owner_scope) WHERE length > 0'));
       await _seal(owner.scope, null);
       return db;
     } catch (_) {
@@ -370,9 +398,9 @@ final class SqliteMediaOutboxStore {
           int? width,
           int? height,
           bool Function()? isCurrentOwner}) =>
-      _serial(() async {
+      _trackPreparation(() async {
         void checkOwner() {
-          if (_canceledSources.contains(txid)) {
+          if (_root != null && _canceledSources.contains(_sourceKey(txid))) {
             throw const MediaOutboxException('canceled');
           }
           if (isCurrentOwner?.call() == false) {
@@ -396,7 +424,44 @@ final class SqliteMediaOutboxStore {
             (height != null && (height <= 0 || height > 100000))) {
           throw const MediaOutboxException('invalid-metadata');
         }
-        final existing = await byTxid(txid);
+        final db = await _db();
+        checkOwner();
+        // Count + insertion is one short SQLite transaction, also across
+        // replacement handles. No resolver, bytes allocation or copy holds it.
+        final existing =
+            await _metadata(() => db.transaction<MediaOutboxTask?>((txn) async {
+                  final rows = await txn.query('media_tasks',
+                      where: 'txid = ? AND owner_scope = ?',
+                      whereArgs: [txid, owner.scope],
+                      limit: 1);
+                  if (rows.isNotEmpty) {
+                    return MediaOutboxTask.fromRow(rows.single);
+                  }
+                  final count = (await txn.rawQuery(
+                          'SELECT COUNT(*) AS total FROM media_tasks '
+                          'WHERE owner_scope = ? AND stage NOT IN (?, ?)',
+                          [owner.scope, 'sent', 'canceled']))
+                      .single['total']! as int;
+                  if (count >= maxPending) {
+                    throw const MediaOutboxException('queue-full');
+                  }
+                  await txn.insert('media_tasks', {
+                    'txid': txid,
+                    'owner_scope': owner.scope,
+                    'room_id': roomId,
+                    'mime_type': mimeType,
+                    'filename': filename,
+                    'duration_ms': durationMs,
+                    'prepared': prepared ? 1 : 0,
+                    'as_file': asFile ? 1 : 0,
+                    'width': width,
+                    'height': height,
+                    'length': 0,
+                    'stage': 'preparing',
+                    'created_at': DateTime.now().millisecondsSinceEpoch
+                  });
+                  return null;
+                }));
         checkOwner();
         if (existing != null) {
           if (existing.roomId != roomId ||
@@ -411,32 +476,18 @@ final class SqliteMediaOutboxStore {
           }
           return existing;
         }
-        if ((await pending()).length >= maxPending) {
-          throw const MediaOutboxException('queue-full');
-        }
-        final db = await _db();
-        checkOwner();
-        await db.insert('media_tasks', {
-          'txid': txid,
-          'owner_scope': owner.scope,
-          'room_id': roomId,
-          'mime_type': mimeType,
-          'filename': filename,
-          'duration_ms': durationMs,
-          'prepared': prepared ? 1 : 0,
-          'as_file': asFile ? 1 : 0,
-          'width': width,
-          'height': height,
-          'length': 0,
-          'stage': 'preparing',
-          'created_at': DateTime.now().millisecondsSinceEpoch
-        });
-        await checkpoint?.call('intent');
         final target = _source(txid);
         final temporary = File('${target.path}.part');
-        _writingSources.add(txid);
+        final sourceKey = _sourceKey(txid);
+        _writingSources.add(sourceKey);
         Object? preparationFailure;
+        void Function()? releasePreparation;
         try {
+          await checkpoint?.call('intent');
+          // At most two actual preparations across stores. Waiting requests
+          // already have durable intent; the short metadata transaction is free.
+          releasePreparation = await _preparationSlots.acquire();
+          checkOwner();
           if (availableBeforePreparation < reserveBytes) {
             throw const MediaOutboxException('low-space');
           }
@@ -462,21 +513,21 @@ final class SqliteMediaOutboxStore {
           checkOwner();
           // Reserve disk atomically across replacement store instances. An
           // interrupted .part remains charged at its full admitted length.
-          await db.transaction((txn) async {
-            final rows = await txn.rawQuery(
-                'SELECT COALESCE(SUM(length), 0) AS total '
-                'FROM media_tasks WHERE owner_scope = ? AND length > 0',
-                [owner.scope]);
-            final retained = rows.single['total']! as int;
-            if (expectedLength > maxRetainedBytes - retained) {
-              throw const MediaOutboxException('pending-capacity');
-            }
-            final changed = await txn.update(
-                'media_tasks', {'length': expectedLength},
-                where: 'txid = ? AND owner_scope = ? AND stage = ?',
-                whereArgs: [txid, owner.scope, 'preparing']);
-            if (changed != 1) throw const MediaOutboxException('canceled');
-          });
+          await _metadata(() => db.transaction((txn) async {
+                final rows = await txn.rawQuery(
+                    'SELECT COALESCE(SUM(length), 0) AS total '
+                    'FROM media_tasks WHERE owner_scope = ? AND length > 0',
+                    [owner.scope]);
+                final retained = rows.single['total']! as int;
+                if (expectedLength > maxRetainedBytes - retained) {
+                  throw const MediaOutboxException('pending-capacity');
+                }
+                final changed = await txn.update(
+                    'media_tasks', {'length': expectedLength},
+                    where: 'txid = ? AND owner_scope = ? AND stage = ?',
+                    whereArgs: [txid, owner.scope, 'preparing']);
+                if (changed != 1) throw const MediaOutboxException('canceled');
+              }));
           checkOwner();
           // Reject links before any writer/rename follows them. Native seal
           // independently checks the fixed namespace after creating the file.
@@ -521,7 +572,7 @@ final class SqliteMediaOutboxStore {
               owner.scope, sha256.convert(utf8.encode(txid)).toString());
           await checkpoint?.call('source');
           checkOwner();
-          await db.update(
+          await _metadata(() => db.update(
               'media_tasks',
               {
                 'length': length,
@@ -529,7 +580,7 @@ final class SqliteMediaOutboxStore {
                 'stage': 'queued'
               },
               where: 'txid = ? AND stage = ?',
-              whereArgs: [txid, 'preparing']);
+              whereArgs: [txid, 'preparing']));
           await checkpoint?.call('queued');
           return (await byTxid(txid))!;
         } on Exception catch (error) {
@@ -544,8 +595,12 @@ final class SqliteMediaOutboxStore {
           if (preparationFailure != null) rethrow;
           throw MediaOutboxException(reason);
         } finally {
-          _writingSources.remove(txid);
-          await releaseTerminalSource(txid);
+          _writingSources.remove(sourceKey);
+          try {
+            await releaseTerminalSource(txid);
+          } finally {
+            releasePreparation?.call();
+          }
         }
       });
 
@@ -592,29 +647,33 @@ final class SqliteMediaOutboxStore {
       'event_id': eventId,
       'next_retry_at': nextRetryAt?.millisecondsSinceEpoch
     };
-    final updated = await (await _db()).rawUpdate(
+    final db = await _db();
+    final updated = await _metadata(() => db.rawUpdate(
             'UPDATE media_tasks SET '
             '${values.keys.map((key) => '$key = ?').join(', ')}'
             '${incrementAttempt ? ', attempts = attempts + 1' : ''} WHERE $where',
-            [...values.values, ...args]) >
+            [...values.values, ...args])) >
         0;
     if (updated && stage == MediaOutboxStage.canceled) {
-      _canceledSources.add(txid);
+      _canceledSources.add(_sourceKey(txid));
     }
     return updated;
   }
 
   /// Caller must first settle its real transport; suspension is not cancellation.
   Future<void> releaseTerminalSource(String txid) async {
-    if (_writingSources.contains(txid)) return;
+    await _db();
+    if (_writingSources.contains(_sourceKey(txid))) return;
     final task = await byTxid(txid);
     if (task == null || !task.terminal) return;
     for (final file in [_source(txid), File('${_source(txid).path}.part')]) {
       if (await file.exists()) await file.delete();
     }
-    await (await _db()).update('media_tasks', {'length': 0},
+    final db = await _db();
+    await _metadata(() => db.update('media_tasks', {'length': 0},
         where: 'txid = ? AND owner_scope = ? AND stage IN (?, ?)',
-        whereArgs: [txid, owner.scope, 'sent', 'canceled']);
+        whereArgs: [txid, owner.scope, 'sent', 'canceled']));
+    _canceledSources.remove(_sourceKey(txid));
   }
 
   Future<void> cleanupTerminalSources(
@@ -637,7 +696,10 @@ final class SqliteMediaOutboxStore {
   }
 
   Future<void> close() async {
-    await _writes;
+    await Future.wait([
+      for (final write in _writes.toList())
+        write.then<void>((_) {}, onError: (Object _, StackTrace __) {})
+    ]);
     final opening = _opening;
     _opening = null;
     if (opening != null) await (await opening).close();
@@ -650,4 +712,32 @@ final class _DigestSink implements Sink<Digest> {
   void add(Digest data) => value = data;
   @override
   void close() {}
+}
+
+/// A permit spans the resolver and file copy through actual settlement. Waiting
+/// intents hold only their caller's descriptor; production byte preparation also
+/// obeys the existing global media memory budget.
+final class _MediaPreparationSlots {
+  int _active = 0;
+  final _waiting = <Completer<void Function()>>[];
+  Future<void Function()> acquire() {
+    final result = Completer<void Function()>();
+    _waiting.add(result);
+    _pump();
+    return result.future;
+  }
+
+  void _pump() {
+    while (_active < 2 && _waiting.isNotEmpty) {
+      final next = _waiting.removeAt(0);
+      _active++;
+      var released = false;
+      next.complete(() {
+        if (released) return;
+        released = true;
+        _active--;
+        _pump();
+      });
+    }
+  }
 }

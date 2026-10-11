@@ -45,3 +45,7 @@
 - 仅候选、无生产备份/发布/隧道；没有运行中的本任务测试进程。根任务持有共享门禁/原生 CI。
 - 回退候选 commit 不删除 pending 原件或数据库；新库独立且 schema additive。回退版无法恢复这些新任务，不能将保留文件视为可淘汰 cache。
 - 恢复时先检查冻结 SHA/输入清单、根任务原生门禁结果和独立双审；不要依据当前文档宣称 R8 已可发布。
+
+## 独立审查返工（2026-10-11 05:57 UTC）
+
+根任务要求先冻结四阻断修复：resolver 意图写入阻塞、重试计时器较晚截止、替换实例取消活动 copy、旧 flight 迟到成为孤儿。实现和 RED→GREEN 见 four-boundaries-review-fix.md；新增真实准备 2 槽与跨 SQLite handle 的 128 原子 intent 上限门禁。已知返工区间由 review-regressions-behavior-red.txt 至 four-boundaries-final.txt 文件时间给出，不反推主动工时。当前下一步为独立复审；非默认 gallery duration 兼容分支按根任务指示留在当前发布范围之外。

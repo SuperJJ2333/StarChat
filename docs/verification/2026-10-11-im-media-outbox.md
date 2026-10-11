@@ -34,3 +34,7 @@
 根任务负责原生 helper 同源集成、独立 SPEC/domain 后 Quality/Security 审查、完整 Flutter/analyze 与 scripts/verify.ps1 共享门禁、设备启动/升级/恢复验收。本树只验证上述变化范围，没有运行或替代这些共享门禁。未部署、未打包、未发真实推送或用户附件。下一步是根任务集成后运行原生 fixture，再按审查问题补最小回归。
 
 源码/Markdown 的 git diff --cached --check 通过。原始 RED 日志保留 Flutter 输出中的空白行，完整日志范围的 diff --check 会提示这些 trailing whitespace；为保持证据原样未改写日志。
+
+## 独立审查返工
+
+850710bd 的独立审查发现四项真实边界缺口，已形成独立返工；旧 35 项门禁不等价于独立审查通过。见 [四边界修复](artifacts/2026-10-11/im-media-outbox/four-boundaries-review-fix.md) 与 [当前返工输入](artifacts/2026-10-11/im-media-outbox/review-input-hashes.json)。可选 nonlocal gallery duration 候选未混入本轮 release，组合页面夹具失败明确保留。

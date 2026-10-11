@@ -130,33 +130,44 @@ void main() {
     final aAck = Completer<String>();
     final bAck = Completer<String>();
     final starts = <String>[];
+    final pairEntered = Completer<void>();
+    final cEntered = Completer<void>();
     final service = MediaOutboxRecoveryService(
         store: store,
         isCurrentOwner: () => true,
         authorize: (_) async => true,
         send: (task, _) {
           starts.add(task.txid);
+          if (starts.contains('fixed') &&
+              starts.contains('b') &&
+              !pairEntered.isCompleted) {
+            pairEntered.complete();
+          }
+          if (task.txid == 'c') cEntered.complete();
           if (task.txid == 'fixed') return aAck.future;
           if (task.txid == 'b') return bAck.future;
           return Future.value('\$${'next'}');
         });
     final recovering = service.recover(waitForSettlement: true);
-    for (var i = 0; i < 100 && !starts.contains('b'); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
+    await pairEntered.future.timeout(const Duration(seconds: 5));
     // Always settle the pending futures even on the expected RED assertion.
     final beforeSettle = List<String>.of(starts);
     final sameFlight = service.dispatch(b);
     bAck.complete(r'$b');
-    for (var i = 0; i < 100 && !starts.contains('c'); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 5));
+    List<String> beforeA;
+    try {
+      // ACK completion alone is not real settlement: durable ACK/cleanup must
+      // finish before the room slot may pass to C.
+      await sameFlight;
+      await cEntered.future.timeout(const Duration(seconds: 5));
+      beforeA = List<String>.of(starts);
+    } finally {
+      aAck.complete(r'$a');
+      await recovering;
     }
-    final beforeA = List<String>.of(starts);
-    aAck.complete(r'$a');
-    await recovering;
-    await sameFlight;
-    expect(beforeSettle, ['fixed', 'b']);
-    expect(beforeA, ['fixed', 'b', 'c']);
+    expect(beforeSettle, unorderedEquals(['fixed', 'b']));
+    expect(beforeA, unorderedEquals(['fixed', 'b', 'c']));
+    expect(beforeA.last, 'c');
     expect(starts.where((id) => id == 'b'), hasLength(1));
     expect(starts.last, 'a2');
     service.dispose();

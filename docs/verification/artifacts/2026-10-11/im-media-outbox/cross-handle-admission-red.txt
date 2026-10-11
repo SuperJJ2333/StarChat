@@ -1,0 +1,19 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart
+00:00 +0: replacement SQLite handles atomically reserve the last pending slot
+00:01 +0 -1: replacement SQLite handles atomically reserve the last pending slot [E]
+  Expected: an object with length of <1>
+    Actual: WhereTypeIterable<MediaOutboxException>:[]
+     Which: has length of <0>
+  [Instance of 'MediaOutboxTask', SqfliteFfiException(sqlite_error: 5, , SqliteException(5): while executing, database is locked, database is locked (code 5)
+    Causing statement: BEGIN IMMEDIATE, parameters: }) DatabaseException(SqliteException(5): while executing, database is locked, database is locked (code 5)
+    Causing statement: BEGIN IMMEDIATE, parameters: ) sql 'BEGIN IMMEDIATE' {details: {database: {path: C:\Users\Administrator\AppData\Local\Temp\durable-39d3f7d9\555b025b394c13903194713daee4cd8834f2652c1c782bafbe3549e069b6f6fd\manifest-v1.db, id: 2, readOnly: false, singleInstance: false}}}]
+  
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\core\outbox\media_outbox_review_regression_test.dart 276:7  main.<fn>
+  
+00:01 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement SQLite handles atomically reserve the last pending slot

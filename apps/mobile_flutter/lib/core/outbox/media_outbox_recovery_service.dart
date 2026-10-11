@@ -39,8 +39,8 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
   bool _active = true;
   bool _disposed = false;
   Future<void>? _recovery;
-  bool _reconciled = false;
   Timer? _retry;
+  DateTime? _retryDue;
   bool get active => _active && isCurrentOwner();
 
   void _ensureActive() {
@@ -369,22 +369,21 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
     _ensureActive();
     final tasks = await store.pending();
     _ensureActive();
-    if (!_reconciled) {
-      for (final task in tasks) {
-        if (_flights.containsKey((task.ownerScope, task.txid)) ||
-            _foreground.containsKey((task.ownerScope, task.txid))) {
-          continue;
-        }
-        _ensureActive();
-        if (task.stage == MediaOutboxStage.sending) {
-          await store.setStage(task.txid, MediaOutboxStage.ackUnknown,
-              from: {MediaOutboxStage.sending}, failure: 'ack-unknown');
-        } else if (task.stage == MediaOutboxStage.preparing) {
-          await store.setStage(task.txid, MediaOutboxStage.failed,
-              from: {MediaOutboxStage.preparing}, failure: 'source-incomplete');
-        }
+    // A replacement instance may first see an old live flight, then observe
+    // it settle after suspension. Reconcile such orphans on every scan.
+    for (final task in tasks) {
+      if (_flights.containsKey((task.ownerScope, task.txid)) ||
+          _foreground.containsKey((task.ownerScope, task.txid))) {
+        continue;
       }
-      _reconciled = true;
+      _ensureActive();
+      if (task.stage == MediaOutboxStage.sending) {
+        await store.setStage(task.txid, MediaOutboxStage.ackUnknown,
+            from: {MediaOutboxStage.sending}, failure: 'ack-unknown');
+      } else if (task.stage == MediaOutboxStage.preparing) {
+        await store.setStage(task.txid, MediaOutboxStage.failed,
+            from: {MediaOutboxStage.preparing}, failure: 'source-incomplete');
+      }
     }
     for (final task in await store.pending()) {
       _ensureActive();
@@ -430,9 +429,15 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
 
   void _schedule(Duration delay) {
     if (!active) return;
-    // A later task may wake early, but its persisted deadline is checked again.
-    _retry ??= Timer(delay, () {
+    final due = _now().add(delay);
+    if (_retryDue != null && !_retryDue!.isAfter(due)) return;
+    _retry?.cancel();
+    _retryDue = due;
+    // Wake at the earliest due. Every task still checks its own persisted hard
+    // deadline, so an earlier wake never grants an early retry to another task.
+    _retry = Timer(delay, () {
       _retry = null;
+      _retryDue = null;
       if (active) unawaited(recover().catchError((Object _) {}));
     });
   }
@@ -445,6 +450,7 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
     _active = false;
     _retry?.cancel();
     _retry = null;
+    _retryDue = null;
   }
 
   Future<void> close() async {

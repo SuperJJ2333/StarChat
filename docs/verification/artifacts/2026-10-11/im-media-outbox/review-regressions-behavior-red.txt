@@ -1,0 +1,38 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart
+00:00 +0: a hanging resolver does not prevent another durable intent
+00:00 +0 -1: a hanging resolver does not prevent another durable intent [E]
+  Expected: not null
+    Actual: <null>
+  B must at least commit intent while A resolver is pending
+  
+  package:matcher                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18              expect
+  test\core\outbox\media_outbox_review_regression_test.dart 57:5  main.<fn>
+  
+00:00 +0 -1: earlier automatic retry replaces an existing later timer
+00:03 +0 -2: earlier automatic retry replaces an existing later timer [E]
+  Expected: <2>
+    Actual: <1>
+  B two-second retry must not wait for A five-second deadline
+  
+  package:matcher                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18              expect
+  test\core\outbox\media_outbox_review_regression_test.dart 83:5  main.<fn>
+  
+00:03 +0 -2: replacement owner cancellation retains an active source copy
+00:03 +0 -3: replacement owner cancellation retains an active source copy [E]
+  Expected: null
+    Actual: PathAccessException:<PathAccessException: Cannot delete file, path = 'C:\Users\Administrator\AppData\Local\Temp\durable-4f3a337a\555b025b394c13903194713daee4cd8834f2652c1c782bafbe3549e069b6f6fd\sources\6f5a6034e770acbfb3f797e6a7eb7948d470d45f9928f92b7d72dc7c45e6d0cd.bin.part' (OS Error: 另一个程序正在使用此文件，进程无法访问。, errno = 32)>
+  cancellation must defer cleanup instead of deleting an active copy
+  
+  package:matcher                                                  expect
+  package:flutter_test/src/widget_tester.dart 473:18               expect
+  test\core\outbox\media_outbox_review_regression_test.dart 150:5  main.<fn>
+  
+00:03 +0 -3: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: a hanging resolver does not prevent another durable intent
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement owner cancellation retains an active source copy

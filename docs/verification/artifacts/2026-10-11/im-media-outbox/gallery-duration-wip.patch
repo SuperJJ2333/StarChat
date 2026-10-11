@@ -1,0 +1,321 @@
+diff --git a/apps/mobile_flutter/lib/features/matrix/room_page.dart b/apps/mobile_flutter/lib/features/matrix/room_page.dart
+index ac9815cd..f0823bc3 100644
+--- a/apps/mobile_flutter/lib/features/matrix/room_page.dart
++++ b/apps/mobile_flutter/lib/features/matrix/room_page.dart
+@@ -2772,6 +2772,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+               mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType,
+               filename: photo.isVideo ? 'video.mp4' : 'image',
+               prepared: photo.isVideo,
++              durationMs: photo.isVideo ? photo.duration?.inMilliseconds : null,
+               load: () async {
+                 if (photo.isVideo) return photo.compressedBytes();
+                 if ((await photo.originalSizeBytes?.call() ?? 0) >
+diff --git a/apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart b/apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart
+index afa68f7d..281f6582 100644
+--- a/apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart
+@@ -14,9 +14,16 @@ import 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart';
+ import 'package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart';
+ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+ import 'package:liuhetong_mobile/features/matrix/room_page.dart';
++import 'package:liuhetong_mobile/features/matrix/image_picker_page.dart';
++import 'package:liuhetong_mobile/features/matrix/media_index.dart';
++import 'package:liuhetong_mobile/features/matrix/message_timeline_cache.dart';
++import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
++import 'package:liuhetong_mobile/features/matrix/video_poster_session_cache.dart';
+ 
+ class _Client extends Client {
+-  _Client() : super('synthetic-camera-entry');
++  _Client()
++      : super('synthetic-camera-entry',
++            httpClient: MockClient((_) async => http.Response('{}', 404)));
+   @override
+   String? get userID => '@self:test';
+   late final room = _Room(this);
+@@ -32,6 +39,10 @@ class _Room extends Room {
+   bool get canSendDefaultMessages => true;
+   @override
+   Membership get membership => Membership.join;
++  // This fixture has no synced server echo. Poster lookups should return absent
++  // immediately, not start an unrelated SDK network retry across FakeAsync tests.
++  @override
++  Future<Event?> getEventById(String eventID) async => null;
+   @override
+   Future<Timeline> getTimeline(
+           {void Function(int)? onChange,
+@@ -60,120 +71,160 @@ class _Timeline extends Fake implements Timeline {
+ 
+ void main() {
+   TestWidgetsFlutterBinding.ensureInitialized();
+-  testWidgets(
+-      'real RoomPage camera entry persists a separate source before sender admission',
+-      (tester) async {
+-    SharedPreferences.setMockInitialValues({});
+-    final messenger =
+-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+-    late Directory root;
+-    late File original;
+-    late SqliteMediaOutboxStore store;
+-    await tester.runAsync(() async {
+-      sqfliteFfiInit();
+-      root = await Directory.systemTemp.createTemp('media-camera-entry-');
+-      original = await File('${root.path}/camera.jpg').writeAsBytes([1, 2, 3]);
+-      store = SqliteMediaOutboxStore(
+-          owner: const MediaOutboxOwner(
+-              accountId: '@self:test',
+-              homeserver: 'https://matrix.test',
+-              generation: 'db'),
+-          directory: () async => root,
+-          availableBytes: () async => 1 << 30,
+-          seal: (_, __) async {});
+-    });
+-    final entered = Completer<void>();
+-    final ack = Completer<String>();
+-    final service = MediaOutboxRecoveryService(
+-        store: store,
+-        isCurrentOwner: () => true,
+-        authorize: (_) async => true,
+-        send: (task, source) async {
+-          expect(
+-              (await store.byTxid(task.txid))!.stage, MediaOutboxStage.sending);
+-          expect(source.path, isNot(original.path));
+-          expect(await source.readAsBytes(), [1, 2, 3]);
+-          entered.complete();
+-          return ack.future;
+-        });
+-    MediaOutboxRecoveryService.shared = service;
+-    const camera = MethodChannel('plugins.flutter.io/image_picker');
+-    const recorder = MethodChannel('com.llfbandit.record/messages');
+-    messenger.setMockMethodCallHandler(camera, (_) async => original.path);
+-    messenger.setMockMethodCallHandler(recorder, (_) async => null);
+-    final client = _Client();
+-    final matrix = MatrixSdkE2eeClient(client,
+-        homeserver: Uri.parse('https://matrix.test'),
+-        suspendClient: (_) async {});
+-    final lease = await matrix.openRoomLease(client.room.id);
+-    final api = BusinessApiClient(
+-        baseUri: Uri.parse('https://business.test'),
+-        sessionStore: SecureSessionStore(),
+-        client: MockClient((_) async => http.Response('{}', 404)));
+-    await tester.pumpWidget(CupertinoApp(
+-        home: RoomPage(
+-            api: api,
+-            roomLease: lease,
+-            roomName: 'Camera',
+-            onCreateGroup: () {})));
+-    await tester.pump();
+-    await tester.tap(find.byKey(const Key('composer-more')));
+-    await tester.pump();
+-    // Platform resolver and SQLite execute in the real async zone; pump only
+-    // drives the widget projection. Never await real I/O in FakeAsync.
+-    await tester.runAsync(() => tester.tap(find.text('拍摄')));
+-    await tester.pump();
+-    for (var i = 0; i < 100 && !entered.isCompleted; i++) {
+-      await tester.runAsync(
+-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+-      await tester.pump();
+-    }
+-    expect(entered.isCompleted, isTrue);
+-    debugPrint('camera-fixture: sender entered');
+-    await tester.runAsync(() async {
+-      await original.delete();
+-    });
+-    await tester.pumpWidget(const SizedBox.shrink());
+-    debugPrint('camera-fixture: page disposed');
+-    ack.complete(r'$camera-sent');
+-    await tester.pump();
+-    for (var i = 0; i < 100; i++) {
+-      final pending = await tester.runAsync(() => store.pending());
+-      if (pending!.isEmpty) break;
+-      await tester.runAsync(
+-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+-      await tester.pump();
+-    }
+-    expect(await tester.runAsync(() => store.pending()), isEmpty);
+-    debugPrint('camera-fixture: ACK persisted');
+-    MediaOutboxRecoveryService.shared = null;
+-    service.dispose();
+-    var closed = false;
+-    await tester.runAsync(() async {
+-      unawaited(service.close().then((_) => closed = true));
++  for (final gallery in [false, true]) {
++    testWidgets(
++        'real RoomPage ${gallery ? "nonlocal video gallery" : "camera"} entry preserves source and metadata before sender admission',
++        (tester) async {
++      SharedPreferences.setMockInitialValues({});
++      MessageTimelineCache.shared.clear();
++      RoomImagePreviewCache.clearSessionMemory();
++      VideoPosterSessionCache.clearSessionMemory();
++      final messenger =
++          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
++      late Directory root;
++      late File original;
++      late SqliteMediaOutboxStore store;
++      late MediaIndex index;
++      await tester.runAsync(() async {
++        sqfliteFfiInit();
++        root = await Directory.systemTemp.createTemp('media-camera-entry-');
++        index = MediaIndex(databasePath: '${root.path}/synthetic-index.db');
++        MediaIndex.overrideShared(index);
++        original =
++            await File('${root.path}/camera.jpg').writeAsBytes([1, 2, 3]);
++        store = SqliteMediaOutboxStore(
++            owner: const MediaOutboxOwner(
++                accountId: '@self:test',
++                homeserver: 'https://matrix.test',
++                generation: 'db'),
++            directory: () async => root,
++            availableBytes: () async => 1 << 30,
++            seal: (_, __) async {});
++      });
++      MediaOutboxTask? delivered;
++      final entered = Completer<void>();
++      final ack = Completer<String>();
++      final service = MediaOutboxRecoveryService(
++          store: store,
++          isCurrentOwner: () => true,
++          authorize: (_) async => true,
++          send: (task, source) async {
++            expect((await store.byTxid(task.txid))!.stage,
++                MediaOutboxStage.sending);
++            expect(source.path, isNot(original.path));
++            expect(await source.readAsBytes(), [1, 2, 3]);
++            delivered = task;
++            entered.complete();
++            return ack.future;
++          });
++      MediaOutboxRecoveryService.shared = service;
++      const camera = MethodChannel('plugins.flutter.io/image_picker');
++      const recorder = MethodChannel('com.llfbandit.record/messages');
++      messenger.setMockMethodCallHandler(camera, (_) async => original.path);
++      messenger.setMockMethodCallHandler(recorder, (_) async => null);
++      final client = _Client();
++      final matrix = MatrixSdkE2eeClient(client,
++          homeserver: Uri.parse('https://matrix.test'),
++          suspendClient: (_) async {});
++      final lease = await matrix.openRoomLease(client.room.id);
++      final api = BusinessApiClient(
++          baseUri: Uri.parse('https://business.test'),
++          sessionStore: SecureSessionStore(),
++          client: MockClient((_) async => http.Response('{}', 404)));
++      await tester.pumpWidget(CupertinoApp(
++          home: RoomPage(
++              api: api,
++              roomLease: lease,
++              roomName: 'Camera',
++              onCreateGroup: () {})));
++      await tester.pump(const Duration(milliseconds: 10));
++      await tester.tap(find.byKey(const Key('composer-more')));
++      await tester.pump(const Duration(milliseconds: 10));
++      // Platform resolver and SQLite execute in the real async zone; pump only
++      // drives the widget projection. Never await real I/O in FakeAsync.
++      if (gallery) {
++        await tester.runAsync(() => tester.tap(find.text('图片')));
++        for (var i = 0;
++            i < 100 && find.byType(ImagePickerPage).evaluate().isEmpty;
++            i++) {
++          await tester.runAsync(
++              () => Future<void>.delayed(const Duration(milliseconds: 10)));
++          await tester.pump(const Duration(milliseconds: 10));
++        }
++        final photo = GalleryPhoto(
++            id: 'synthetic-nonlocal-video',
++            thumbnail: Uint8List(0),
++            mimeType: 'video/mp4',
++            isVideo: true,
++            duration: const Duration(seconds: 9),
++            compressedBytes: () => original.readAsBytes(),
++            originalBytes: () => original.readAsBytes());
++        Navigator.of(tester.element(find.byType(ImagePickerPage))).pop(
++            (photos: <GalleryPhoto>[photo], original: false, flash: false));
++        await tester.pump(const Duration(milliseconds: 10));
++      } else {
++        await tester.runAsync(() => tester.tap(find.text('拍摄')));
++        await tester.pump(const Duration(milliseconds: 10));
++      }
++      for (var i = 0; i < 100 && !entered.isCompleted; i++) {
++        await tester.runAsync(
++            () => Future<void>.delayed(const Duration(milliseconds: 10)));
++        await tester.pump(const Duration(milliseconds: 10));
++      }
++      expect(entered.isCompleted, isTrue);
++      debugPrint('camera-fixture: sender entered');
++      await tester.runAsync(() async {
++        await original.delete();
++      });
++      await tester.pumpWidget(const SizedBox.shrink());
++      debugPrint('camera-fixture: page disposed');
++      ack.complete(r'$camera-sent');
++      await tester.pump(const Duration(milliseconds: 10));
++      for (var i = 0; i < 100; i++) {
++        final pending = await tester.runAsync(() => store.pending());
++        if (pending!.isEmpty) break;
++        await tester.runAsync(
++            () => Future<void>.delayed(const Duration(milliseconds: 10)));
++        await tester.pump(const Duration(milliseconds: 10));
++      }
++      expect(await tester.runAsync(() => store.pending()), isEmpty);
++      debugPrint('camera-fixture: ACK persisted');
++      MediaOutboxRecoveryService.shared = null;
++      service.dispose();
++      var closed = false;
++      await tester.runAsync(() async {
++        unawaited(service.close().then((_) => closed = true));
++      });
++      for (var i = 0; i < 100 && !closed; i++) {
++        await tester.runAsync(
++            () => Future<void>.delayed(const Duration(milliseconds: 10)));
++        await tester.pump(const Duration(milliseconds: 10));
++      }
++      expect(closed, isTrue);
++      await tester.runAsync(() async {
++        await index.close();
++        MediaIndex.overrideShared(null);
++        await root.delete(recursive: true);
++      });
++      messenger.setMockMethodCallHandler(camera, null);
++      messenger.setMockMethodCallHandler(recorder, null);
++      var suspended = false;
++      await tester.runAsync(() async {
++        unawaited(matrix.suspend().then((_) => suspended = true));
++      });
++      for (var i = 0; i < 500 && !suspended; i++) {
++        await tester.runAsync(
++            () => Future<void>.delayed(const Duration(milliseconds: 10)));
++        await tester.pump(const Duration(milliseconds: 10));
++      }
++      expect(suspended, isTrue);
++      await tester.runAsync(client.dispose);
++      debugPrint('camera-fixture: client closed');
++      if (gallery) {
++        expect(delivered!.durationMs, 9000);
++        expect(delivered!.prepared, isTrue);
++      }
+     });
+-    for (var i = 0; i < 100 && !closed; i++) {
+-      await tester.runAsync(
+-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+-      await tester.pump();
+-    }
+-    expect(closed, isTrue);
+-    await tester.runAsync(() async {
+-      await root.delete(recursive: true);
+-    });
+-    messenger.setMockMethodCallHandler(camera, null);
+-    messenger.setMockMethodCallHandler(recorder, null);
+-    var suspended = false;
+-    await tester.runAsync(() async {
+-      unawaited(matrix.suspend().then((_) => suspended = true));
+-    });
+-    for (var i = 0; i < 100 && !suspended; i++) {
+-      await tester.runAsync(
+-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+-      await tester.pump();
+-    }
+-    expect(suspended, isTrue);
+-    await tester.runAsync(client.dispose);
+-    debugPrint('camera-fixture: client closed');
+-  });
++  }
+ }
++
