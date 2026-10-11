@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: valid
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: callerCancel
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: noCache
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: corrupt
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: accountClear
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: globalClear
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart: playback waits independent preparation: cancelFirst=false
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart: playback waits independent preparation: cancelFirst=false
+synthetic_prepare_first_cancel=false second_active=true second_error=null
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart: playback waits independent preparation: cancelFirst=true
+synthetic_prepare_first_cancel=true second_active=true second_error=null
+00:00 +9: All tests passed!
