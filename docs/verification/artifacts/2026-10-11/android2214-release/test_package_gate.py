@@ -35,9 +35,13 @@ class PackageGate(unittest.TestCase):
         self.steps.write_text('step\texit_code\nsource-build\t0\napk-rebuild\t0\nsignature-gate\t0\n')
         evidence = self.root / 'evidence.log'; evidence.write_bytes(b'synthetic successful gate')
         self.gates = dict(source_commit='b' * 40, source_manifest_sha256='c' * 64,
+                          pubspec_lock_sha256='d' * 64,
                           artifact_sha256=self.artifact['final_apk_sha256'], checks={
                               key: dict(status='pass', path='evidence.log', sha256=hashlib.sha256(evidence.read_bytes()).hexdigest())
                               for key in ('shared_flutter', 'native_android', 'final_apk')})
+        self.gates['final_identity'] = dict(package='com.liuhetong.mobile', abi='arm64-v8a',
+            version='0.4.45', build=2214, signer_sha256=self.artifact['signer_sha256'],
+            artifact_bytes=self.artifact['final_apk_bytes'])
         self.gate_path = self.root / 'gates.json'
 
     def validate(self):
@@ -75,6 +79,24 @@ class PackageGate(unittest.TestCase):
         self.gates['source_manifest_sha256'] = 'c' * 64
         (self.root / 'evidence.log').write_bytes(b'changed')
         with self.assertRaises(ValueError): self.validate()
+
+    def test_gate_traversal_lock_and_final_identity_are_refused(self):
+        module()
+        for container, key, bad in [(self.gates, 'pubspec_lock_sha256', 'e' * 64),
+                (self.gates['final_identity'], 'abi', 'armeabi-v7a'),
+                (self.gates['final_identity'], 'build', 2214.0),
+                (self.gates['final_identity'], 'artifact_bytes', True),
+                (self.gates['checks']['native_android'], 'path', '../outside.log')]:
+            before = container[key]; container[key] = bad
+            with self.subTest(key=key), self.assertRaises(ValueError): self.validate()
+            container[key] = before
+
+    def test_empty_duplicate_or_missing_build_phases_are_refused(self):
+        module()
+        for value in ('step\texit_code\n', 'step\texit_code\nsource-build\t0\n',
+                'step\texit_code\nsource-build\t0\nsource-build\t0\napk-rebuild\t0\nsignature-gate\t0\n'):
+            self.steps.write_text(value, encoding='utf-8')
+            with self.assertRaises(ValueError): self.validate()
 
 
 if __name__ == '__main__':

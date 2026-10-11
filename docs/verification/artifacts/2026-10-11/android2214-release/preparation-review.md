@@ -1,0 +1,27 @@
+# Preparation handoff — author self-check, independent review pending
+
+Scope: Android 2214 publication preparation only, inherited tree at 80954f9b. Owner review_r1_r2. All changes are in this dedicated artifact directory. No real package, upload, SSH execution, cloud mutation, production setting write, service action or source frontend edit occurred. The original six-case real PostgreSQL evidence is reused on byte-unchanged settings transaction code.
+
+Measured stage window: package RED reproduction 2026-10-11 07:57:08 UTC; final AST/CLI/static validation 08:08:41 UTC. Earlier baseline capture and predecessor implementation are recorded in README, not included in this window. The final identity manifest is `preparation-input-hashes.json`; it binds all ten Python source/test files plus final gate log and reused PostgreSQL evidence.
+
+## SPEC/domain self-check
+
+- Exact Android 0.4.45+2214/package/ARM64/fixed signer identity is required, together with real positive APK length/nonzero hash, actual source/lock hashes, successful build rows and three hashed final gates. Invalid identity produces no package output. No actual APK hash or release record was invented. Synthetic APK bytes appear only in temporary test fixtures with explicit synthetic evidence.
+- Only two Android static files are generated for parent source backfill. Five existing static files, iOS five settings, both minimum3/install URLs and old immutable APK are preserved by the inherited payload guards. CF first15 and all other configuration stay exact; only the precise new HK-origin APK behavior is appended. AWS account218022113852 and role stay fixed. Policy bytes are preserved locally; cloud code has no policy write or S3 object upload.
+- Execution defaults to plan-only. Runtime requires a fresh exact read-only HK/SG baseline. Every step is parameterized by actual package plus a unique operation ID. Successful receipts enforce phase order; alias/publication use new live CDN Deployed/HEAD/CORS results. HK public operations repeat running-container/other-ABI checks. Existing shared host lock, immutable installation, static CAS, private0700 backups, SettingService three-key audited transaction CAS and uncertain-commit stop remain intact.
+- Publication uncertainty blocks further mutation, without rollback/replay. Read-only inspect/audit are available after runtime even if publish has no successful receipt. A hard process termination leaves an exclusive inflight marker for manual inspection.
+
+## Quality/security self-check after SPEC
+
+- Package/output creation follows input verification. Gate/review/source file paths reject traversal, absolute names, symlinks and digest drift. Runtime archive member set and content are rechecked locally and remotely; only regular relative files are extracted, through exclusive writes. Streamed upload refuses excess/truncated/changed content. Stages and receivers are private/exclusive; fixed verified SSH/HTTPS identities remain enabled.
+- Orchestrator source is copied into and bound by the package freeze. Runtime source hashes are checked immediately before execution. Verified source imports bypass local cached bytecode; remote entry uses `-B` and rejects any unfrozen runtime bytecode. Review binds the exact freeze, runtime, artifact, source commit and operation ID. Import/CLI help has no remote side effects.
+- Transport has bounded timeouts, and exceptions do not echo remote stderr or credentials into public receipts. No secrets or production message/attachment data are captured. Receiver/extractor tests exercise real local files and Python processes; live SSH/AWS/CloudFront behavior remains untested here and is not represented as passed.
+- Required environment preflight: global `scripts/verify.ps1` renders configuration and runs broad unchanged server/client gates. This artifact-only implementation uses its dedicated gate and root-owned shared final gates; it does not invent `.env`, alter render output or rerun unrelated candidate/native checks. Independent review must retain this distinction.
+
+## Verification and limits
+
+`preparation-green.log` is one successful run of 27 distinct tests: 18 new package/execution boundaries and nine inherited release contracts. AST parse passed for ten Python files; both parameterized CLI help paths and `git diff --check` passed. Intermediate logs remain accurately labeled in README, including the historical duplicate imported test executions. `postgres.log` contains the predecessor's six actual PostgreSQL cases on unchanged transaction code, not a second claimed run.
+
+The package gate verifies identities and evidence receipt status; a human/independent review must still inspect the hashed real build/native/final APK reports. It is not an APK builder, cryptographic signer or semantic proof engine. A new actual package freeze, source-backfill comparison and bound review are still required after root produces the real final artifact. No phone popup, live CDN transition, production alias publication or production transaction has been tested by this task. Release remains NOT READY until those dependent inputs and reviews exist.
+
+Next executable step: root SPEC/domain review, then quality/security review of the frozen preparation commit. After actual final builder/native/shared evidence is available, run the local package entry, inspect exact generated targets and establish the final reviewed freeze before any separately authorized execution.

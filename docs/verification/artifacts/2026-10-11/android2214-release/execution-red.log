@@ -1,0 +1,123 @@
+test_default_plan_never_calls_transport_or_creates_execution (test_execution_gate.ExecutionGate.test_default_plan_never_calls_transport_or_creates_execution) ... FAIL
+test_fresh_baseline_drift_blocks_first_write (test_execution_gate.ExecutionGate.test_fresh_baseline_drift_blocks_first_write) ... FAIL
+test_live_cdn_pending_blocks_alias_before_hk_mutation (test_execution_gate.ExecutionGate.test_live_cdn_pending_blocks_alias_before_hk_mutation) ... FAIL
+test_missing_identity_or_source_drift_has_no_output (test_execution_gate.ExecutionGate.test_missing_identity_or_source_drift_has_no_output) ... ok
+test_missing_review_bad_identity_and_changed_package_never_call_transport (test_execution_gate.ExecutionGate.test_missing_review_bad_identity_and_changed_package_never_call_transport) ... FAIL
+test_out_of_order_mutation_refused_without_transport (test_execution_gate.ExecutionGate.test_out_of_order_mutation_refused_without_transport) ... FAIL
+test_package_exact_two_file_backfill_and_all_hashes (test_execution_gate.ExecutionGate.test_package_exact_two_file_backfill_and_all_hashes) ... FAIL
+test_source_drift_refused_before_output (test_execution_gate.ExecutionGate.test_source_drift_refused_before_output) ... ok
+test_uncertain_mutation_is_recorded_and_cannot_be_replayed (test_execution_gate.ExecutionGate.test_uncertain_mutation_is_recorded_and_cannot_be_replayed) ... FAIL
+test_empty_duplicate_or_missing_build_phases_are_refused (test_package_gate.PackageGate.test_empty_duplicate_or_missing_build_phases_are_refused) ... ok
+test_exact_candidate_and_three_hashed_gates_required (test_package_gate.PackageGate.test_exact_candidate_and_three_hashed_gates_required) ... ok
+test_gate_traversal_lock_and_final_identity_are_refused (test_package_gate.PackageGate.test_gate_traversal_lock_and_final_identity_are_refused) ... ok
+test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused (test_package_gate.PackageGate.test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused) ... ok
+test_missing_artifact_identity_signer_drift_or_failed_step_is_refused (test_package_gate.PackageGate.test_missing_artifact_identity_signer_drift_or_failed_step_is_refused) ... ok
+
+======================================================================
+FAIL: test_default_plan_never_calls_transport_or_creates_execution (test_execution_gate.ExecutionGate.test_default_plan_never_calls_transport_or_creates_execution)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 78, in test_default_plan_never_calls_transport_or_creates_execution
+    self.prepare(); calls=[]
+    ^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+======================================================================
+FAIL: test_fresh_baseline_drift_blocks_first_write (test_execution_gate.ExecutionGate.test_fresh_baseline_drift_blocks_first_write)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 104, in test_fresh_baseline_drift_blocks_first_write
+    self.prepare(); calls=[]
+    ^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+======================================================================
+FAIL: test_live_cdn_pending_blocks_alias_before_hk_mutation (test_execution_gate.ExecutionGate.test_live_cdn_pending_blocks_alias_before_hk_mutation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 114, in test_live_cdn_pending_blocks_alias_before_hk_mutation
+    self.prepare(); execute=executor(); calls=[]
+    ^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+======================================================================
+FAIL: test_missing_review_bad_identity_and_changed_package_never_call_transport (test_execution_gate.ExecutionGate.test_missing_review_bad_identity_and_changed_package_never_call_transport)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 85, in test_missing_review_bad_identity_and_changed_package_never_call_transport
+    self.prepare(); calls=[]; execute=executor()
+    ^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+======================================================================
+FAIL: test_out_of_order_mutation_refused_without_transport (test_execution_gate.ExecutionGate.test_out_of_order_mutation_refused_without_transport)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 97, in test_out_of_order_mutation_refused_without_transport
+    self.prepare(); calls=[]
+    ^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+======================================================================
+FAIL: test_package_exact_two_file_backfill_and_all_hashes (test_execution_gate.ExecutionGate.test_package_exact_two_file_backfill_and_all_hashes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 56, in test_package_exact_two_file_backfill_and_all_hashes
+    self.prepare()
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+======================================================================
+FAIL: test_uncertain_mutation_is_recorded_and_cannot_be_replayed (test_execution_gate.ExecutionGate.test_uncertain_mutation_is_recorded_and_cannot_be_replayed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 126, in test_uncertain_mutation_is_recorded_and_cannot_be_replayed
+    self.prepare(); execute=executor(); calls=[]
+    ^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 53, in prepare
+    'authorized_operations':list(executor().OPERATIONS)})
+                                 ^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_execution_gate.py", line 15, in executor
+    if not path.is_file(): raise AssertionError('bounded execution gate is not implemented')
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: bounded execution gate is not implemented
+
+----------------------------------------------------------------------
+Ran 14 tests in 2.994s
+
+FAILED (failures=7)

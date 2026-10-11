@@ -1,0 +1,45 @@
+test_exact_candidate_and_three_hashed_gates_required (test_package_gate.PackageGate.test_exact_candidate_and_three_hashed_gates_required) ... FAIL
+test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused (test_package_gate.PackageGate.test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused) ... FAIL
+test_missing_artifact_identity_signer_drift_or_failed_step_is_refused (test_package_gate.PackageGate.test_missing_artifact_identity_signer_drift_or_failed_step_is_refused) ... FAIL
+
+======================================================================
+FAIL: test_exact_candidate_and_three_hashed_gates_required (test_package_gate.PackageGate.test_exact_candidate_and_three_hashed_gates_required)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 48, in test_exact_candidate_and_three_hashed_gates_required
+    record = self.validate()
+             ^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 45, in validate
+    return module().validate_build(self.apk, self.artifact, self.steps, self.gate_path)
+           ^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 14, in module
+    assert path.is_file(), '2214 final-artifact package gate is not implemented'
+           ^^^^^^^^^^^^^^
+AssertionError: 2214 final-artifact package gate is not implemented
+
+======================================================================
+FAIL: test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused (test_package_gate.PackageGate.test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 69, in test_gate_unknown_status_wrong_source_or_evidence_drift_is_refused
+    module()
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 14, in module
+    assert path.is_file(), '2214 final-artifact package gate is not implemented'
+           ^^^^^^^^^^^^^^
+AssertionError: 2214 final-artifact package gate is not implemented
+
+======================================================================
+FAIL: test_missing_artifact_identity_signer_drift_or_failed_step_is_refused (test_package_gate.PackageGate.test_missing_artifact_identity_signer_drift_or_failed_step_is_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 58, in test_missing_artifact_identity_signer_drift_or_failed_step_is_refused
+    module()
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android2214-release\test_package_gate.py", line 14, in module
+    assert path.is_file(), '2214 final-artifact package gate is not implemented'
+           ^^^^^^^^^^^^^^
+AssertionError: 2214 final-artifact package gate is not implemented
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.014s
+
+FAILED (failures=3)
