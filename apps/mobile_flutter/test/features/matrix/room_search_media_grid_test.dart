@@ -16,6 +16,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
+import 'package:liuhetong_mobile/ui/chat/contain_image_bubble.dart';
 import 'package:liuhetong_mobile/ui/chat/room_image_gallery.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
 import 'package:matrix/matrix.dart';
@@ -294,6 +295,30 @@ void main() {
                 roomName: 'Search media fixture',
                 onCreateGroup: () {})));
         await _settle(tester);
+        if (current) {
+          int decodedCurrentImages() => tester
+              .widgetList<RawImage>(find.descendant(
+                  of: find.byType(ContainImageBubble),
+                  matching: find.byType(RawImage)))
+              .where((raw) => raw.image != null)
+              .length;
+          // A fixed pump interval does not settle cold quota/database I/O.
+          // Complete both current consumers before navigation hides them; an
+          // unfinished last-consumer cancellation intentionally publishes no
+          // cache and cannot establish the cache-reuse assertion below.
+          for (var attempt = 0;
+              attempt < 100 && decodedCurrentImages() != 2;
+              attempt++) {
+            await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 100)));
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          expect(decodedCurrentImages(), 2,
+              reason: 'Both current messages must finish the shared preview');
+          expect(
+              downloads.where((p) => p.endsWith('image-thumbnail')).length, 1,
+              reason: 'Two active current messages share one source download');
+        }
         final dynamic page = tester.state(find.byType(RoomPage));
         expect(page.controller, isNotNull);
         expect(page.errorMessage, isNull);

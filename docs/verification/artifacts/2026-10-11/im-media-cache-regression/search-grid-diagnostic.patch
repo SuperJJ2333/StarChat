@@ -1,0 +1,114 @@
+diff --git a/apps/mobile_flutter/lib/features/matrix/media_cache.dart b/apps/mobile_flutter/lib/features/matrix/media_cache.dart
+index 6fd9bd52..03b19819 100644
+--- a/apps/mobile_flutter/lib/features/matrix/media_cache.dart
++++ b/apps/mobile_flutter/lib/features/matrix/media_cache.dart
+@@ -682,6 +682,7 @@ final class MediaCache {
+     // Only the authenticated content-object write is shared, after every
+     // independently verified source has registered its current demand.
+     return _root(accountId).then((root) {
++      debugPrint('SYNTHETIC_CACHE store root done event=$eventId');
+       if (generation != _mediaGeneration ||
+           accountEpoch != accountGeneration(accountId)) {
+         throw StateError('Media cache session changed');
+@@ -757,9 +758,11 @@ final class MediaCache {
+
+   static Future<File> _storeObject(
+       String accountId, File file, Uint8List bytes) async {
++    debugPrint('SYNTHETIC_CACHE object start');
+     await file.parent.create(recursive: true);
+     if (await _knownObjectValid(accountId, file, bytes.length)) return file;
+     final quota = await _quotaIndex(file.parent.parent);
++    debugPrint('SYNTHETIC_CACHE quota ready');
+     return quota.mutate(() async {
+       await _atomicBytes(
+           File('${file.path}.len'), utf8.encode('${bytes.length}'));
+@@ -1634,6 +1637,7 @@ Future<Uint8List> _loadMediaWithCache(
+     return warm;
+   }
+   final existing = _mediaLoads[identity];
++  debugPrint('SYNTHETIC_CACHE entry event=${key.eventId} existing=${existing != null}');
+   if (existing != null) {
+     PerformanceMetrics.instance.increment(PerformanceCounter.mediaFlightJoin);
+     // This caller observes a shared flight, not its owner's disk or network
+@@ -1655,6 +1659,7 @@ Future<Uint8List> _loadMediaWithCache(
+           disk = await MediaCache.cached('source', key.sourceIdentity!,
+               accountId: key.accountId, contentSha256: key.contentSha256);
+         }
++        debugPrint('SYNTHETIC_CACHE disk event=${key.eventId} hit=${disk != null}');
+         trace?.setMedia(
+             source: disk == null
+                 ? (localSeed
+@@ -1680,7 +1685,10 @@ Future<Uint8List> _loadMediaWithCache(
+               accountEpoch != MediaCache.accountGeneration(key.accountId)) {
+             throw StateError('Media cache session changed');
+           }
+-          if (!hasConsumer()) throw MediaLoadCanceled();
++          if (!hasConsumer()) {
++            debugPrint('SYNTHETIC_CACHE reject publication event=${key.eventId}');
++            throw MediaLoadCanceled();
++          }
+         }
+
+         Future<Uint8List> loadAdmitted() => sharedMediaTransferBudget
+@@ -1704,10 +1712,12 @@ Future<Uint8List> _loadMediaWithCache(
+               }
+               if (!hasConsumer()) throw MediaLoadCanceled();
+               if (bytes != null) {
++                debugPrint('SYNTHETIC_CACHE verify start event=${key.eventId}');
+                 bytes = (await VerifiedMediaContent.verify(bytes,
+                         scope: MediaCache.verificationScope(key.accountId),
+                         expectedSha256: key.contentSha256))
+                     .bytes;
++                debugPrint('SYNTHETIC_CACHE verify done event=${key.eventId}');
+               }
+               if (!hasConsumer()) throw MediaLoadCanceled();
+               if (generation != _mediaGeneration) {
+@@ -1719,6 +1729,7 @@ Future<Uint8List> _loadMediaWithCache(
+                       contentSha256: key.contentSha256,
+                       variant: key.variant,
+                       familyId: key.familyId);
++              debugPrint('SYNTHETIC_CACHE stored event=${key.eventId}');
+               if (key.sourceIdentity != null) {
+                 final ref = await MediaCache._reference(
+                     key.accountId, 'source', key.sourceIdentity!,
+@@ -1827,6 +1838,7 @@ Future<Uint8List> _loadMediaWithCache(
+   flight.childScope.promote(demand);
+   if (existing == null) {
+     flight.onInactive = () {
++      debugPrint('SYNTHETIC_CACHE inactive event=${key.eventId} finished=${flight.finished}');
+       if (identical(_mediaLoads[identity], flight)) {
+         _mediaLoads.remove(identity);
+       }
+diff --git a/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart b/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
+index 352029e6..692bfa03 100644
+--- a/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart
+@@ -201,6 +201,7 @@ void main() {
+             return http.Response('{"chunk":[],"events":[]}', 200);
+           }
+           downloads.add(request.url.path);
++          debugPrint('SYNTHETIC_HTTP count=${downloads.length} path=${request.url.path}');
+           return http.Response.bytes(_png, 200,
+               headers: {'content-type': 'image/png'});
+         }), scenario.replaceAll(' ', '-'));
+@@ -295,16 +296,20 @@ void main() {
+                 onCreateGroup: () {})));
+         await _settle(tester);
+         final dynamic page = tester.state(find.byType(RoomPage));
++        debugPrint('SYNTHETIC_PHASE initial settled');
+         expect(page.controller, isNotNull);
+         expect(page.errorMessage, isNull);
+         final initialWindow = page.controller.messages
+             .map((dynamic message) => message.id)
+             .toList();
+         await tester.tap(find.byKey(const Key('chat-details')));
++        debugPrint('SYNTHETIC_PHASE details tapped');
+         await _settle(tester);
+         await tester.tap(find.text('查找聊天记录'));
++        debugPrint('SYNTHETIC_PHASE search tapped');
+         await _settle(tester);
+         await tester.tap(find.byKey(const Key('chat-search-filter-media')));
++        debugPrint('SYNTHETIC_PHASE filter tapped');
+         await _settle(tester);
+         final tile = find.byKey(Key('category-media-\$old-$kind'));
+         if (scenario == 'flash excluded') {
