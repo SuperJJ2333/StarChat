@@ -62,6 +62,7 @@ import 'group_chat_info_controller.dart';
 import 'matrix_direct_chat_adapter.dart';
 import 'matrix_group_chat_adapter.dart';
 import 'matrix_media_file.dart';
+import 'matrix_media_upload_limit.dart';
 import 'content_addressed_media.dart';
 import '../media/media_asset_gateway.dart';
 import '../media/image_compression_policy.dart';
@@ -1576,6 +1577,7 @@ final class MatrixRoomLease
     implements
         _ManagedClientResourceBase,
         MatrixEncryptedMediaGateway,
+        MatrixMediaUploadLimitGateway,
         MatrixOutgoingProgressView,
         MatrixOutgoingVideoWorkView,
         AvatarMediaCapability,
@@ -1875,6 +1877,26 @@ final class MatrixRoomLease
 
   Room get _activeRoom =>
       _room ?? (throw StateError('Matrix room lease is not active'));
+
+  @override
+  Future<int?> maximumUploadBytes() async {
+    final room = _activeRoom;
+    final client = room.client;
+    void ensureCurrent() {
+      if (canceled ||
+          owner._accessRevoked ||
+          !identical(_room, room) ||
+          !identical(owner._client, client) ||
+          !identical(client.getRoomById(roomId), room)) {
+        throw StateError('Matrix room lease is not active');
+      }
+    }
+
+    ensureCurrent();
+    final maximum = await owner.maximumUploadBytes();
+    ensureCurrent();
+    return maximum;
+  }
 
   Future<T> _withLeaseOperation<T>(
     Future<T> Function(Room room) operation,
@@ -6501,6 +6523,7 @@ final class _OutgoingSession {
 final class MatrixSdkE2eeClient
     implements
         MatrixE2eeClient,
+        MatrixMediaUploadLimitGateway,
         MatrixRecoveryClient,
         MatrixRecoveryBackend,
         MatrixTokenLoginGateway,
@@ -6509,6 +6532,15 @@ final class MatrixSdkE2eeClient
         MatrixExpectedIdentityTokenLoginGateway,
         AvatarMediaCapability,
         ImmediateAvatarMediaCapability {
+  @override
+  Future<int?> maximumUploadBytes() => _withClient((active) async {
+        final config = await active.getConfig();
+        if (_accessRevoked || !identical(_client, active)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        return config.mUploadSize;
+      });
+
   Future<void>? _memberRefresh;
   late final _MemberRefreshPolicy _memberRefreshPolicy;
   late final _ConversationMemberProjectionCache _memberProjectionCache;
