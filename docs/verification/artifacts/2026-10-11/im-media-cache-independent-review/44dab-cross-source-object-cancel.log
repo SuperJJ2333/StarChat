@@ -1,0 +1,8 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-independent-review/cross-source-object-cancel_test.dart
+00:00 +0: independent legacy sources sharing verified object: cancelFirst=false
+[chatflow/mediaindex] degraded: UnimplementedError
+synthetic_first_cancel=false second_active=true second_error=null object_published=true
+00:00 +1: independent legacy sources sharing verified object: cancelFirst=true
+synthetic_first_cancel=true second_active=true second_error=null object_published=true
+00:00 +2: All tests passed!
