@@ -1,0 +1,23 @@
+test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) ... ok
+test_dnd_suppression_does_not_remove_later_sound (__main__.PolicyContract.test_dnd_suppression_does_not_remove_later_sound) ... ok
+test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) ... ok
+test_each_retry_recomputes_send_time_without_mutating_base (__main__.PolicyContract.test_each_retry_recomputes_send_time_without_mutating_base) ... [synthetic] Temporary failure, will retry in 10 seconds
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 368, in _dispatch_notification_unlimited
+    return await self._dispatch_request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 294, in _dispatch_request
+    raise TemporaryNotificationDispatchException(
+sygnal.exceptions.TemporaryNotificationDispatchException: 503 InternalServerError
+ok
+test_legacy_voip_and_other_non_alert_types_are_unchanged (__main__.PolicyContract.test_legacy_voip_and_other_non_alert_types_are_unchanged) ... ok
+test_policy_logs_only_fixed_reasons_not_payload_or_device (__main__.PolicyContract.test_policy_logs_only_fixed_reasons_not_payload_or_device) ... ok
+test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) ... ok
+test_same_day_disabled_equal_and_half_hour_timezone (__main__.PolicyContract.test_same_day_disabled_equal_and_half_hour_timezone) ... ok
+test_static_off_dominates_outside_dnd_and_legacy (__main__.PolicyContract.test_static_off_dominates_outside_dnd_and_legacy) ... ok
+test_unset_push_type_and_full_payload_use_same_policy (__main__.PolicyContract.test_unset_push_type_and_full_payload_use_same_policy) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.096s
+
+OK

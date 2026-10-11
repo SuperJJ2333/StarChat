@@ -1,0 +1,1 @@
+{"result": "PASS", "cases": 2, "sygnal": "0.15.1", "payload_source": "Flutter MatrixPusherService fixture", "transport": "explicit APNs double", "real_request_construction": true}

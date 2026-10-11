@@ -1,0 +1,373 @@
+test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) ...
+  test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T15:00:00Z') ... FAIL
+  test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T15:59:59Z') ... FAIL
+  test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T16:00:00Z') ... FAIL
+  test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T23:59:59Z') ... FAIL
+test_dnd_suppression_does_not_remove_later_sound (__main__.PolicyContract.test_dnd_suppression_does_not_remove_later_sound) ... FAIL
+test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) ...
+  test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) (instant='2026-11-01T05:30:00Z', start=60) ... FAIL
+  test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) (instant='2026-11-01T06:30:00Z', start=60) ... FAIL
+  test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) (instant='2026-03-08T07:00:00Z', start=180) ... FAIL
+test_each_retry_recomputes_send_time_without_mutating_base (__main__.PolicyContract.test_each_retry_recomputes_send_time_without_mutating_base) ... [synthetic] Temporary failure, will retry in 10 seconds
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 367, in _dispatch_notification_unlimited
+    return await self._dispatch_request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 289, in _dispatch_request
+    raise TemporaryNotificationDispatchException(
+sygnal.exceptions.TemporaryNotificationDispatchException: 503 InternalServerError
+FAIL
+test_legacy_voip_and_other_non_alert_types_are_unchanged (__main__.PolicyContract.test_legacy_voip_and_other_non_alert_types_are_unchanged) ... ok
+test_policy_logs_only_fixed_reasons_not_payload_or_device (__main__.PolicyContract.test_policy_logs_only_fixed_reasons_not_payload_or_device) ... FAIL
+test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) ...
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules=None) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules=[]) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules='invalid') ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 2, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': True, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 0, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': True, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 9007199254740992, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': '1', 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': 1}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': True, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': -1, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 1440, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 2.5, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': '', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': '../UTC', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Unknown/Zone', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 1, 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True, 'unknown': True}) ... FAIL
+test_same_day_disabled_equal_and_half_hour_timezone (__main__.PolicyContract.test_same_day_disabled_equal_and_half_hour_timezone) ...
+  test_same_day_disabled_equal_and_half_hour_timezone (__main__.PolicyContract.test_same_day_disabled_equal_and_half_hour_timezone) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 600, 'dnd_end_minutes': 660, 'dnd_enabled': True}, instant='2026-10-11T02:00:00Z') ... FAIL
+  test_same_day_disabled_equal_and_half_hour_timezone (__main__.PolicyContract.test_same_day_disabled_equal_and_half_hour_timezone) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Kolkata', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}, instant='2026-10-11T17:30:00Z') ... FAIL
+test_static_off_dominates_outside_dnd_and_legacy (__main__.PolicyContract.test_static_off_dominates_outside_dnd_and_legacy) ... ok
+test_unset_push_type_and_full_payload_use_same_policy (__main__.PolicyContract.test_unset_push_type_and_full_payload_use_same_policy) ... FAIL
+
+======================================================================
+FAIL: test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T15:00:00Z')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 93, in test_dnd_start_included_end_excluded_and_midnight_wrap
+    self.assertEqual("sound" not in (await self.send())["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T15:59:59Z')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 93, in test_dnd_start_included_end_excluded_and_midnight_wrap
+    self.assertEqual("sound" not in (await self.send())["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T16:00:00Z')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 93, in test_dnd_start_included_end_excluded_and_midnight_wrap
+    self.assertEqual("sound" not in (await self.send())["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_dnd_start_included_end_excluded_and_midnight_wrap (__main__.PolicyContract.test_dnd_start_included_end_excluded_and_midnight_wrap) (instant='2026-10-11T23:59:59Z')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 93, in test_dnd_start_included_end_excluded_and_midnight_wrap
+    self.assertEqual("sound" not in (await self.send())["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_dnd_suppression_does_not_remove_later_sound (__main__.PolicyContract.test_dnd_suppression_does_not_remove_later_sound)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/tests/ios_policy_contract.py", line 176, in test_dnd_suppression_does_not_remove_later_sound
+    self.assertNotIn("sound", first["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) (instant='2026-11-01T05:30:00Z', start=60)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 120, in test_dst_fold_both_real_instants_and_spring_gap
+    self.assertEqual("sound" not in result["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) (instant='2026-11-01T06:30:00Z', start=60)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 120, in test_dst_fold_both_real_instants_and_spring_gap
+    self.assertEqual("sound" not in result["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_dst_fold_both_real_instants_and_spring_gap (__main__.PolicyContract.test_dst_fold_both_real_instants_and_spring_gap) (instant='2026-03-08T07:00:00Z', start=180)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 120, in test_dst_fold_both_real_instants_and_spring_gap
+    self.assertEqual("sound" not in result["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_each_retry_recomputes_send_time_without_mutating_base (__main__.PolicyContract.test_each_retry_recomputes_send_time_without_mutating_base)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/tests/ios_policy_contract.py", line 170, in test_each_retry_recomputes_send_time_without_mutating_base
+    self.assertNotIn("sound", attempts[1]["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_policy_logs_only_fixed_reasons_not_payload_or_device (__main__.PolicyContract.test_policy_logs_only_fixed_reasons_not_payload_or_device)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/tests/ios_policy_contract.py", line 183, in test_policy_logs_only_fixed_reasons_not_payload_or_device
+    self.assertIn("invalid_timezone", combined)
+AssertionError: 'invalid_timezone' not found in 'INFO:sygnal.apnspushkin:[synthetic] Sending (attempt 0) => 759e8914-3826-452f-8a3e-48e7f5d82b64 APNs-ID:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb room:!synthetic-room:test, event:$synthetic-event'
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules=None)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules=[])
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules='invalid')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 2, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': True, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 0, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': True, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 9007199254740992, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': '1', 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': 1})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': True, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': -1, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 1440, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 2.5, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': '', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': '../UTC', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Unknown/Zone', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 1, 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True, 'unknown': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_same_day_disabled_equal_and_half_hour_timezone (__main__.PolicyContract.test_same_day_disabled_equal_and_half_hour_timezone) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Hong_Kong', 'dnd_start_minutes': 600, 'dnd_end_minutes': 660, 'dnd_enabled': True}, instant='2026-10-11T02:00:00Z')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 105, in test_same_day_disabled_equal_and_half_hour_timezone
+    self.assertEqual("sound" not in (await self.send(rules))["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_same_day_disabled_equal_and_half_hour_timezone (__main__.PolicyContract.test_same_day_disabled_equal_and_half_hour_timezone) (rules={'v': 1, 'revision': 1, 'timezone': 'Asia/Kolkata', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}, instant='2026-10-11T17:30:00Z')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 105, in test_same_day_disabled_equal_and_half_hour_timezone
+    self.assertEqual("sound" not in (await self.send(rules))["aps"], silent)
+AssertionError: False != True
+
+======================================================================
+FAIL: test_unset_push_type_and_full_payload_use_same_policy (__main__.PolicyContract.test_unset_push_type_and_full_payload_use_same_policy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/unittest/async_case.py", line 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/tests/ios_policy_contract.py", line 150, in test_unset_push_type_and_full_payload_use_same_policy
+    self.assertNotIn("sound", (await self.send())["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.127s
+
+FAILED (failures=34)

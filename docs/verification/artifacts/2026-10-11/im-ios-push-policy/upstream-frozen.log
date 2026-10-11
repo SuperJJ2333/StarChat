@@ -1,0 +1,249 @@
+tests.test_apns
+  ApnsTestCase
+2026-10-11 03:16:08,501 [1] DEBUG sygnal.sygnal Started logging
+    test_expected ...                                                      [OK]
+2026-10-11 03:16:08,501 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,501 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,501 [1] DEBUG asyncio Using selector: EpollSelector
+2026-10-11 03:16:08,502 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,502 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,502 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,502 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,503 [1] DEBUG sygnal.http [25720e0d-b761-4d55-b767-3c50cfb0aa71] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,503 [1] INFO  sygnal.apnspushkin [25720e0d-b761-4d55-b767-3c50cfb0aa71] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,503 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+    test_expected_badge_only_with_default_payload ...                      [OK]
+2026-10-11 03:16:08,504 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_badge_only_with_default_payload <--
+2026-10-11 03:16:08,506 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,506 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,506 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,507 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,507 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,507 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,507 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,507 [1] DEBUG sygnal.http [9260a720-9eaf-4e13-980f-2ea1c87a1995] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,507 [1] INFO  sygnal.apnspushkin [9260a720-9eaf-4e13-980f-2ea1c87a1995] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,507 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,509 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_event_id_only_with_default_payload <--
+2026-10-11 03:16:08,509 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_event_id_only_with_default_payload <--
+2026-10-11 03:16:08,513 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,513 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,513 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,515 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,515 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,515 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,515 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,517 [1] DEBUG sygnal.http [8691ed39-59d8-4b6b-9255-3ef7f0fb9ab4] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,517 [1] INFO  sygnal.apnspushkin [8691ed39-59d8-4b6b-9255-3ef7f0fb9ab4] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,517 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,518 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_full_with_default_payload <--
+2026-10-11 03:16:08,519 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_full_with_default_payload <--
+2026-10-11 03:16:08,519 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_full_with_default_payload <--
+2026-10-11 03:16:08,520 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,520 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,520 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,521 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,521 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,522 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,522 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,523 [1] DEBUG sygnal.http [159a1dbb-78a0-439d-83d2-b4ebbc503841] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,523 [1] INFO  sygnal.apnspushkin [159a1dbb-78a0-439d-83d2-b4ebbc503841] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,523 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+    test_expected_event_id_only_with_default_payload ...                   [OK]
+    test_expected_full_with_default_payload ...                            [OK]
+2026-10-11 03:16:08,529 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_with_push_type <--
+2026-10-11 03:16:08,530 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_with_push_type <--
+2026-10-11 03:16:08,530 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_with_push_type <--
+2026-10-11 03:16:08,530 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_expected_with_push_type <--
+2026-10-11 03:16:08,535 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,536 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,536 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,537 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,537 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,539 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,539 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,541 [1] DEBUG sygnal.http [d69e00fe-9fb0-4a16-b89e-cf821a3f01f7] Sending push to pushkin com.example.apns.push_type for app ID com.example.apns.push_type
+2026-10-11 03:16:08,541 [1] INFO  sygnal.apnspushkin [d69e00fe-9fb0-4a16-b89e-cf821a3f01f7] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,541 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+    test_expected_with_push_type ...                                       [OK]
+2026-10-11 03:16:08,544 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_misconfigured_payload_is_rejected <--
+2026-10-11 03:16:08,546 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_misconfigured_payload_is_rejected <--
+2026-10-11 03:16:08,546 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_misconfigured_payload_is_rejected <--
+2026-10-11 03:16:08,546 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_misconfigured_payload_is_rejected <--
+2026-10-11 03:16:08,546 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_misconfigured_payload_is_rejected <--
+2026-10-11 03:16:08,552 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,552 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,552 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,553 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,553 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,553 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,554 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,555 [1] DEBUG sygnal.http [90bfe279-f8fb-49f7-b006-bf7f0900e1ab] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,555 [1] WARNING sygnal.apnspushkin [90bfe279-f8fb-49f7-b006-bf7f0900e1ab] Rejecting pushkey due to misconfigured default_payload, please ensure that default_payload is a dict.
+2026-10-11 03:16:08,555 [1] INFO  sygnal.http [90bfe279-f8fb-49f7-b006-bf7f0900e1ab] Successfully delivered notifications with 1 rejected pushkeys
+    test_misconfigured_payload_is_rejected ...                             [OK]
+2026-10-11 03:16:08,569 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_no_retry_on_4xx <--
+2026-10-11 03:16:08,570 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_no_retry_on_4xx <--
+2026-10-11 03:16:08,570 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_no_retry_on_4xx <--
+2026-10-11 03:16:08,570 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_no_retry_on_4xx <--
+2026-10-11 03:16:08,570 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_no_retry_on_4xx <--
+2026-10-11 03:16:08,570 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_no_retry_on_4xx <--
+2026-10-11 03:16:08,577 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,577 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,577 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,578 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,579 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,579 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,579 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,580 [1] DEBUG sygnal.http [896c2223-0a5c-4686-8fcf-509c453142f8] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,580 [1] INFO  sygnal.apnspushkin [896c2223-0a5c-4686-8fcf-509c453142f8] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,581 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,581 [1] WARNING sygnal.http [896c2223-0a5c-4686-8fcf-509c453142f8] Failed to dispatch notification.
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/sygnal/http.py", line 275, in _handle_dispatch
+    result = await pushkin.dispatch_notification(notif, d, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/notifications.py", line 215, in dispatch_notification
+    return await self._dispatch_notification_unlimited(n, device, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 368, in _dispatch_notification_unlimited
+    return await self._dispatch_request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 298, in _dispatch_request
+    raise NotificationDispatchException(
+sygnal.exceptions.NotificationDispatchException: 429 TooManyRequests
+    test_no_retry_on_4xx ...                                               [OK]
+2026-10-11 03:16:08,597 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,601 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,602 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,605 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,605 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,605 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,605 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation <--
+2026-10-11 03:16:08,610 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,610 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,610 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,615 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,615 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+    test_payload_truncation ...                                            [OK]
+2026-10-11 03:16:08,617 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,617 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,618 [1] DEBUG sygnal.http [459fd402-8c5d-45ed-8a9e-a17924c7b4f9] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,618 [1] INFO  sygnal.apnspushkin [459fd402-8c5d-45ed-8a9e-a17924c7b4f9] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,618 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,619 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_payload_truncation_test_validity <--
+2026-10-11 03:16:08,623 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,623 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,623 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,627 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,627 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,627 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,627 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+    test_payload_truncation_test_validity ...                              [OK]
+2026-10-11 03:16:08,630 [1] DEBUG sygnal.http [8c76ed6c-b65d-4cd6-b481-8b57133c44ff] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,630 [1] INFO  sygnal.apnspushkin [8c76ed6c-b65d-4cd6-b481-8b57133c44ff] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,630 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,632 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_rejection <--
+2026-10-11 03:16:08,635 [1] DEBUG sygnal.sygnal Started logging
+2026-10-11 03:16:08,635 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,636 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,638 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,638 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,639 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,639 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,641 [1] DEBUG sygnal.http [bc35e93d-017b-463e-9ead-907c4fec521a] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,641 [1] INFO  sygnal.apnspushkin [bc35e93d-017b-463e-9ead-907c4fec521a] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,642 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,642 [1] INFO  sygnal.apnspushkin [bc35e93d-017b-463e-9ead-907c4fec521a] APNs token rejected: 410 Unregistered
+2026-10-11 03:16:08,642 [1] INFO  sygnal.http [bc35e93d-017b-463e-9ead-907c4fec521a] Successfully delivered notifications with 1 rejected pushkeys
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,643 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,644 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,644 [1] INFO  twisted --> tests.test_apns.ApnsTestCase.test_retry_on_5xx <--
+2026-10-11 03:16:08,645 [1] DEBUG sygnal.sygnal Started logging
+    test_rejection ...                                                     [OK]
+2026-10-11 03:16:08,645 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,645 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,646 [1] INFO  sygnal.sygnal Importing pushkin module: sygnal.apnspushkin
+2026-10-11 03:16:08,646 [1] INFO  sygnal.sygnal Creating pushkin: ApnsPushkin
+2026-10-11 03:16:08,646 [1] INFO  sygnal.sygnal Configured with app IDs: dict_keys(['com.example.apns', 'com.example.apns.push_type'])
+2026-10-11 03:16:08,646 [1] INFO  sygnal.sygnal Starting listening on 127.0.0.1 port 5000
+2026-10-11 03:16:08,647 [1] DEBUG sygnal.http [4927566c-1304-46f3-91a0-6117adf4d324] Sending push to pushkin com.example.apns for app ID com.example.apns
+2026-10-11 03:16:08,647 [1] INFO  sygnal.apnspushkin [4927566c-1304-46f3-91a0-6117adf4d324] Sending APNs notification (attempt 0)
+2026-10-11 03:16:08,647 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,647 [1] WARNING sygnal.apnspushkin [4927566c-1304-46f3-91a0-6117adf4d324] Temporary failure, will retry in 10 seconds
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 368, in _dispatch_notification_unlimited
+    return await self._dispatch_request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 294, in _dispatch_request
+    raise TemporaryNotificationDispatchException(
+sygnal.exceptions.TemporaryNotificationDispatchException: 503 ServiceUnavailable
+2026-10-11 03:16:08,647 [1] INFO  sygnal.apnspushkin [4927566c-1304-46f3-91a0-6117adf4d324] Sending APNs notification (attempt 1)
+2026-10-11 03:16:08,647 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+2026-10-11 03:16:08,647 [1] WARNING sygnal.apnspushkin [4927566c-1304-46f3-91a0-6117adf4d324] Temporary failure, will retry in 20 seconds
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 368, in _dispatch_notification_unlimited
+    return await self._dispatch_request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 294, in _dispatch_request
+    raise TemporaryNotificationDispatchException(
+sygnal.exceptions.TemporaryNotificationDispatchException: 503 ServiceUnavailable
+2026-10-11 03:16:08,648 [1] INFO  sygnal.apnspushkin [4927566c-1304-46f3-91a0-6117adf4d324] Sending APNs notification (attempt 2)
+2026-10-11 03:16:08,648 [1] INFO  sygnal.apnspushkin iOS sound policy: legacy_unchanged
+    test_retry_on_5xx ...                                                  [OK]
+2026-10-11 03:16:08,648 [1] WARNING sygnal.apnspushkin [4927566c-1304-46f3-91a0-6117adf4d324] Temporary failure, will retry in 40 seconds
+tests.test_apnstruncate
+Traceback (most recent call last):
+  TruncateTestCase
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 368, in _dispatch_notification_unlimited
+    test_dont_truncate ...                                                 [OK]
+    test_python_unicode_support ...                                        [OK]
+    test_truncate_alert ...                                                [OK]
+    test_truncate_alert_body ...                                           [OK]
+    test_truncate_loc_arg ...                                              [OK]
+    test_truncate_loc_args ...                                             [OK]
+    test_truncate_multibyte ...                                            [OK]
+    test_truncate_string_with_multibyte ...                                [OK]
+
+-------------------------------------------------------------------------------
+Ran 19 tests in 0.180s
+
+PASSED (successes=19)
+    return await self._dispatch_request(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 294, in _dispatch_request
+    raise TemporaryNotificationDispatchException(
+sygnal.exceptions.TemporaryNotificationDispatchException: 503 ServiceUnavailable
+2026-10-11 03:16:08,648 [1] WARNING sygnal.http [4927566c-1304-46f3-91a0-6117adf4d324] Failed to dispatch notification.
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/sygnal/http.py", line 275, in _handle_dispatch
+    result = await pushkin.dispatch_notification(notif, d, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/notifications.py", line 215, in dispatch_notification
+    return await self._dispatch_notification_unlimited(n, device, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/sygnal/apnspushkin.py", line 390, in _dispatch_notification_unlimited
+    raise NotificationDispatchException("Retried too many times.")
+sygnal.exceptions.NotificationDispatchException: Retried too many times.

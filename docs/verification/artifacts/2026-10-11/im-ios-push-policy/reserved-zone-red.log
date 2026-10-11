@@ -1,0 +1,24 @@
+test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) ...
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'localtime', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+  test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'posixrules', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True}) ... FAIL
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'localtime', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+======================================================================
+FAIL: test_present_invalid_policy_is_silent_not_rejected (__main__.PolicyContract.test_present_invalid_policy_is_silent_not_rejected) (rules={'v': 1, 'revision': 1, 'timezone': 'posixrules', 'dnd_start_minutes': 1380, 'dnd_end_minutes': 480, 'dnd_enabled': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tests/ios_policy_contract.py", line 132, in test_present_invalid_policy_is_silent_not_rejected
+    self.assertNotIn("sound", (await self.send(rules))["aps"])
+AssertionError: 'sound' unexpectedly found in {'alert': {'title': 'Synthetic alert', 'body': 'Generic notification'}, 'badge': 3, 'mutable-content': 1, 'sound': 'default'}
+
+----------------------------------------------------------------------
+Ran 1 test in 0.018s
+
+FAILED (failures=2)

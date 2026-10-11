@@ -1,0 +1,16 @@
+{
+  "upstream-tests/tests/test_apns.py": "3d33b85eb40b41f2e01580aefe1b5cb9ccdff0cf4f002d8c7a045e004177d519",
+  "upstream-tests/tests/test_apnstruncate.py": "54af8e84946e8f17c6abe377383a702fdb12a39f92f487f6f13f6a649595c84b",
+  "services/sygnal/Dockerfile": "b5258c57afdf7a8c98ed561230a6bc5973eca50a4e845a356a6f5bf8f5a73b1c",
+  "services/sygnal/vendor/LICENSE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+  "client-tree/docs/verification/artifacts/2026-10-11/im-pusher-reconcile/dnd-wire-design.md": "f279bea27ba14eb0917b013fe208e55dd80434cb89e52aa890eb4de59ae6eac3",
+  "tests/sygnal/ios_policy_contract.py": "da056c1aae8df21b8871ede59617f8a3a1de9b2f6a517f49ae0f6036b184c503",
+  "services/sygnal/vendor/apnspushkin.py": "134f9f9da53750fdaaa00dacc0e1afb889bf976075c4301270e24a31595c189d",
+  "upstream-tests/tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "services/sygnal/chatflow_ios_policy.py": "cab22f7376c870cb16a538196a6b235807c88c0f819e3d717249c0306e03102a",
+  "client-tree/tests/infra/ios_sound_sygnal_native.py": "b55544abdc8a031369af7f398f243529cfcc36f1c1b4e0e31643869b59b35dca",
+  "upstream-tests/tests/testutils.py": "7f5cc21d645ce677db7ae3666a5b50e9ed276c61c1620e8c33f6aec2ac729b5c",
+  "services/sygnal/README.md": "b21b23421d852d9c3315566ea3fc8de7b93408974e9b38fc9970b602f88a19bc",
+  "client-tree/docs/verification/artifacts/2026-10-11/im-pusher-reconcile/flutter-sound-payloads.json": "3c7ad5e47aa40788642d37b3baa68d244ba06dc694c24188e51cad7e926205a9",
+  "services/sygnal/.gitattributes": "8cac482b0ae1bf2ec83f4bdeadd2cc6cb20a524acbf96c5b74be4b48b8778593"
+}
