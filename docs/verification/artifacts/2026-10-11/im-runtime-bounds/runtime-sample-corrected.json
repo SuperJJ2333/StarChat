@@ -242,7 +242,10 @@
   ],
   "correction": {
     "kind": "label_and_semantics_only_not_resampled",
-    "original_sample_sha256": "76061586F9E73F7CF54FA6A821EBBDC38931F1632BA88FB254B4655B85F1A549",
+    "original_workspace_bytes_sha256": "76061586f9e73f7cf54fa6a821ebbdc38931f1632ba88fb254b4655b85f1a549",
+    "original_git_blob_bytes_sha256": "98acf054abbd95efad542a6315bb19c7a1a318faf425145168aa1999be6bc9ee",
+    "original_workspace_line_endings": "CRLF",
+    "original_git_blob_line_endings": "LF",
     "original_source_commit": "dc5a562e38af82618e5b63a2fcf4a6a3ba039336",
     "old_metric": "idle_sync_30s_completed",
     "new_metric": "long_sync_30s_zero_db_fetch_candidates"

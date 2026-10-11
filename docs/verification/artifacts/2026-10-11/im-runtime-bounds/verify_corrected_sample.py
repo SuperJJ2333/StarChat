@@ -6,13 +6,22 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 original_path = HERE.parent / "im-runtime-sampling/runtime-sample.json"
-original = json.loads(original_path.read_text(encoding="utf-8"))
+original_bytes = original_path.read_bytes()
+original = json.loads(original_bytes)
 corrected = json.loads(
     (HERE / "runtime-sample-corrected.json").read_text(encoding="utf-8")
 )
+identity = corrected["correction"]
+workspace_hash = identity["original_workspace_bytes_sha256"].lower()
+archive_hash = identity["original_git_blob_bytes_sha256"].lower()
+# Git stores LF while the original Windows observation file used CRLF.
+# Accept only those two exact identities, then prove they differ solely by
+# line endings. Never rewrite the original historical evidence to pass a hash.
+assert hashlib.sha256(original_bytes).hexdigest() in {workspace_hash, archive_hash}
+archive_bytes = original_bytes.replace(b"\r\n", b"\n")
+assert hashlib.sha256(archive_bytes).hexdigest() == archive_hash
 assert (
-    corrected["correction"]["original_sample_sha256"].lower()
-    == hashlib.sha256(original_path.read_bytes()).hexdigest()
+    hashlib.sha256(archive_bytes.replace(b"\n", b"\r\n")).hexdigest() == workspace_hash
 )
 assert corrected["schema"] == 2
 for field in ("since_utc", "until_utc", "observed_utc", "window_seconds", "limits"):
@@ -34,4 +43,6 @@ for old_row, new_row in zip(original["services"], corrected["services"], strict=
         counts["completed_with_observed_start"]
         + counts["completed_without_observed_start"]
     )
-print("Four service rows: exact aggregate relabel; all denominators conserved.")
+print(
+    "LF/CRLF identities verified; four exact aggregate relabels; all denominators conserved."
+)
