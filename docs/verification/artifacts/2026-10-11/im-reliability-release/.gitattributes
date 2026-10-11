@@ -3,3 +3,4 @@
 *.log -text -diff
 *.tsv -text -diff
 *.txt -text -diff
+*.headers -text -diff

@@ -1,0 +1,9 @@
+{
+  "checked_at_utc": "2026-10-11T10:29:36.193704+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "operation": "runtime",
+  "result": {
+    "runtime": "verified-both-hosts"
+  },
+  "status": "PASS"
+}

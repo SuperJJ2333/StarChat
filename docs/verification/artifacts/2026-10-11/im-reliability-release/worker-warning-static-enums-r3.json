@@ -1,0 +1,42 @@
+{
+  "checked_utc": "2026-10-11T10:57:45.237297+00:00",
+  "exit_code": 0,
+  "allowlist_source_paths": [
+    "services/business-worker/app/tasks/manual_wallet.py",
+    "services/business-api/app/modules/wallet/manual_reserve_monitor.py",
+    "services/business-api/app/integrations/tron/diagnostics.py"
+  ],
+  "result": {
+    "status": "READ_ONLY_STATIC_ENUMS",
+    "warnings": [
+      {
+        "level": "WARNING",
+        "event": "maintenance_state",
+        "component": "manual_maintenance",
+        "reason_code": "WAITING"
+      },
+      {
+        "level": "WARNING",
+        "event": "source_health",
+        "component": "funding_source",
+        "reason_code": "BALANCE_UNSTABLE",
+        "status": "OK"
+      },
+      {
+        "level": "WARNING",
+        "event": "source_health",
+        "component": "funding_source",
+        "reason_code": "RECONCILIATION_PENDING",
+        "status": "OK"
+      },
+      {
+        "level": "WARNING",
+        "event": "maintenance_state",
+        "component": "manual_maintenance",
+        "reason_code": "WAITING"
+      }
+    ],
+    "raw_message_emitted": false,
+    "only_source_literal_enum_values_emitted": true
+  }
+}

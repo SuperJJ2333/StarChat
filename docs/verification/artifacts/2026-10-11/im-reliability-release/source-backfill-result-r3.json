@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "checked_at_utc": "2026-10-11T10:38:39.625871+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "audit_receipt_sha256": "56de215f731e2db29ff07ee9db17a79c90318a4a3e1b0d7d4a86f4e21205f9b0",
+  "writes": [
+    {
+      "path": "frontend/download.html",
+      "before_local_raw_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "before_git_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "after_raw_sha256": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44",
+      "bytes": 9245
+    },
+    {
+      "path": "frontend/downloads/android-release.json",
+      "before_local_raw_sha256": "d551fb5d6dad641cfcc2272571f758973236ec5b49ba60656457298822d83d63",
+      "before_git_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "after_raw_sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "bytes": 372
+    }
+  ],
+  "preserved_local_git_and_raw_unchanged": [
+    {
+      "path": "frontend/downloads/ios/manifest.plist",
+      "captured_production_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "git_equals_captured": true,
+      "git_blob_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "local_raw_sha256": "059fd04cc113d88e86d91c123715526234d8624342adf94c61d2acfdbea43bf4",
+      "local_raw_bytes": 824,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/admin-home.js",
+      "captured_production_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "git_equals_captured": false,
+      "git_blob_sha256": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+      "local_raw_sha256": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+      "local_raw_bytes": 25798,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/download-network-selector.js",
+      "captured_production_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "git_equals_captured": true,
+      "git_blob_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "local_raw_sha256": "b5acc7be7a25ec620e8848d40ffea627e582b1d39271b4d7282e86fa59515181",
+      "local_raw_bytes": 7595,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/download-network.js",
+      "captured_production_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "git_equals_captured": true,
+      "git_blob_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "local_raw_sha256": "6c1e12c6e7098a4f0b77e4f63748ae9c931e88179c2db48ddbe352722eae9786",
+      "local_raw_bytes": 5617,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    },
+    {
+      "path": "frontend/src/download-redirect.js",
+      "captured_production_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "git_equals_captured": true,
+      "git_blob_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "local_raw_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "local_raw_bytes": 1998,
+      "rule": "Before and after source backfill recheck Git identity and identical local raw hash; never rewrite preserved files for EOL differences."
+    }
+  ],
+  "scope": "Two-file local reconciliation after audited production publication; production and local preserved layers remain separate."
+}

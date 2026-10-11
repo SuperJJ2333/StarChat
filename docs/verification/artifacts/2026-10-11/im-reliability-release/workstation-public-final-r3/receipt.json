@@ -1,0 +1,52 @@
+{
+  "status": "PASS",
+  "started_utc": "2026-10-11T10:44:15.430172+00:00",
+  "completed_utc": "2026-10-11T10:44:17.466373+00:00",
+  "transport": "Workstation curl via owned loopback SOCKS5 over configured jumper; standard host-key and TLS certificate verification; no full APK GET",
+  "checks": [
+    {
+      "name": "android-release",
+      "url": "https://www.liuhetong888.com/downloads/android-release.json",
+      "http_status": 200,
+      "curl_exit": 0,
+      "method": "GET",
+      "body_sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "body_bytes": 372,
+      "evidence_path": "android-release.json"
+    },
+    {
+      "name": "cdn-apk-head",
+      "url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.45-build2214-arm64.apk",
+      "http_status": 200,
+      "curl_exit": 0,
+      "method": "HEAD",
+      "body_sha256": "c5345c6822349fab88cb908efb0d1e43a62a3c4c657b5cecc216610df18550bd",
+      "body_bytes": 673,
+      "evidence_path": "cdn-apk-head.headers"
+    },
+    {
+      "name": "api-ready",
+      "url": "https://liuhetong888.com/api/v1/health/ready",
+      "http_status": 200,
+      "curl_exit": 0,
+      "method": "GET",
+      "body_sha256": "9cdff9c59e4e06113f43f9d437d4ec6063b8aab0846f701f7dfb6925d41eaa08",
+      "body_bytes": 62,
+      "evidence_path": "api-ready.json"
+    },
+    {
+      "name": "update-auth-required",
+      "url": "https://liuhetong888.com/api/v1/app-updates/latest?platform=android",
+      "http_status": 401,
+      "curl_exit": 0,
+      "method": "GET",
+      "body_sha256": "f6f7bacc5d50bdfbef3b10b638f0be34cc119338475b286d3aad08916ecfd8c1",
+      "body_bytes": 117,
+      "evidence_path": "update-auth-required.json"
+    }
+  ],
+  "metadata_exact_after_hash": true,
+  "cdn_artifact_bytes": 73336097,
+  "cdn_cors": "https://www.liuhetong888.com",
+  "scope": "Public metadata/CDN HEAD/readiness/unauthenticated route guard; authenticated handler projections and three audits are separately bound by production audit receipt."
+}

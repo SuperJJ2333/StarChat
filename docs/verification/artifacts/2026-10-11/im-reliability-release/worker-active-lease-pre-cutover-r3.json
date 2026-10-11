@@ -1,0 +1,47 @@
+{
+  "started_utc": "2026-10-11T10:39:29.191462+00:00",
+  "completed_utc": "2026-10-11T10:39:30.766048+00:00",
+  "exit_code": 0,
+  "reviewed_deployment_commit": "77ca608c7d98a147a2af4d657c2cb8c82be9e495",
+  "result": {
+    "status": "PASS",
+    "remote_input_sha256": {
+      "prepare.py": "a4f6590b58b86b9b107ffbaff6e01e18f9cad9bf6af918b1d8874c68623bdd7a",
+      "deploy.py": "41dfc1f2228fbfc1fb8960c0043ff6e77c7efa1251d725f00350362a9efdb94c",
+      "validate_default_runtime.py": "00504e859d2e109de4039afa3b1ebff71689e41f4ad3d54e75facd94791a030a",
+      "default_entry_probe.py": "4281ab97ecce079b66b496525af617c2191bf4bf7b7c6970f97a4a24fecf5737",
+      "payload-spec.json": "48c82e18053b8ee01d949dc137ee806c2519fe3a6f1a31b4e980770b081ea4d7",
+      "worker/main.py": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494",
+      "worker/worker.py": "b59f5619156e5ea7c0c43dfc71cd729166b4aa5ee1ed6f7d02cadce1adde7a59",
+      "worker/lease_renewal.py": "37ae78fa6488a81936ff81e5d753b54678edc9047d8552ee665ca8c0726bd4d1",
+      "worker/outbox.py": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "worker/outbox-source.py": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "tests/test_worker_active_lease.py": "54458c86db51c630bda3c03d9f0abf6abd973430b3015f7b963f696ad72f55df",
+      "tests/test_published_worker_entrypoint.py": "2e39b634c1e3e18b2ed02ab28d8b413c13a8dae1e1f4eb8d810e77e9afea0623",
+      "tests/test_worker_claim_fencing.py": "57626b3d7d6a31669c7c876908e863ca36c7fe8cbe64313e599bfbc32db9d29d",
+      "tests/test_worker_lease_window.py": "204f84d08a6dfa8d7f018a1d33ca85388751c43341e758c0c67f8711f131a681",
+      "services-manifest.json": "341c84e9151f1ad9881d090d307bd2397d9e0f7786e192cb475756bad4ace502",
+      "test-tools.zip": "71a0a7c69a9027d17445d07808dd09e01919b19c61dad06e34dda3d2e6b380ee"
+    },
+    "roles": {
+      "api": {
+        "id": "87c62739027c607d1ae1b13af206a5960f44539a1b1a9c7ad60b3e11697c33c8",
+        "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+        "health": "healthy",
+        "restart_count": 0,
+        "oom": false
+      },
+      "worker": {
+        "id": "db3001d69e9425b16ad4eda5b81cd99c71232bf85cc0e6251c86008ee03b118f",
+        "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+        "health": "healthy",
+        "restart_count": 0,
+        "oom": false
+      }
+    },
+    "all_container_count": 60,
+    "running_container_count": 35,
+    "permanent_guard_exact": true,
+    "prior_deployment_exists": false
+  }
+}

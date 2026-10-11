@@ -1,0 +1,8 @@
+{
+  "started_utc": "2026-10-11T10:39:46.6356061+00:00",
+  "completed_utc": "2026-10-11T10:40:18.8930330+00:00",
+  "exit_code": 0,
+  "remote_script": "/opt/starchat/releases/im-worker-active-lease-20261011/deploy.py",
+  "reviewed_script_commit": "77ca608c7d98a147a2af4d657c2cb8c82be9e495",
+  "note": "Read actual settled deployment receipt; nonzero or transport failure requires inspection and prohibits blind replay."
+}

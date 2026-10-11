@@ -1,0 +1,11 @@
+{
+  "checked_at_utc": "2026-10-11T10:31:39.894435+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "operation": "upload",
+  "result": {
+    "bytes": 73336097,
+    "sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+    "uploaded_parts": 5
+  },
+  "status": "PASS"
+}

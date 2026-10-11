@@ -8,3 +8,5 @@ payload/*.py text eol=lf
 # Preserve actual final package manifests byte-for-byte; do not rewrite frozen packages.
 final-package-e9d297-r3/freeze-manifest.json -text -diff
 final-package-e9d297-r3/source-backfill/plan.json -text -diff
+# Preserve original single-attempt publication receipts.
+final-package-e9d297-r3/execution/**/*.json -text -diff

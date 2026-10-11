@@ -14,17 +14,17 @@
 | R1 | 已部署；真实用户恢复仍需分桶观察 | root；commit c8342ca4；固定8082 | 生产聚合后验，不读取用户恢复材料 |
 | R2 | 已部署；设备到达率待测 | 46c853f4（原9d32bdfd）；精确候选51PASS | 观察真实业务与设备回执 |
 | R3 | 已部署；实际媒体流量样本待补 | 53757826；精确候选15PASS、API/worker guard通过 | 线程池/对象内存仍有后续任务 |
-| R4 | 已集成及双审 | 6999a563；138Flutter、24JVM、analyze0 | 共享候选/成品/真实配额与锁屏 |
-| R5 | 网关已部署；客户端已集成双审 | 服务端95fc1927；客户端ddfa73b9含远端5分钟对账/429硬期限/真实Managed gateway与IANA DND元数据 | 共享候选、iOS原生及真实APNs/Focus |
-| R6 | 已集成双审；135项R5/R6联合PASS | c772a503/6ee91ed7/1f527262/8242b89f；真实settle保留房间额度与离页registry ownership | 最终共享候选与设备弱网 |
-| R7a | 固定分页与checkpoint修复已集成双审 | 75d2c969/1284772e；独立32PASS；256正文/页、维护租约不跨网络等待 | 真机profile；ID元数据仍O(N) |
-| R7b | worker哈希与大seed预览已集成 | bee0891c/4662f576；一次worker proof、64KiB小对象例外 | 最终共享候选与设备峰值 |
-| R7c | 已提交及双审 | root；7454986f；40PASS/analyze0，独立17PASS | 共享候选与真实冷温热启动 |
-| R7d | 热查询块索引已集成双审；冷查询待后续 | b888e282；43相邻+8独立PASS；1M warm仅2624 ID；冷构建仍O(N) | 实机profile、cold/提及元数据另验 |
-| R8a | 上传前预检及SDK/lease接线已集成双审 | 8475a0b4/8d3a38f3/3e0ce735；独立14PASS | 最终共享候选 |
-| R8其余 | 活动预算双审通过；缓存索引已集成待审查修正；持久任务实施中 | 9b9ab4d7独立46PASS；43acaaca缓存134专项PASS；Android41c86084独立双审；iOS实际CI失败待修复 | 缓存失败校准修正、durable冻结、iOS原生GREEN后共享候选 |
-| R9 | 日志轮转已部署；worker整批租约已复现并实施最小修复 | root / fix_scheduler_r6；b307704a；隔离70dee9dd | R9a逐条临执行领取；active超时R9b与峰值/冗余/历史治理单列 |
-| R10 | 首版采样与生产聚合完成；独立审查发现两项需修 | 3b52c632独立10PASS；review_media_android修统计命名/继承stdout超时 | 修正后独立审查；不以零DB fetch推断空响应 |
+| R4 | Android2214已发布；iOS不涉及FGS | 6999a563及最终e9d297；共享/原生/固定重建通过 | 真机Doze、后台配额与锁屏功耗待测 |
+| R5 | 网关已部署；Android2214已发布；iOS仅unsigned | 服务端95fc1927；客户端ddfa73b9含远端对账/429期限/IANA DND元数据 | 最终iOS签名与APNs/Focus真机待测 |
+| R6 | Android2214已发布；iOS仅unsigned | c772a503/6ee91ed7/1f527262/8242b89f；settle与registry ownership修复；最终共享通过 | 真实设备弱网与到达状态待测 |
+| R7a | Android2214已发布；iOS仅unsigned | 75d2c969/1284772e；256正文/页、维护租约不跨网络等待 | 真机profile；ID元数据仍O(N) |
+| R7b | Android2214已发布；iOS仅unsigned | bee0891c/4662f576；worker哈希、大seed预览、64KiB小对象例外 | 真实设备峰值内存待测 |
+| R7c | Android2214已发布；iOS仅unsigned | 7454986f；启动编排修复，最终共享通过 | 真机冷温热启动分位待测 |
+| R7d | Android2214已发布；iOS仅unsigned；冷查询待后续 | b888e282；热查询块索引；冷构建仍O(N) | 实机profile、cold/提及元数据另验 |
+| R8a | Android2214已发布；iOS仅unsigned | 8475a0b4/8d3a38f3/3e0ce735；上传前预算/能力交集预检 | 真机大媒体与低空间待测 |
+| R8其余 | 最终缓存/持久任务/SQLCipher顺序修复已集成；Android2214发布；iOS仅unsigned | 最终e9d297/f7a9共享通过，Android真实3例、iOS native20通过；历史RED保留 | 真机杀进程恢复、文件保护、低空间/长时内存待测 |
+| R9 | 日志/逐条领取/代次及有界活跃续租均已部署 | worker abda33f8/db5d65ff；10:39:52–10:40:17Z settled PASS | warning已定位资金监控状态、待领域核验；长期容量、冗余、历史治理单列 |
+| R10 | 有界采样器修正及独立审查已完成 | a18bb18d/7e325b4f；真实Windows/Linux边界；5分钟样本保留分母 | 7–14天端到端SLO与设备回执仍待采集 |
 | R11 | 外部审核依赖 | 厂商通道申请 | 获批后按固定包名签名接入 |
 
 并行实现使用独立工作树及不相交文件；实现者不部署。root 汇总后按规格/领域→质量安全顺序审查。历史脚本/证据不能代替当前候选门禁，未完成的测试不标通过。
@@ -173,7 +173,7 @@ iOS38125303494双job于09:06Z前已SUCCESS。三native targets实际13+6+1=20 PA
 
 源码候选e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8，2101 mobile输入manifest f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687。完整Flutter09:46:15–09:54:26Z自然完成，5958 PASS/9 SKIP/0 FAIL；analyze零问题，边界401 PASS/1条件skip。policy三项按18个真实依赖路径及动态前提不变复用；首份policy-reuse路径闭包不完整已保留并明确由v2取代。原生API28三项和iOS 20项/unsigned IPA通过闭包核对绑定到该候选，范围不扩大为ARM64手机或16K验收。证据在shared-final-r3-summary.json与final-gates-r3。
 
-真实Android构建09:55:51–10:01:31Z，6分40秒；固定Apktool2.12.1重建/zipalign/75b31签名等28步骤全部exit0。最终0.4.45+2214 ARM64，73336097bytes，SHA575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614。25414 smali类/清单语义保持，274 native+assets字节保持；14 native库、实际Matrix13FUNC导出和锁定AAR strip-aware对应经独立NDK读回。libcrypto仍与2213相同且4KiB LOAD，16KiB静态子门禁exit1保留。十项RELRO末端观察与2213相同，仅crypto观察到保护尾页后续RW段交集；不据其他九项模数声称已复现崩溃，真实16K运行仍未验。Kotlin插件迁移及deprecated/unchecked旧构建advisory未抑制，作为后续维护项。
+真实Android构建09:55:51–10:01:31Z，5分40秒；固定Apktool2.12.1重建/zipalign/75b31签名等28步骤全部exit0。最终0.4.45+2214 ARM64，73336097bytes，SHA575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614。25414 smali类/清单语义保持，274 native+assets字节保持；14 native库、实际Matrix13FUNC导出和锁定AAR strip-aware对应经独立NDK读回。libcrypto仍与2213相同且4KiB LOAD，16KiB静态子门禁exit1保留。十项RELRO末端观察与2213相同，仅crypto观察到保护尾页后续RW段交集；不据其他九项模数声称已复现崩溃，真实16K运行仍未验。Kotlin插件迁移及deprecated/unchecked旧构建advisory未抑制，作为后续维护项。
 
 真实发布package final-package-e9d297-r3 已在本地冻结：freeze SHA b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297、runtime SHA1be3d1abdf7da35e26e363ae786b5334e5cd279d620a6d56bb9dd33be5e7c0f5。当前仅PLAN_ONLY检查；独立SPEC→QUALITY进行中，没有2214生产发布。source回填预检发现android-release.json仅本地CRLF381B/线上捕获LF372B差异，Git blob严格等捕获；具体local raw CAS+Git before等captured方案单独待审，不修改生产before哈希。
 
@@ -182,3 +182,19 @@ R9b-2候选abda33f8镜像已在隔离入口检查70 PASS/1真实PG配置skip、�
 ## 18:26+08 最终证据 Git 原始字节归档校验
 
 首次暂存发现两份最终包 JSON 被 Git CRLF 归一化，raw/index 比较主动拒绝继续；原始差异保留在 git-evidence-stage-red.json。修正包目录外的 .gitattributes 并仅对这两条路径执行 --renormalize 后，81 份暂存文件逐字节匹配工作区，身份清单为 final-r3-git-evidence-identities.json。实际冻结包文件没有修改，freeze SHA 仍为 b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297；没有重建或重新冻结未变更的产品。属于证据归档 RED→GREEN，不是产品回归修复。独立实际包审查已完成主要读取，正式 review JSON 尚待交付，生产尚未发布2214。
+
+## 18:46+08 Android发布、分发后验与worker有界续租上线
+
+客户端runtime于10:29:36Z完成双主机实时基线及工具校验；5分块上传10:31:39Z、assemble10:34:48Z、HK不可变安装10:35:01Z；CF新增精确路由10:35:28Z为InProgress，10:36:32Z实查Deployed/HEAD200/CORS通过，policy保持。HK别名10:36:50Z切2214；publish10:37:12Z PUBLISH_PASS；10:37:30Z actual route/audit读回PASS，仅Android version/build/notes三条审计，iOS2213、两端minimum3及URL保持。operation为im2214-e9d297-r3-20261011，9份原始phase receipt位于实际包execution目录。公开不可变APK SHA575e24f4…af614、73336097B，无完整公网包回拉。
+
+本地两分发文件按独立c17540评审回填。首个operator检查误把Windows反斜杠传入Git对象路径，exit128发生在全部写入之前，两目标raw未变；修正仅POSIX Git路径后，所有raw+Git双CAS、exact staged after及5本地preserved身份通过。原始operator失败说明与最终receipt均保存，生产before哈希未改写。admin-home已有本地/生产内容差异保持各层原样，没有夹带上线。
+
+worker10:39前重新核16个远端冻结输入、旧bfde/db300 healthy/0 restart/noOOM、all60/running35身份一致。10:39:52–10:40:17Z只切business-worker为abda33f8/db5d65ff，wrapper exit0、deployment.json settled PASS、5源SHA精确、schema0095、其他容器身份不变。回退镜像bfde及私有配置/旧日志保留。独立10:42:11Z只读后验结构通过；有限10行窗口1条warning，正在另作allowlist分类，不据健康或短窗口宣称全周期无错。
+
+工作站通过自有loopback SOCKS/jumper完成4项HTTPS检查：公开android-release exact after SHA、CDN APK HEAD200/73336097B/CORS、APIready200、未鉴权app-updates401。未使用真实用户token/伪造生产会话，实际认证route函数投影和三审计由服务器单独证明；自有tunnel已退出。iOS企业最终签名/覆盖数据、Android最终ARM64实机/16K/OEM/Doze、端到端P50/P95/P99与功耗仍明确未验。
+
+## 18:59+08 warning已定位且保留业务待核验
+
+独立原始10行/1warning结构快照及后续4行结构格式未识别均原样保留。root进一步仅允许从源码AST固定字符串中读回JSON的level/event/component/reason_code/status，未输出原始message、金额、地址、token或异常参数。扩大的后续窗口为maintenance_state/manual_maintenance/WAITING两条、source_health/funding_source/BALANCE_UNSTABLE与RECONCILIATION_PENDING各一条（statusOK）；枚举receipt为worker-warning-static-enums-r3.json。两窗口不同，不相减或推算发生率。
+
+这些是资金监控等待/稳定性/对账状态，不能写成无告警或已业务正常；本轮不更改财务策略/账务/阈值/审批，不读取资金明细或重放历史DEAD。候选仅覆盖五个已评审worker/Consumer源文件，金融维护模块及运行配置保持；这也不证明同一状态在此前时间窗口已经发生。后续需单独领域运营复核，保留P1观察项。IM续租的源码/镜像/settled发布及结构后验通过范围保持；有限样本租约失败/error/traceback计数零不代表全周期无错。独立文案复核发现构建时长算术笔误，已由6分40改5分40，起止和原receipt未改动。

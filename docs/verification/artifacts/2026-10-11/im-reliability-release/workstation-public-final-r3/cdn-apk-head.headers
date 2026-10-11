@@ -1,0 +1,19 @@
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+Content-Length: 73336097
+Connection: keep-alive
+Accept-Ranges: bytes
+Via: 2.0 Caddy, 1.1 2b92d172bc628dd9c34a8c262218ac02.cloudfront.net (CloudFront)
+Cache-Control: no-store
+Date: Sun, 11 Oct 2026 10:44:16 GMT
+ETag: "6acb6652-45f0521"
+Last-Modified: Sun, 11 Oct 2026 10:34:58 GMT
+Server: nginx/1.27.5
+X-Cache: Miss from cloudfront
+X-Amz-Cf-Pop: FRA60-P5
+Alt-Svc: h3=":443"; ma=86400
+X-Amz-Cf-Id: m7X3btLEKwVChUQTlxje7uWEvsWUMDMJVod6kcRvV6t1sX3qz62YEw==
+Access-Control-Allow-Origin: https://www.liuhetong888.com
+Vary: Origin
+Access-Control-Expose-Headers: Content-Range,Content-Length,Accept-Ranges
+

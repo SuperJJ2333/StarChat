@@ -1,0 +1,86 @@
+{
+  "checked_utc": "2026-10-11T10:56:16.044469+00:00",
+  "exit_code": 0,
+  "result": {
+    "status": "READ_ONLY_REDACTED",
+    "warning_lines": 4,
+    "warning_diagnostics": [
+      {
+        "allowlisted_words_only": [
+          "business",
+          "worker",
+          "manual",
+          "maintenance",
+          "maintenance",
+          "warning"
+        ],
+        "chars": 265,
+        "json_parseable": true,
+        "has_standard_level_colon": false,
+        "allowlisted_json_key_names": [
+          "level",
+          "event",
+          "timestamp"
+        ]
+      },
+      {
+        "allowlisted_words_only": [
+          "business",
+          "worker",
+          "health",
+          "warning",
+          "heartbeat",
+          "limit",
+          "failed"
+        ],
+        "chars": 566,
+        "json_parseable": true,
+        "has_standard_level_colon": false,
+        "allowlisted_json_key_names": [
+          "level",
+          "event",
+          "timestamp"
+        ]
+      },
+      {
+        "allowlisted_words_only": [
+          "business",
+          "worker",
+          "health",
+          "warning",
+          "heartbeat",
+          "limit",
+          "failed"
+        ],
+        "chars": 551,
+        "json_parseable": true,
+        "has_standard_level_colon": false,
+        "allowlisted_json_key_names": [
+          "level",
+          "event",
+          "timestamp"
+        ]
+      },
+      {
+        "allowlisted_words_only": [
+          "business",
+          "worker",
+          "manual",
+          "maintenance",
+          "maintenance",
+          "warning"
+        ],
+        "chars": 265,
+        "json_parseable": true,
+        "has_standard_level_colon": false,
+        "allowlisted_json_key_names": [
+          "level",
+          "event",
+          "timestamp"
+        ]
+      }
+    ],
+    "raw_lines_emitted": false,
+    "vocabulary_is_fixed": true
+  }
+}

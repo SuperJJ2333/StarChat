@@ -1,0 +1,10 @@
+{
+  "checked_at_utc": "2026-10-11T10:35:01.162199+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "operation": "hk-install",
+  "result": {
+    "alias": "ChatFlow-0.4.44-build2213-arm64.apk",
+    "installed": true
+  },
+  "status": "PASS"
+}

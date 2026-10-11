@@ -1,0 +1,10 @@
+{
+  "status": "PREWRITE_OPERATOR_CHECK_FAILED",
+  "cause": "Windows Path string used backslashes in Git tree object name; git show exit128 before any writes",
+  "writes": 0,
+  "targets_still_exact_reviewed_raw": {
+    "frontend/download.html": true,
+    "frontend/downloads/android-release.json": true
+  },
+  "correction": "Use stored POSIX Git paths in all Git object reads; no weakened SHA guard."
+}

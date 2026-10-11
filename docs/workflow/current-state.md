@@ -1,7 +1,7 @@
 # 当前工作状态
-## 2026-10-11 IM可靠性：服务端分批已部署，客户端最终回归中
+## 2026-10-11 IM可靠性：Android2214与worker续租已发布
 
-用户已授权产品修改、服务重启和部署。服务端恢复鉴权/推送跨房去重/媒体IO/日志及worker代次校验已部署，worker线上bfde7c86；活跃handler有界续租源码及独审已整合，候选abda33f8真实镜像70PASS/1PGskip、三协议检查通过，尚未切换。客户端最终e9d297/f7a9全Flutter5958PASS/9SKIP/0FAIL、analyze0、边界401/1；原搜索fixture RED保留且最终独审通过。Android0.4.45+2214 ARM64真实重建/固定75b31及28门禁通过，73336097B/SHA575e24f4…af614；本地发布package freeze b1abd1…待独立成品发布审查。正式双端仍2213，尚未发布2214。iOS同运行时unsigned IPA SHA0fad8d42…a4d3b已下载核验，20原生测试通过并按不变闭包复用。Android原生3项仍仅API28 x86_64范围；既有libcrypto4KiB/16KiB静态exit1及未实跑RELRO观察保留，不宣称16K兼容。精确身份/时间/下一步见[任务](tasks/2026-10-11-im-reliability-implementation.md)，按[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)续作。企业回签/真机保数据覆盖、OEM审核、全ROM弱网/功耗、端到端SLO与长期容量仍未完成。
+用户已授权产品修改、服务重启和部署。Android0.4.45+2214已正式发布（10:37Z），固定75b31签名、73336097B/SHA575e24f4…af614；CF Deployed/HEAD/CORS、公开metadata、实际route投影/三条审计及工作站四项HTTPS通过；iOS仍0.4.44+2213、minimum均3。共享最终e9d297/f7a9：5958PASS/9SKIP/0FAIL、analyze0、边界401/1；Android3项API28 x86_64原生证据按闭包复用，未称最终ARM64实机通过。worker有界续租abda33f8/db5d65ff于10:39:52–10:40:17Z settled PASS；5源SHA/schema0095/其他容器保持，独立结构后验通过，warning已定位资金监控WAITING/BALANCE_UNSTABLE/RECONCILIATION_PENDING，业务状态保留待领域核验。恢复鉴权、推送跨房去重、媒体IO及日志此前已部署。iOS同运行时unsigned IPA SHA0fad8d42…a4d3b与20项原生测试通过，企业回签/真机保数据覆盖仍待。既有libcrypto4KiB/16KiB静态exit1、RELRO观察、OEM审核、全ROM弱网/功耗、端到端SLO与长期容量均未关闭。详情见[任务](tasks/2026-10-11-im-reliability-implementation.md)与[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)。
 
 ## 2026-10-09 iOS0.4.44+2213普通更新弹窗已启用
 

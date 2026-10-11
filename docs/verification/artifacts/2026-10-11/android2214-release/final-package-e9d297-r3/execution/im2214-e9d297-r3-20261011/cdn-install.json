@@ -1,0 +1,16 @@
+{
+  "checked_at_utc": "2026-10-11T10:35:28.150497+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "operation": "cdn-install",
+  "result": {
+    "artifact_bytes": 73336097,
+    "artifact_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+    "cloudfront": "complete",
+    "etag": "E3R76HOPU0Z2CB",
+    "next": "Wait for Deployed, then cdn-check must pass public HEAD/CORS before HK alias switch",
+    "origin": "installer-hong-kong",
+    "policy": "unchanged",
+    "status": "InProgress"
+  },
+  "status": "PASS"
+}

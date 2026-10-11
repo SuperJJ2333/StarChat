@@ -1,0 +1,11 @@
+{
+  "checked_at_utc": "2026-10-11T10:37:12.110400+00:00",
+  "freeze_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+  "operation": "publish",
+  "result": {
+    "backup": "/opt/starchat/docs/verification/artifacts/2026-10-11/android2214-im2214-e9d297-r3-20261011",
+    "status": "PUBLISH_PASS",
+    "trace": "android2214-im2214-e9d297-r3-20261011"
+  },
+  "status": "PASS"
+}
