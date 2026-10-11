@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
@@ -10,6 +11,9 @@ import 'package:video_compress/video_compress.dart';
 
 import 'matrix_e2ee_client.dart';
 import 'matrix_media_upload_limit.dart';
+import 'media_transfer_budget.dart';
+import 'media_consumer_scope.dart';
+import 'media_load_scheduler.dart';
 import 'video_transcode.dart';
 import 'video_poster_extractor.dart';
 
@@ -65,13 +69,23 @@ final class _BoundedSendSlots {
   final _waiters = <Completer<void>>[];
 
   Future<void> acquire() async {
+    final scope = MediaConsumerScope.current;
+    if (scope?.isActive == false) throw MediaLoadCanceled();
     if (_available > 0) {
       _available--;
       return;
     }
     final waiter = Completer<void>();
     _waiters.add(waiter);
-    await waiter.future;
+    void cancel() {
+      if (_waiters.remove(waiter)) waiter.completeError(MediaLoadCanceled());
+    }
+    scope?.addCancelListener(cancel);
+    try {
+      await waiter.future;
+    } finally {
+      scope?.removeCancelListener(cancel);
+    }
   }
 
   void release() {
@@ -131,9 +145,12 @@ abstract interface class RoomPickedMediaSender {
 final class MediaMessageService implements RoomPickedMediaSender {
   MediaMessageService(this.matrix,
       {this.isGroup = false,
-      this.proxyLimitBytes = matrixProxyUploadLimitBytes});
+      this.proxyLimitBytes = matrixProxyUploadLimitBytes,
+      MediaTransferBudget? transferBudget})
+      : transferBudget = transferBudget ?? sharedMediaTransferBudget;
   final bool isGroup;
   final int proxyLimitBytes;
+  final MediaTransferBudget transferBudget;
   final MatrixEncryptedMediaGateway matrix;
   final ImagePicker _imagePicker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
@@ -192,17 +209,30 @@ final class MediaMessageService implements RoomPickedMediaSender {
   /// 失败返回 null（不阻塞原图发送）。
   Future<Uint8List?> captureThumbnail(String path) async {
     try {
-      final bytes = await File(path).readAsBytes();
-      final codec = await ui.instantiateImageCodec(
-        bytes,
-        targetWidth: 200,
-        targetHeight: 200,
-      );
-      final frame = await codec.getNextFrame();
-      final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-      frame.image.dispose();
-      codec.dispose();
-      return data?.buffer.asUint8List();
+      final file = File(path);
+      final size = (await file.stat()).size;
+      return await transferBudget.run(
+          MediaTransferPlan.upload(size, decodedBytes: mediaDecodeWorkingBytes),
+          () async {
+        final bytes = await readMediaFileBounded(file, size);
+        final codec = await ui.instantiateImageCodec(
+          bytes,
+          targetWidth: 200,
+          targetHeight: 200,
+        );
+        try {
+          final frame = await codec.getNextFrame();
+          try {
+            final data =
+                await frame.image.toByteData(format: ui.ImageByteFormat.png);
+            return data?.buffer.asUint8List();
+          } finally {
+            frame.image.dispose();
+          }
+        } finally {
+          codec.dispose();
+        }
+      });
     } catch (_) {
       return null;
     }
@@ -244,7 +274,26 @@ final class MediaMessageService implements RoomPickedMediaSender {
         mimeFromFileName(file.name).startsWith('video/');
     if (!isVideo) {
       await ensureWithinSendLimit(File(file.path), limitBytes: limit);
+      await _filePlan(File(file.path), mime ?? mimeFromFileName(file.name));
     }
+  }
+
+  Future<MediaTransferPlan> _filePlan(File file, String mime) async {
+    final size = (await file.stat()).size;
+    transferBudget.check(MediaTransferPlan.upload(size));
+    // A misleading extension must not hide image decoder work. This fixed
+    // prefix has its own tiny admission before the full payload is read.
+    final header =
+        await transferBudget.run(MediaTransferPlan.upload(12), () async {
+      final chunks = BytesBuilder(copy: false);
+      await for (final chunk in file.openRead(0, 12)) {
+        chunks.add(chunk);
+      }
+      return chunks.takeBytes();
+    });
+    final plan = mediaUploadPlan(size, mimeType: mime, header: header);
+    transferBudget.check(plan);
+    return plan;
   }
 
   Future<String> sendSelectedFile(String roomId, XFile file,
@@ -271,7 +320,6 @@ final class MediaMessageService implements RoomPickedMediaSender {
         upload = rendition.file;
         mime = 'video/mp4';
         await ensureWithinSendLimit(upload, limitBytes: sendLimit);
-        poster = await extractVideoPoster(upload.path);
         try {
           final metadata = await VideoCompress.getMediaInfo(upload.path)
               .timeout(const Duration(seconds: 15));
@@ -287,15 +335,22 @@ final class MediaMessageService implements RoomPickedMediaSender {
       }
       // Recheck after queueing/transcoding, before allocating the payload.
       await ensureWithinSendLimit(upload, limitBytes: sendLimit);
-      final bytes = await upload.readAsBytes();
-      if (bytes.length > sendLimit) throw MediaTooLargeException(sendLimit);
-      return await matrix.sendEncryptedMedia(roomId, bytes, mime,
-          txid: txid,
-          filename: mime == 'video/mp4'
-              ? '${file.name.split('.').first}.mp4'
-              : file.name,
-          thumbnailBytes: poster,
-          extraContent: info.isEmpty ? null : {'info': info});
+      final plan = await _filePlan(upload, mime);
+      return await transferBudget.run(plan, () async {
+        if (mime.startsWith('video/')) {
+          poster = await extractVideoPoster(upload.path);
+          if ((poster?.length ?? 0) > mediaThumbnailReserveBytes) poster = null;
+        }
+        final bytes = await readMediaFileBounded(upload, plan.payloadBytes);
+        if (bytes.length > sendLimit) throw MediaTooLargeException(sendLimit);
+        return await matrix.sendEncryptedMedia(roomId, bytes, mime,
+            txid: txid,
+            filename: mime == 'video/mp4'
+                ? '${file.name.split('.').first}.mp4'
+                : file.name,
+            thumbnailBytes: poster,
+            extraContent: info.isEmpty ? null : {'info': info});
+      });
     } finally {
       try {
         await videoRendition?.dispose();
@@ -349,15 +404,18 @@ final class MediaMessageService implements RoomPickedMediaSender {
     await _sendSlots.acquire();
     try {
       await ensureWithinSendLimit(local, limitBytes: sendLimit);
-      final bytes = await local.readAsBytes();
-      if (bytes.length > sendLimit) throw MediaTooLargeException(sendLimit);
-      return await matrix.sendEncryptedMedia(roomId, bytes, mimeType,
-          txid: txid,
-          extraContent: duration == null
-              ? null
-              : {
-                  'info': {'duration': duration.inMilliseconds},
-                });
+      final plan = await _filePlan(local, mimeType);
+      return await transferBudget.run(plan, () async {
+        final bytes = await readMediaFileBounded(local, plan.payloadBytes);
+        if (bytes.length > sendLimit) throw MediaTooLargeException(sendLimit);
+        return await matrix.sendEncryptedMedia(roomId, bytes, mimeType,
+            txid: txid,
+            extraContent: duration == null
+                ? null
+                : {
+                    'info': {'duration': duration.inMilliseconds},
+                  });
+      });
     } finally {
       _sendSlots.release();
     }

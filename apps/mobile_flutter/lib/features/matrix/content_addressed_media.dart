@@ -1,4 +1,7 @@
 import 'verified_media_content.dart';
+import 'media_transfer_budget.dart';
+import 'media_consumer_scope.dart';
+import 'media_load_scheduler.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -38,77 +41,110 @@ String matrixMediaTransferIdentity(Event event, {bool thumbnail = false}) =>
 /// Cold loader only: a declared content hash cannot opt out of attachment E2EE.
 /// Hash-authoritative cache hits bypass this loader entirely.
 Future<Uint8List> downloadMediaContent(Event event,
-    {bool thumbnail = false,
+        {bool thumbnail = false,
+        Future<Uint8List> Function(Uri)? downloadCallback}) =>
+    _downloadMediaContent(event,
+        thumbnail: thumbnail,
+        maxDownloadBytes: defaultMediaDownloadBytes,
+        downloadCallback: downloadCallback);
+
+Future<Uint8List> _downloadMediaContent(Event event,
+    {required bool thumbnail,
+    required int maxDownloadBytes,
     Future<Uint8List> Function(Uri)? downloadCallback}) async {
+  if (maxDownloadBytes <= 0) throw const MediaContentLimitException();
+  final outer = MediaTransferBudget.currentPlan?.payloadBytes;
+  final limit =
+      outer != null && outer < maxDownloadBytes ? outer : maxDownloadBytes;
   final hashes = TrustedMediaHashes.fromEvent(event);
   if (hashes != null &&
       !(thumbnail ? event.isThumbnailEncrypted : event.isAttachmentEncrypted)) {
     throw const FormatException('Missing encrypted media descriptor');
   }
-  // If AppHome already registered a native ciphertext transfer, a visible
-  // bubble joins it instead of issuing a duplicate Dart HTTP request.
-  if (downloadCallback == null) {
-    final pending = NativeMediaDownloadSession.joinPending(
-        event.room.client.userID ?? '',
-        matrixMediaTransferIdentity(event, thumbnail: thumbnail));
-    if (pending != null) downloadCallback = (_) => pending;
-  }
-  // The cache caller verifies authoritative plaintext hashes. This wrapper
-  // keeps its existing SDK decryption/authorization loader without hashing a
-  // second time or imposing new-send GIF limits on legacy attachments.
-  return MediaAssetGateway.readOriginal(() async =>
-      (await event.downloadAndDecryptAttachment(
-              getThumbnail: thumbnail, downloadCallback: downloadCallback))
-          .bytes);
+  return sharedMediaTransferBudget.run(MediaTransferPlan.download(limit),
+      () async {
+    // If AppHome already registered a native ciphertext transfer, a visible
+    // bubble joins it instead of issuing a duplicate Dart HTTP request.
+    if (downloadCallback == null) {
+      final pending = NativeMediaDownloadSession.joinPending(
+          event.room.client.userID ?? '',
+          matrixMediaTransferIdentity(event, thumbnail: thumbnail));
+      if (pending != null) downloadCallback = (_) => pending;
+    }
+    // The cache caller verifies authoritative plaintext hashes. This wrapper
+    // keeps its existing SDK decryption/authorization loader without hashing a
+    // second time or imposing new-send GIF limits on legacy attachments.
+    return MediaAssetGateway.readOriginal(() async {
+      final supplied = downloadCallback;
+      final file = await event.downloadAndDecryptAttachment(
+          getThumbnail: thumbnail,
+          downloadCallback: (url) async {
+            final bytes = supplied == null
+                ? await downloadMatrixCiphertextBounded(
+                    event.room.client.httpClient,
+                    event.room.client.accessToken,
+                    url,
+                    limit)
+                : await supplied(url);
+            if (bytes.length > limit) throw const MediaContentLimitException();
+            if (MediaConsumerScope.current?.isActive == false) {
+              throw MediaLoadCanceled();
+            }
+            return bytes;
+          });
+      if (file.bytes.length > limit) throw const MediaContentLimitException();
+      return file.bytes;
+    });
+  });
 }
 
-/// Cold forwarding loader with an encrypted-download byte budget. The legacy
-/// loader above intentionally remains unchanged for existing callers.
+/// Forwarding uses the same global admission and actual ciphertext cap.
 Future<Uint8List> downloadMediaContentBounded(
   Event event, {
   required int maxDownloadBytes,
   bool thumbnail = false,
-}) async {
-  final hashes = TrustedMediaHashes.fromEvent(event);
-  if (hashes != null &&
-      !(thumbnail ? event.isThumbnailEncrypted : event.isAttachmentEncrypted)) {
-    throw const FormatException('Missing encrypted media descriptor');
-  }
-  return MediaAssetGateway.readOriginal(() async {
-    final file = await event.downloadAndDecryptAttachment(
-      getThumbnail: thumbnail,
-      downloadCallback: (url) => _downloadBounded(
-        event.room.client.httpClient,
-        event.room.client.accessToken,
-        url,
-        maxDownloadBytes,
-      ),
-    );
-    if (file.bytes.lengthInBytes > maxDownloadBytes) {
-      throw const MediaContentLimitException();
-    }
-    return file.bytes;
-  });
-}
+}) =>
+    _downloadMediaContent(event,
+        thumbnail: thumbnail, maxDownloadBytes: maxDownloadBytes);
 
-Future<Uint8List> _downloadBounded(
+/// Transport for an already admitted encrypted-media operation. No plaintext
+/// or keys cross this boundary. The actual stream bound does not trust headers.
+Future<Uint8List> downloadMatrixCiphertextBounded(
   http.Client client,
   String? accessToken,
   Uri url,
   int maxDownloadBytes,
 ) async {
+  final plan = MediaTransferBudget.currentPlan;
+  if (plan == null ||
+      maxDownloadBytes <= 0 ||
+      maxDownloadBytes > plan.maximumPayloadBytes) {
+    throw StateError('Media download requires prior byte admission');
+  }
   final request = http.Request('GET', url);
   request.headers['authorization'] = 'Bearer $accessToken';
   final response = await client.send(request);
+  if (MediaConsumerScope.current?.isActive == false) {
+    await response.stream.listen((_) {}).cancel();
+    throw MediaLoadCanceled();
+  }
   if (response.statusCode < 200 || response.statusCode >= 300) {
     final subscription = response.stream.listen((_) {});
     await subscription.cancel();
     throw http.ClientException(
         'Media download failed: ${response.statusCode}', url);
   }
+  final declaredLength = response.contentLength;
+  if (declaredLength != null && declaredLength > maxDownloadBytes) {
+    await response.stream.listen((_) {}).cancel();
+    throw const MediaContentLimitException();
+  }
   final bytes = BytesBuilder(copy: false);
   var length = 0;
   await for (final chunk in response.stream) {
+    if (MediaConsumerScope.current?.isActive == false) {
+      throw MediaLoadCanceled();
+    }
     length += chunk.length;
     if (length > maxDownloadBytes) throw const MediaContentLimitException();
     bytes.add(chunk);
@@ -176,18 +212,21 @@ final class MediaEnvelope {
 
   static Future<MediaEnvelope> forBytes(Uint8List bytes,
       {String accountId = ''}) async {
-    final scope = MediaCache.verificationScope(accountId);
-    final content = await VerifiedMediaContent.verify(bytes, scope: scope);
-    final hash = content.digest;
-    final digest = [
-      for (var i = 0; i < hash.length; i += 2)
-        int.parse(hash.substring(i, i + 2), radix: 16)
-    ];
-    final key = (scope, hash);
-    return _flights[key] ??=
-        compute(_deriveInBackground, (content.bytes, digest, hash))
-            .whenComplete(() {
-      _flights.remove(key);
+    return sharedMediaTransferBudget.run(MediaTransferPlan.upload(bytes.length),
+        () async {
+      final scope = MediaCache.verificationScope(accountId);
+      final content = await VerifiedMediaContent.verify(bytes, scope: scope);
+      final hash = content.digest;
+      final digest = [
+        for (var i = 0; i < hash.length; i += 2)
+          int.parse(hash.substring(i, i + 2), radix: 16)
+      ];
+      final key = (scope, hash);
+      return _flights[key] ??=
+          compute(_deriveInBackground, (content.bytes, digest, hash))
+              .whenComplete(() {
+        _flights.remove(key);
+      });
     });
   }
 
@@ -293,79 +332,88 @@ Future<
   String accountId = '',
   Future<Uint8List> Function(Uint8List)? cacheContent,
 }) async {
-  final source = await MediaAssetGateway.inspect(file.bytes,
-      mimeType: file.mimeType, filename: file.name);
-  final isImage =
-      file is MatrixImageFile || source.mimeType.startsWith('image/');
-  final preparedBytes =
-      isImage ? await ImageCompressionPolicy.prepare(file.bytes) : file.bytes;
-  final contentUnchanged = identical(preparedBytes, file.bytes);
-  var original = identical(preparedBytes, file.bytes)
-      ? source
-      : await MediaAssetGateway.inspect(preparedBytes,
-          mimeType: source.mimeType, filename: source.filename);
-  final dimensions =
-      file is MatrixImageFile && !identical(preparedBytes, file.bytes)
-          ? await ImageCompressionPolicy.dimensions(preparedBytes)
-          : null;
-  var thumbOriginal = thumbnail == null
-      ? null
-      : await MediaAssetGateway.inspect(thumbnail.bytes,
-          mimeType: thumbnail.mimeType, filename: thumbnail.name);
-  // The cache callback must preserve content, returning an owned snapshot.
-  // Cache the final transformed snapshot and retain the returned owned bytes.
-  // The envelope can reuse its worker proof rather than hash the source again.
-  if (cacheContent != null) {
-    original = MediaAsset(
-        bytes: await cacheContent(original.bytes),
-        mimeType: original.mimeType,
-        filename: original.filename,
-        isGif: original.isGif);
-    final thumb = thumbOriginal;
-    if (thumb != null) {
-      thumbOriginal = MediaAsset(
-          bytes: await cacheContent(thumb.bytes),
-          mimeType: thumb.mimeType,
-          filename: thumb.filename,
-          isGif: thumb.isGif);
+  return sharedMediaTransferBudget.run(
+      mediaUploadPlan(file.bytes.length,
+          mimeType: file.mimeType,
+          header: file.bytes,
+          thumbnailBytes: thumbnail?.bytes.length ?? 0), () async {
+    final source = await MediaAssetGateway.inspect(file.bytes,
+        mimeType: file.mimeType, filename: file.name);
+    final isImage =
+        file is MatrixImageFile || source.mimeType.startsWith('image/');
+    final preparedBytes =
+        isImage ? await ImageCompressionPolicy.prepare(file.bytes) : file.bytes;
+    final contentUnchanged = identical(preparedBytes, file.bytes);
+    var original = identical(preparedBytes, file.bytes)
+        ? source
+        : await MediaAssetGateway.inspect(preparedBytes,
+            mimeType: source.mimeType, filename: source.filename);
+    final dimensions =
+        file is MatrixImageFile && !identical(preparedBytes, file.bytes)
+            ? await ImageCompressionPolicy.dimensions(preparedBytes)
+            : null;
+    var thumbOriginal = thumbnail == null
+        ? null
+        : await MediaAssetGateway.inspect(thumbnail.bytes,
+            mimeType: thumbnail.mimeType, filename: thumbnail.name);
+    // The cache callback must preserve content, returning an owned snapshot.
+    // Cache the final transformed snapshot and retain the returned owned bytes.
+    // The envelope can reuse its worker proof rather than hash the source again.
+    if (cacheContent != null) {
+      original = MediaAsset(
+          bytes: await cacheContent(original.bytes),
+          mimeType: original.mimeType,
+          filename: original.filename,
+          isGif: original.isGif);
+      final thumb = thumbOriginal;
+      if (thumb != null) {
+        thumbOriginal = MediaAsset(
+            bytes: await cacheContent(thumb.bytes),
+            mimeType: thumb.mimeType,
+            filename: thumb.filename,
+            isGif: thumb.isGif);
+      }
     }
-  }
-  final extra = Map<String, dynamic>.of(extraContent ?? {})
-    ..remove('chatflow_media')
-    ..remove('info');
-  if (!deterministic) {
+    final extra = Map<String, dynamic>.of(extraContent ?? {})
+      ..remove('chatflow_media')
+      ..remove('info');
+    if (!deterministic) {
+      return (
+        file: _preparedFile(file, null,
+            original: original,
+            dimensions: dimensions,
+            contentUnchanged: contentUnchanged),
+        thumbnail: thumbnail == null
+            ? null
+            : _preparedFile(thumbnail, null,
+                original: thumbOriginal,
+                contentUnchanged: true) as MatrixImageFile,
+        extraContent: extra.isEmpty ? null : extra
+      );
+    }
+    final envelope =
+        await MediaEnvelope.forBytes(original.bytes, accountId: accountId);
+    final thumbEnvelope = thumbOriginal == null
+        ? null
+        : await MediaEnvelope.forBytes(thumbOriginal.bytes,
+            accountId: accountId);
+    extra['chatflow_media'] = {
+      'v': 1,
+      'content_sha256': envelope.contentSha256,
+      if (thumbEnvelope != null)
+        'thumbnail_sha256': thumbEnvelope.contentSha256,
+    };
     return (
-      file: _preparedFile(file, null,
+      file: _preparedFile(file, envelope.encrypted,
           original: original,
           dimensions: dimensions,
           contentUnchanged: contentUnchanged),
       thumbnail: thumbnail == null
           ? null
-          : _preparedFile(thumbnail, null,
+          : _preparedFile(thumbnail, thumbEnvelope!.encrypted,
               original: thumbOriginal,
               contentUnchanged: true) as MatrixImageFile,
-      extraContent: extra.isEmpty ? null : extra
+      extraContent: extra
     );
-  }
-  final envelope =
-      await MediaEnvelope.forBytes(original.bytes, accountId: accountId);
-  final thumbEnvelope = thumbOriginal == null
-      ? null
-      : await MediaEnvelope.forBytes(thumbOriginal.bytes, accountId: accountId);
-  extra['chatflow_media'] = {
-    'v': 1,
-    'content_sha256': envelope.contentSha256,
-    if (thumbEnvelope != null) 'thumbnail_sha256': thumbEnvelope.contentSha256,
-  };
-  return (
-    file: _preparedFile(file, envelope.encrypted,
-        original: original,
-        dimensions: dimensions,
-        contentUnchanged: contentUnchanged),
-    thumbnail: thumbnail == null
-        ? null
-        : _preparedFile(thumbnail, thumbEnvelope!.encrypted,
-            original: thumbOriginal, contentUnchanged: true) as MatrixImageFile,
-    extraContent: extra
-  );
+  });
 }

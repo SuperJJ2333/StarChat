@@ -12,6 +12,7 @@ import 'package:liuhetong_mobile/features/matrix/media_load_scheduler.dart';
 import 'package:liuhetong_mobile/features/matrix/media_memory_budget.dart';
 import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/verified_media_content.dart';
+import 'package:liuhetong_mobile/features/matrix/media_transfer_budget.dart';
 import 'package:matrix/matrix.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
@@ -50,14 +51,18 @@ void main() {
       expect(ticks, greaterThan(0), reason: 'UI loop progresses during digest');
       work.add((length, worker));
     };
-    final bytes = await loadMediaWithCache(
-      MediaCacheKey(
-          accountId: 'alice',
-          roomId: 'room',
-          eventId: 'event',
-          contentSha256: hash),
-      () async => input,
-    );
+    // Explicit synthetic capacity keeps the R7b 100MiB digest workload while
+    // production's 192MiB default rejects this full-buffer operation.
+    final bytes = await MediaTransferBudget(maxBytes: 400 * 1024 * 1024).run(
+        MediaTransferPlan.download(input.length),
+        () => loadMediaWithCache(
+              MediaCacheKey(
+                  accountId: 'alice',
+                  roomId: 'room',
+                  eventId: 'event',
+                  contentSha256: hash),
+              () async => input,
+            ));
     expect(bytes.length, input.length);
     expect(work, [(input.length, true)]);
   });
@@ -208,6 +213,36 @@ void main() {
     expect(contentMediaMemoryCache.totalBytes, 0);
     expect(
         await MediaCache.probeCachedObject('room', 'event', accountId: 'alice'),
+        isNull);
+  });
+
+  test(
+      'cache cancellation and generation change hold bytes until real source settles',
+      () async {
+    final scope = MediaConsumerScope();
+    final source = Completer<Uint8List>();
+    final started = Completer<void>();
+    final load = scope.run(() => loadMediaWithCache(
+            const MediaCacheKey(
+                accountId: 'alice', roomId: 'room', eventId: 'held'), () {
+          started.complete();
+          return source.future;
+        }, maximumBytes: 10));
+    final canceled = expectLater(load, throwsA(isA<MediaLoadCanceled>()));
+    await started.future;
+    expect(sharedMediaTransferBudget.activeBytes, 40);
+    scope.cancel();
+    clearMediaMemoryCaches();
+    await canceled;
+    await Future<void>.delayed(Duration.zero);
+    expect(sharedMediaTransferBudget.activeBytes, 40);
+    source.complete(Uint8List.fromList([1]));
+    for (var i = 0; i < 5; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(sharedMediaTransferBudget.activeBytes, 0);
+    expect(
+        await MediaCache.probeCachedObject('room', 'held', accountId: 'alice'),
         isNull);
   });
 

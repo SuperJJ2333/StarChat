@@ -36,6 +36,7 @@ import 'video_transcode.dart'
         maxOriginalVideoBytes,
         GroupVideoTooLargeException;
 import 'prepared_chat_video.dart';
+import 'media_transfer_budget.dart';
 import 'media_thumbnail.dart' show decodeImageDimensions;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -5109,41 +5110,45 @@ final class _SdkEmojiVaultBackend
         if (!room.encrypted) {
           throw StateError('Emoji media upload requires an encrypted room');
         }
-        final asset = await MediaAssetGateway.inspect(bytes,
-            mimeType: mimeType, filename: '畅聊加密表情');
-        final prepared = await prepareContentAddressedMedia(
-          file: MatrixFile(
-            bytes: asset.bytes,
-            name: asset.filename,
-            mimeType: asset.mimeType,
-          ),
-        );
-        final encrypted = await prepared.file.encrypt();
-        // Validation/encryption yields to isolates. Recheck the account and
-        // room before starting an upload after that asynchronous boundary.
-        _client;
-        if (!identical(client.getRoomById(roomId), room) || !room.encrypted) {
-          throw StateError('Emoji vault room changed before upload');
-        }
-        final uri = await client.uploadContent(
-          encrypted.data,
-          filename: 'emoji.ciphertext',
-          contentType: 'application/octet-stream',
-        );
-        return {
-          'url': uri.toString(),
-          'mimetype': prepared.file.mimeType,
-          'v': 'v2',
-          'key': {
-            'alg': 'A256CTR',
-            'ext': true,
-            'k': encrypted.k,
-            'key_ops': ['encrypt', 'decrypt'],
-            'kty': 'oct',
-          },
-          'iv': encrypted.iv,
-          'hashes': {'sha256': encrypted.sha256},
-        };
+        return sharedMediaTransferBudget.run(
+            mediaUploadPlan(bytes.length, mimeType: mimeType, header: bytes),
+            () async {
+          final asset = await MediaAssetGateway.inspect(bytes,
+              mimeType: mimeType, filename: '畅聊加密表情');
+          final prepared = await prepareContentAddressedMedia(
+            file: MatrixFile(
+              bytes: asset.bytes,
+              name: asset.filename,
+              mimeType: asset.mimeType,
+            ),
+          );
+          final encrypted = await prepared.file.encrypt();
+          // Validation/encryption yields to isolates. Recheck the account and
+          // room before starting an upload after that asynchronous boundary.
+          _client;
+          if (!identical(client.getRoomById(roomId), room) || !room.encrypted) {
+            throw StateError('Emoji vault room changed before upload');
+          }
+          final uri = await client.uploadContent(
+            encrypted.data,
+            filename: 'emoji.ciphertext',
+            contentType: 'application/octet-stream',
+          );
+          return {
+            'url': uri.toString(),
+            'mimetype': prepared.file.mimeType,
+            'v': 'v2',
+            'key': {
+              'alg': 'A256CTR',
+              'ext': true,
+              'k': encrypted.k,
+              'key_ops': ['encrypt', 'decrypt'],
+              'kty': 'oct',
+            },
+            'iv': encrypted.iv,
+            'hashes': {'sha256': encrypted.sha256},
+          };
+        });
       });
 
   @override
@@ -5227,37 +5232,41 @@ final class _SdkEmojiVaultBackend
         if (url == null || key is! Map || hashes is! Map) {
           throw StateError('Encrypted emoji descriptor is invalid');
         }
-        final uri = Uri.parse(url);
-        var ciphertext = await client.database?.getFile(uri);
-        if (ciphertext == null) {
-          final downloadUri = await uri.getDownloadUri(client);
-          final response = await client.httpClient.get(
-            downloadUri,
-            headers: {'authorization': 'Bearer ${client.accessToken}'},
+        final limit = MediaTransferBudget.currentPlan?.maximumPayloadBytes ??
+            defaultMediaDownloadBytes;
+        return sharedMediaTransferBudget.run(MediaTransferPlan.download(limit),
+            () async {
+          final uri = Uri.parse(url);
+          var ciphertext = await client.database?.getFile(uri);
+          if (ciphertext == null) {
+            final downloadUri = await uri.getDownloadUri(client);
+            ciphertext = await downloadMatrixCiphertextBounded(
+                client.httpClient, client.accessToken, downloadUri, limit);
+            // Cache ciphertext, never the decrypted original or its keys.
+            final database = client.database;
+            if (database != null && ciphertext.length <= database.maxFileSize) {
+              await database.storeFile(
+                  uri, ciphertext, DateTime.now().millisecondsSinceEpoch);
+            }
+          }
+          if (ciphertext.length > limit) {
+            throw const MediaContentLimitException();
+          }
+          _client;
+          final plaintext = await client.nativeImplementations.decryptFile(
+            EncryptedFile(
+              data: ciphertext,
+              k: key['k']!.toString(),
+              iv: encryptedFile['iv']!.toString(),
+              sha256: hashes['sha256']!.toString(),
+            ),
           );
-          if (response.statusCode != 200) {
-            throw StateError('Emoji download failed');
+          if (plaintext == null) {
+            throw StateError('Encrypted emoji integrity failed');
           }
-          ciphertext = response.bodyBytes;
-          // Cache ciphertext, never the decrypted original or its keys.
-          final database = client.database;
-          if (database != null && ciphertext.length <= database.maxFileSize) {
-            await database.storeFile(
-                uri, ciphertext, DateTime.now().millisecondsSinceEpoch);
-          }
-        }
-        final plaintext = await client.nativeImplementations.decryptFile(
-          EncryptedFile(
-            data: ciphertext,
-            k: key['k']!.toString(),
-            iv: encryptedFile['iv']!.toString(),
-            sha256: hashes['sha256']!.toString(),
-          ),
-        );
-        if (plaintext == null) {
-          throw StateError('Encrypted emoji integrity failed');
-        }
-        return plaintext;
+          _client;
+          return plaintext;
+        });
       });
 
   EmojiVaultEvent? _decodeEvent(Event event) {
@@ -9365,120 +9374,127 @@ final class MatrixSdkE2eeClient
       }
     }
 
-    await _requireRoomSend(room);
-    validateSendAccess();
-    if (!room.isDirectChat && mimeType.startsWith('video/')) {
-      validateGroupVideoSize(plaintext.length);
-    }
-    MatrixImageFile? thumbnail;
-    if (thumbnailBytes != null) {
-      thumbnail = MatrixImageFile(
-        bytes: thumbnailBytes,
-        name: 'thumb.jpg',
-        mimeType: 'image/jpeg',
-        width: thumbnailWidth,
-        height: thumbnailHeight,
-      );
-    }
-    final sourceBytes =
-        plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext);
-    final imageInput = !asFile && mimeType.startsWith('image/');
-    final sourceAsset = await MediaAssetGateway.inspect(sourceBytes,
-        mimeType: mimeType, filename: filename ?? '畅聊附件');
-    final actualImage = sourceAsset.mimeType.startsWith('image/');
-    final finalBytes = actualImage
-        ? await ImageCompressionPolicy.prepare(sourceBytes)
-        : sourceBytes;
-    validateSendAccess();
-    final asset = actualImage
-        ? await MediaAssetGateway.inspect(finalBytes,
-            mimeType: sourceAsset.mimeType, filename: sourceAsset.filename)
-        : null;
-    Map<String, dynamic>? finalExtra = extraContent;
-    if (imageInput &&
-        !identical(finalBytes, sourceBytes) &&
-        extraContent != null) {
-      finalExtra = Map<String, dynamic>.of(extraContent);
-      final info = extraContent['info'];
-      if (info is Map) {
-        finalExtra['info'] = Map<String, dynamic>.from(info)
-          ..remove('w')
-          ..remove('h');
+    return sharedMediaTransferBudget.run(
+        mediaUploadPlan(plaintext.length,
+            mimeType: mimeType,
+            header: plaintext,
+            copySource: plaintext is! Uint8List,
+            thumbnailBytes: thumbnailBytes?.length ?? 0), () async {
+      await _requireRoomSend(room);
+      validateSendAccess();
+      if (!room.isDirectChat && mimeType.startsWith('video/')) {
+        validateGroupVideoSize(plaintext.length);
       }
-    }
-    final media = buildMediaFileForSend(
-      bytes: finalBytes,
-      name: asset?.filename ?? filename ?? '畅聊附件',
-      // Retain m.file for generic attachment entry points, even when truthful
-      // image bytes need the same compression budget as m.image.
-      mimeType: imageInput || asFile ? asset?.mimeType ?? mimeType : mimeType,
-      asFile: asFile,
-      extraContent: finalExtra,
-    );
-    // BUG-28：自带缩略图的路径会跳过下面的缩略图生成，事件顶层可能缺
-    // info.w/h——同一张图两次连发落入不同布局。在聚合点补齐解码尺寸。
-    final sizedFile = await ensureImageDimensionsForSend(media.file);
-    // The original is already processed by the image/video picker. Generate
-    // only a missing thumbnail before hashing; the SDK must not transform a
-    // prepared envelope after this point.
-    final image = sizedFile;
-    if (image is MatrixImageFile && thumbnail == null) {
-      try {
-        thumbnail = await OutgoingMediaThumbnailCache.load(
-          accountId: room.client.userID ?? '',
-          image: image,
-          generate: () => image.generateThumbnail(
-            nativeImplementations: room.client.nativeImplementations,
-            customImageResizer: room.client.customImageResizer,
-          ),
+      MatrixImageFile? thumbnail;
+      if (thumbnailBytes != null) {
+        thumbnail = MatrixImageFile(
+          bytes: thumbnailBytes,
+          name: 'thumb.jpg',
+          mimeType: 'image/jpeg',
+          width: thumbnailWidth,
+          height: thumbnailHeight,
         );
-      } catch (_) {
-        /* An unavailable optional thumbnail preserves the original. */
       }
-      if (thumbnail != null && thumbnail.size > image.size) thumbnail = null;
-    }
-    validateSendAccess();
-    final prepared = await prepareContentAddressedMedia(
-      file: sizedFile,
-      thumbnail: thumbnail,
-      extraContent: media.extraContent,
-      accountId: room.client.userID ?? '',
-      cacheContent: (bytes) => cacheOutgoingMedia(
-        accountId: room.client.userID ?? '', roomId: room.id, bytes: bytes),
-    );
-    performanceTrace?.mark(PerformanceStage.videoEncrypted);
-    parentPerformanceTrace?.mark(PerformanceStage.videoEncrypted);
-    // Preparation yields to worker isolates. Revoke/room replacement can happen
-    // meanwhile; check both owner and originating lease before any SDK upload.
-    await _requireRoomSend(room);
-    validateSendAccess();
-    // The Matrix SDK combines media upload and event send in this call.
-    // Mark only its real start and completion; videoUploadDone is unsupported.
-    performanceTrace?.mark(PerformanceStage.videoUploadStarted);
-    parentPerformanceTrace?.mark(PerformanceStage.videoUploadStarted);
-    performanceTrace?.mark(PerformanceStage.matrixSendStart);
-    String? eventId;
-    try {
-      eventId = await room.sendFileEvent(
-        prepared.file,
-        thumbnail: prepared.thumbnail,
-        extraContent: prepared.extraContent,
-        txid: txid,
+      final sourceBytes =
+          plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext);
+      final imageInput = !asFile && mimeType.startsWith('image/');
+      final sourceAsset = await MediaAssetGateway.inspect(sourceBytes,
+          mimeType: mimeType, filename: filename ?? '畅聊附件');
+      final actualImage = sourceAsset.mimeType.startsWith('image/');
+      final finalBytes = actualImage
+          ? await ImageCompressionPolicy.prepare(sourceBytes)
+          : sourceBytes;
+      validateSendAccess();
+      final asset = actualImage
+          ? await MediaAssetGateway.inspect(finalBytes,
+              mimeType: sourceAsset.mimeType, filename: sourceAsset.filename)
+          : null;
+      Map<String, dynamic>? finalExtra = extraContent;
+      if (imageInput &&
+          !identical(finalBytes, sourceBytes) &&
+          extraContent != null) {
+        finalExtra = Map<String, dynamic>.of(extraContent);
+        final info = extraContent['info'];
+        if (info is Map) {
+          finalExtra['info'] = Map<String, dynamic>.from(info)
+            ..remove('w')
+            ..remove('h');
+        }
+      }
+      final media = buildMediaFileForSend(
+        bytes: finalBytes,
+        name: asset?.filename ?? filename ?? '畅聊附件',
+        // Retain m.file for generic attachment entry points, even when truthful
+        // image bytes need the same compression budget as m.image.
+        mimeType: imageInput || asFile ? asset?.mimeType ?? mimeType : mimeType,
+        asFile: asFile,
+        extraContent: finalExtra,
       );
-    } finally {
-      performanceTrace?.mark(PerformanceStage.matrixSendFinish);
-    }
-    if (eventId == null) {
-      // 上传/发送重试耗尽（网络类）→ waitingNetwork 自动重发；见
-      // MessageSendNetworkException 的文档。
-      throw const MessageSendNetworkException('媒体消息发送失败');
-    }
-    if (eventId.isEmpty) {
-      throw StateError('Matrix media event was not accepted');
-    }
-    performanceTrace?.mark(PerformanceStage.videoEventSent);
-    parentPerformanceTrace?.mark(PerformanceStage.videoEventSent);
-    return eventId;
+      // BUG-28：自带缩略图的路径会跳过下面的缩略图生成，事件顶层可能缺
+      // info.w/h——同一张图两次连发落入不同布局。在聚合点补齐解码尺寸。
+      final sizedFile = await ensureImageDimensionsForSend(media.file);
+      // The original is already processed by the image/video picker. Generate
+      // only a missing thumbnail before hashing; the SDK must not transform a
+      // prepared envelope after this point.
+      final image = sizedFile;
+      if (image is MatrixImageFile && thumbnail == null) {
+        try {
+          thumbnail = await OutgoingMediaThumbnailCache.load(
+            accountId: room.client.userID ?? '',
+            image: image,
+            generate: () => image.generateThumbnail(
+              nativeImplementations: room.client.nativeImplementations,
+              customImageResizer: room.client.customImageResizer,
+            ),
+          );
+        } catch (_) {
+          /* An unavailable optional thumbnail preserves the original. */
+        }
+        if (thumbnail != null && thumbnail.size > image.size) thumbnail = null;
+      }
+      validateSendAccess();
+      final prepared = await prepareContentAddressedMedia(
+        file: sizedFile,
+        thumbnail: thumbnail,
+        extraContent: media.extraContent,
+        accountId: room.client.userID ?? '',
+        cacheContent: (bytes) => cacheOutgoingMedia(
+            accountId: room.client.userID ?? '', roomId: room.id, bytes: bytes),
+      );
+      performanceTrace?.mark(PerformanceStage.videoEncrypted);
+      parentPerformanceTrace?.mark(PerformanceStage.videoEncrypted);
+      // Preparation yields to worker isolates. Revoke/room replacement can happen
+      // meanwhile; check both owner and originating lease before any SDK upload.
+      await _requireRoomSend(room);
+      validateSendAccess();
+      // The Matrix SDK combines media upload and event send in this call.
+      // Mark only its real start and completion; videoUploadDone is unsupported.
+      performanceTrace?.mark(PerformanceStage.videoUploadStarted);
+      parentPerformanceTrace?.mark(PerformanceStage.videoUploadStarted);
+      performanceTrace?.mark(PerformanceStage.matrixSendStart);
+      String? eventId;
+      try {
+        eventId = await room.sendFileEvent(
+          prepared.file,
+          thumbnail: prepared.thumbnail,
+          extraContent: prepared.extraContent,
+          txid: txid,
+        );
+      } finally {
+        performanceTrace?.mark(PerformanceStage.matrixSendFinish);
+      }
+      if (eventId == null) {
+        // 上传/发送重试耗尽（网络类）→ waitingNetwork 自动重发；见
+        // MessageSendNetworkException 的文档。
+        throw const MessageSendNetworkException('媒体消息发送失败');
+      }
+      if (eventId.isEmpty) {
+        throw StateError('Matrix media event was not accepted');
+      }
+      performanceTrace?.mark(PerformanceStage.videoEventSent);
+      parentPerformanceTrace?.mark(PerformanceStage.videoEventSent);
+      return eventId;
+    });
   }
 
   bool hasPendingMentions(String roomId) {

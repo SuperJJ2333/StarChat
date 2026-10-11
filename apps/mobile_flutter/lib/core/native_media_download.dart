@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../features/matrix/media_transfer_budget.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -201,7 +202,14 @@ final class NativeMediaDownloadSession {
           if (size == 0 || size > request.maxBytes) {
             throw StateError('Media size rejected');
           }
-          final bytes = await file.readAsBytes();
+          final outer = MediaTransferBudget.currentPlan?.payloadBytes;
+          final limit = outer != null && outer < request.maxBytes
+              ? outer
+              : request.maxBytes;
+          if (size > limit) throw MediaTransferLimitException(limit);
+          final bytes = await sharedMediaTransferBudget.run(
+              MediaTransferPlan.download(size),
+              () => readMediaFileBounded(file, size));
           _check();
           if (bytes.length > request.maxBytes) {
             throw StateError('Media size rejected');

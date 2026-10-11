@@ -1,0 +1,18 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_download_budget_test.dart
+00:00 +0: ordinary SDK download enforces actual stream cap with unknown length
+00:00 +0 -1: ordinary SDK download enforces actual stream cap with unknown length [E]
+  Expected: throws <Instance of 'MediaContentLimitException'>
+    Actual: <Instance of 'Future<Uint8List>'>
+     Which: emitted [1, 2, 3, 4, 5, 6]
+
+  package:matcher                                             expectLater
+  package:flutter_test/src/widget_tester.dart 507:8           expectLater
+  test\features\matrix\media_download_budget_test.dart 52:11  main.<fn>
+
+00:00 +0 -1: uncancellable pending HTTP retains reservation until actual settle
+00:00 +1 -1: real SDK still authenticates ciphertext before returning plaintext
+00:00 +2 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_download_budget_test.dart: ordinary SDK download enforces actual stream cap with unknown length

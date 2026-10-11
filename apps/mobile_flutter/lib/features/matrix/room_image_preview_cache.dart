@@ -6,6 +6,7 @@ import 'media_cache.dart';
 import 'verified_media_content.dart';
 import 'media_consumer_scope.dart';
 import 'media_memory_budget.dart';
+import 'media_transfer_budget.dart';
 
 const int roomImagePrewarmMaxBytes = 512 * 1024;
 
@@ -26,15 +27,20 @@ Future<Uint8List?> readCachedImageOriginal({
   final file = await MediaCache.cached(key.roomId, key.eventId,
       accountId: key.accountId, contentSha256: key.contentSha256);
   if (file == null || !current()) return null;
-  final bytes = await file.readAsBytes();
-  if (!current()) return null;
-  // Verify the actual read, including legacy objects whose hash is in the
-  // content-addressed filename rather than the event metadata.
-  final verified = await VerifiedMediaContent.verify(bytes,
-      scope: MediaCache.verificationScope(key.accountId),
-      expectedSha256:
-          key.contentSha256 ?? file.uri.pathSegments.last.split('.').first);
-  return current() ? verified.bytes : null;
+  final size = await file.length();
+  return sharedMediaTransferBudget.run(MediaTransferPlan.download(size),
+      () async {
+    if (!current()) return null;
+    final bytes = await readMediaFileBounded(file, size);
+    if (!current()) return null;
+    // Verify the actual read, including legacy objects whose hash is in the
+    // content-addressed filename rather than the event metadata.
+    final verified = await VerifiedMediaContent.verify(bytes,
+        scope: MediaCache.verificationScope(key.accountId),
+        expectedSha256:
+            key.contentSha256 ?? file.uri.pathSegments.last.split('.').first);
+    return current() ? verified.bytes : null;
+  });
 }
 
 /// A legacy preview key may contain the full original. Only a declared,

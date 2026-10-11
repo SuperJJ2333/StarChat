@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../core/performance_trace.dart';
 import 'video_poster_extractor.dart';
 import 'video_transcode.dart';
+import 'media_transfer_budget.dart';
 
 /// In-memory validated payload: retries never refer to a deleted camera file.
 final class PreparedChatVideo {
@@ -38,12 +39,21 @@ Future<PreparedChatVideo> prepareLocalChatVideo(File source,
   try {
     rendition = await transcodeForChat(source,
         onProgress: onProgress, performanceTrace: performanceTrace);
-    final bytes = await rendition.file.readAsBytes();
-    validateGroupVideoSize(bytes.length);
-    performanceTrace?.mark(PerformanceStage.videoThumbnailStarted);
-    final poster = await extractVideoPoster(rendition.file.path);
-    performanceTrace?.mark(PerformanceStage.videoThumbnailDone);
-    return PreparedChatVideo(bytes, poster, rendition.durationMs);
+    final file = rendition.file;
+    final size = await file.length();
+    validateGroupVideoSize(size);
+    return await sharedMediaTransferBudget
+        .run(mediaUploadPlan(size, mimeType: 'video/mp4'), () async {
+      final bytes = await readMediaFileBounded(file, size);
+      validateGroupVideoSize(bytes.length);
+      performanceTrace?.mark(PerformanceStage.videoThumbnailStarted);
+      final poster = await extractVideoPoster(file.path);
+      performanceTrace?.mark(PerformanceStage.videoThumbnailDone);
+      return PreparedChatVideo(
+          bytes,
+          (poster?.length ?? 0) > mediaThumbnailReserveBytes ? null : poster,
+          rendition!.durationMs);
+    });
   } finally {
     try {
       await rendition?.dispose();

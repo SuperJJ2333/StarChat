@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/content_addressed_media.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/media_transfer_budget.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/group_announcement_service.dart';
@@ -282,7 +283,7 @@ void main() {
           started++;
           if (started == 3) threeStarted.complete();
           return gates[i].future;
-        })
+        }, maximumBytes: 1)
     ];
     await threeStarted.future.timeout(const Duration(seconds: 5));
     await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -308,6 +309,35 @@ void main() {
     addTearDown(() => scratch.delete(recursive: true));
   });
   for (final fromLease in [false, true]) {
+    test(
+        'SDK ${fromLease ? 'lease' : 'direct'} retains budget through real upload settle',
+        () async {
+      final client = _UploadClient();
+      final room = _UploadRoom(client);
+      client.room = room;
+      final started = Completer<void>();
+      final settle = Completer<Uri>();
+      client.uploadResponse = (_) {
+        started.complete();
+        return settle.future;
+      };
+      final owner =
+          MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+      final payload = Uint8List.fromList(List.filled(32, 1));
+      final lease = fromLease ? await owner.openRoomLease(room.id) : null;
+      final send = lease == null
+          ? owner.sendEncryptedMedia(
+              room.id, payload.toList(), 'application/octet-stream')
+          : lease.sendEncryptedMedia(
+              room.id, payload, 'application/octet-stream');
+      await started.future.timeout(const Duration(seconds: 5));
+      expect(sharedMediaTransferBudget.activeBytes, fromLease ? 128 : 160);
+      expect(room.sent, isNull);
+      settle.complete(Uri.parse('mxc://test/synthetic'));
+      expect(await send, 'event');
+      expect(sharedMediaTransferBudget.activeBytes, 0);
+      await lease?.cancel();
+    });
     test(
         'image intake precedes thumbnail and final-byte cache (lease $fromLease)',
         () async {

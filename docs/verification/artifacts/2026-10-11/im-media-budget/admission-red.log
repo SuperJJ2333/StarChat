@@ -1,0 +1,31 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_admission_test.dart
+00:00 +0: 100MiB operation rejects before reading with actionable budget feedback
+00:00 +0 -1: 100MiB operation rejects before reading with actionable budget feedback [E]
+  Expected: throws satisfies function
+    Actual: <Instance of 'Future<String>'>
+     Which: emitted 'synthetic-event'
+
+  package:matcher                                                expectLater
+  package:flutter_test/src/widget_tester.dart 507:8              expectLater
+  test\features\matrix\media_transfer_admission_test.dart 78:13  main.<fn>.<fn>
+  dart:io                                                        IOOverrides.runZoned
+  test\features\matrix\media_transfer_admission_test.dart 77:23  main.<fn>
+  ===== asynchronous gap ===========================
+  dart:async                                                     _CustomZone.registerUnaryCallback
+  test\features\matrix\media_transfer_admission_test.dart 74:5   main.<fn>
+
+00:00 +0 -1: five 10MiB sends across service instances share one peak byte budget
+00:00 +0 -2: five 10MiB sends across service instances share one peak byte budget [E]
+  Expected: <4>
+    Actual: <5>
+
+  package:matcher                                               expect
+  package:flutter_test/src/widget_tester.dart 473:18            expect
+  test\features\matrix\media_transfer_admission_test.dart 96:9  main.<fn>.<fn>
+
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_admission_test.dart: 100MiB operation rejects before reading with actionable budget feedback
+  C:/Users/Administrator/.codex/worktrees/im-media-budget/StarChat/apps/mobile_flutter/test/features/matrix/media_transfer_admission_test.dart: five 10MiB sends across service instances share one peak byte budget

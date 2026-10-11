@@ -64,6 +64,12 @@ class _ReadSpy implements File {
   }
 
   @override
+  Stream<List<int>> openRead([int? start, int? end]) async* {
+    if (end != 12) reads++;
+    yield [0];
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

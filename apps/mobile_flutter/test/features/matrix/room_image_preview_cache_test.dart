@@ -7,6 +7,7 @@ import 'package:liuhetong_mobile/features/matrix/emoji_preview_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/media_memory_budget.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/media_transfer_budget.dart';
 
 void main() {
   test('prewarm skips legacy originals and bounds declared thumbnails',
@@ -181,7 +182,11 @@ void main() {
         });
     final oversized = Uint8List(64 * 1024 * 1024);
     cache.seed('local', oversized);
-    await cache.load('remote', () async => oversized);
+    // Exercise the independent 64MiB encrypted disk quota with explicit test
+    // capacity. Production's 192MiB transfer budget rejects this 4N workload.
+    await MediaTransferBudget(maxBytes: 256 * 1024 * 1024).run(
+        MediaTransferPlan.upload(oversized.length),
+        () => cache.load('remote', () async => oversized));
     expect(writes, 0,
         reason:
             'AES-GCM adds 28 bytes, so the plaintext limit is below 64 MiB');

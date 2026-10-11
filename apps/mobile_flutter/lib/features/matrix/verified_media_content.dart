@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:isolate';
+import 'media_transfer_budget.dart';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart' show compute, visibleForTesting;
@@ -43,7 +44,9 @@ final class VerifiedMediaContent {
     if (known != null) return known;
     // compute snapshots the input into the worker isolate. Return that exact
     // snapshot, not the caller's possibly mutated source after the await.
-    final result = await compute(_verify, (bytes, Isolate.current.hashCode));
+    final result = await sharedMediaTransferBudget.run(
+        MediaTransferPlan.upload(bytes.length),
+        () => compute(_verify, (bytes, Isolate.current.hashCode)));
     mediaDigestObserver?.call(result.$1.length, result.$3);
     final proof = VerifiedMediaContent._(
         result.$1.asUnmodifiableView(), result.$2, scope);
