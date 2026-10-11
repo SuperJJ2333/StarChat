@@ -1,0 +1,15 @@
+{
+  "source_commit": "717488294e271f6c84f6a99bf85bfcd9f71e1e4d",
+  "export_method": "git ls-tree -rz + git cat-file blob; no newline conversion",
+  "distinct_tests": 30,
+  "python_source_git_hash_bindings": 11,
+  "static_live_sha_byte_git_blob_bindings": 14,
+  "canonical_git_evidence_bindings": 5,
+  "green_log_captured_sha256": "3b8ef6852778383d2d41048ecbeeaec997acd369a1c95f1220ee3c32d97c9565",
+  "archive_limitation": "git archive applies core.autocrlf to un-attributed logs here; archive tests passed but log hash check rejected as canonical proof, superseded by raw Git-object export",
+  "red_retained": [
+    "git-export-review-red.log",
+    "rollback-review-red.log"
+  ],
+  "production_actions": "NONE"
+}
