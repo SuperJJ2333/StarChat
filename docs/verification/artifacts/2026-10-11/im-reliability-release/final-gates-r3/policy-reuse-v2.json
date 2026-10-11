@@ -1,0 +1,33 @@
+{
+  "status": "pass",
+  "scope": "unchanged three repository/deployment/template policy scripts and their referenced inputs",
+  "candidate_source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "executed_source_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "changed_paths": [],
+  "compared_paths": [
+    "tests/repository",
+    "tests/powershell/Test-TemplateTools.ps1",
+    "scripts/lib/TemplateTools.psm1",
+    ".gitignore",
+    "README.md",
+    "AGENTS.md",
+    "infra/AGENTS.md",
+    "services/matrix-bot/AGENTS.md",
+    "scripts/verify.ps1",
+    "services/matrix-bot/requirements-dev.txt",
+    "docker-compose.yml",
+    "docker-compose.production.yml",
+    ".env.example",
+    "services/matrix-bot/Dockerfile",
+    "services/business-api/Dockerfile",
+    "services/business-worker/Dockerfile",
+    "infra/nginx/nginx.conf.template",
+    "docs/runbooks/mobile-release.md"
+  ],
+  "receipt_sha256": "5c7d587ef5cec026e983366b63dadbbca784eab274f63def3c3a461cc84250c3",
+  "log_sha256": "e775f41e6c48a41d7870a60c6762b8512f22131c57eb2a574d0d943467b1d48a",
+  "result": "3 PASS; reused without duplicate execution",
+  "dynamic_preconditions": ".env absent as in prior gate; all forbidden root artifacts absent; same host/tool installation",
+  "previous_report_limitation": "policy-reuse.json path closure omitted referenced files and named the module incorrectly; superseded by this verified complete closure",
+  "previous_report_sha256": "954624762afe81c3fa51efe214d019ce4d6b17c943d17c80b9522f754de13a8d"
+}

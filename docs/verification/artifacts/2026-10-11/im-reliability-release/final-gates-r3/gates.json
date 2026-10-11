@@ -1,0 +1,31 @@
+{
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "source_manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "artifact_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "final_identity": {
+    "package": "com.liuhetong.mobile",
+    "abi": "arm64-v8a",
+    "version": "0.4.45",
+    "build": 2214,
+    "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+    "artifact_bytes": 73336097
+  },
+  "checks": {
+    "shared_flutter": {
+      "status": "pass",
+      "path": "shared-flutter.json",
+      "sha256": "00999abb905cfa3097e600cb687b420813e531903de6574ac9358a340c70d909"
+    },
+    "native_android": {
+      "status": "pass",
+      "path": "native-android.json",
+      "sha256": "a448d832f3d7e31110755d272dbca97818f00f0a248f116998617afbdbd3b6eb"
+    },
+    "final_apk": {
+      "status": "pass",
+      "path": "final-apk.json",
+      "sha256": "e3e8fa55a93e2b121f958ecbcb50a8780b28b408da591054a0f789772e8a406e"
+    }
+  }
+}

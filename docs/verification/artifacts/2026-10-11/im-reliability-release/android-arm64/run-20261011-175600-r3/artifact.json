@@ -1,0 +1,33 @@
+{
+  "version": "0.4.45",
+  "build": 2214,
+  "mode": "standard-arm64-release",
+  "icon_tree_shaking": false,
+  "dart_obfuscation": false,
+  "r8_minification": false,
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "mobile_manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "mobile_file_count": 2101,
+  "isolated_build_cache": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\apps\\mobile_flutter\\build",
+  "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "source_apk_sha256": "e56016e96962a88c6bb784ebf6d95110e4ab0dfdd95e0da63af2bdbb872d3509",
+  "final_apk_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "final_apk_bytes": 73336097,
+  "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+  "dart_defines": [
+    "--dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com",
+    "--dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com",
+    "--dart-define=LIUHETONG_GETUI_URL=https://liuhetong888.com",
+    "--dart-define=CHATFLOW_PERFORMANCE_METRICS=true"
+  ],
+  "production_android_build_at_preflight": 2213,
+  "production_ios_build_at_preflight": 2213,
+  "production_checked_at_utc": "2026-10-11T09:54:47.6621360+00:00",
+  "build_driver_sha256": "2b1c83cefa73bac54ffb95c9c0f9750aae342df7424cc9dd04759ea33bb92dca",
+  "freeze_helper_sha256": "748e8c2ea22086a50757c2083162cb134a11ba26f299891f75a440783cfbf503",
+  "complete_bundle_verifier_sha256": "45aea47357b748b3a8baa2691fe72f5c288721ff6cb954a385969084413afc51",
+  "dev_registrant_helper_sha256": "4786f1cf20a594e9e3e56f5296413a12142e1e2805ad535199af954850bf1bcd",
+  "dev_registrant_after_sha256": "0f58c721dbd866cffe64a02aa445c7c74a271e21d4a54ff76443f3f57356c9bf",
+  "semantic_verifier_sha256": "8d963a8d481ad1ecbc073f6d8b9306eee367d4a56252fa9c1f873078611694c9",
+  "finished_at": "2026-10-11T18:01:31.6822977+08:00"
+}

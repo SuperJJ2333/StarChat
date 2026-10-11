@@ -1,0 +1,413 @@
+{
+  "checked_at": "2026-10-11T10:22:54.564502+00:00",
+  "scope": "Exact raw bytes and staged Git blobs; excludes this identity manifest and later task documentation",
+  "status": "pass",
+  "count": 81,
+  "files": [
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/.gitattributes",
+      "sha256": "2ec89869193037a9d872a74bc3b0b6d113434ce52317b1fb69b2c03d2f073641",
+      "bytes": 426
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/freeze-manifest.json",
+      "sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+      "bytes": 7542
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/source-backfill/plan.json",
+      "sha256": "ee3a68104bea64ba8fe0a1a511c59b143419bb2b8f473407f4594efbf4a0584d",
+      "bytes": 1340
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/.gitattributes",
+      "sha256": "ab01ffb66a91510f4bc288790d41759420403f0a89b13c31ab0ef83ddf54ccdf",
+      "bytes": 147
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/build-final-r3-receipt.json",
+      "sha256": "a8a24d4a577bd254a1217023240a50b13d3f5afcb75cde9a76293bad850fbd30",
+      "bytes": 325
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/preflight-final-r3.json",
+      "sha256": "f4d1aeb7a650df7f477a0646fa2b248b3b108ed6a866797633c07920440b27c9",
+      "bytes": 793
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/apksigner-verify.log",
+      "sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415",
+      "bytes": 1002
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/apktool-version.log",
+      "sha256": "ab247e5c31dc3699f691c30f54b93350649c3ff29cd03951d28c3c3631f39433",
+      "bytes": 8
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/artifact.json",
+      "sha256": "4bf1b56e7d56425bc1ddd4802d7c6b952a98bf30d042da504d523beeba73d3dc",
+      "bytes": 2006
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/decode.log",
+      "sha256": "a496309b47cfe6ae7afcf273c2dbba09d46b33afc9f97c0b2cd7aa9aea21dddb",
+      "bytes": 563
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/dev-registration-readback.json",
+      "sha256": "1c14231d5d2890ad52978bb90a524fa61a23b47b51ea2928b1d6b48afbbbe221",
+      "bytes": 597
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/dev-registration.json",
+      "sha256": "37f68b4cc00eb0b0dd057b556dc1820867fc49f84df8d216f6405919ac5d3c9e",
+      "bytes": 596
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/final-flutter-assets.json",
+      "sha256": "f27cb99bcddd2d26dfa197af42a93008898cfd19a873cd55cc5e02ab6a0fb030",
+      "bytes": 243
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/final-gate.json",
+      "sha256": "866cdbcc7e95b42567e5718c65d4f75848eeb4a5d37eba7b94d11835c6968eac",
+      "bytes": 149
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/final-resources.log",
+      "sha256": "f15c33c1d6ec3903979d5c71cb32b9dba94037227dabc6c1e4b49a93db2a555a",
+      "bytes": 1263506
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/flutter-arguments.json",
+      "sha256": "743aa33cbfd5110e6ce340e1ba0f1e827318ddc7b49ea7e8f29a1a2f863e076a",
+      "bytes": 486
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/flutter-version.log",
+      "sha256": "7484ffbe03d8057aa709dafddf7d4992fc314c09a2c08d81e986e79d29f88522",
+      "bytes": 325
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/frozen-after-build.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/frozen-after-verification.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/identity.log",
+      "sha256": "9735dcf3543685e808bc1a97626087d7b8859ba62aa2c45a2db2bcf37cc503b0",
+      "bytes": 9006
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/java-version.log",
+      "sha256": "75c463f0f666fad1b78d7235b1a697dd8cd66b3dde7cee82f53d9322805f785c",
+      "bytes": 200
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/lock-boundary.json",
+      "sha256": "a933c16c38843f75202357e2e17c0f8f61b8646c79c167127557bec6f8c77f67",
+      "bytes": 183
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/original-manifest.txt",
+      "sha256": "a8fb579cfd3eaf5efce4c9bf433f33d93751c3ecc4a3b85630ecf4f50cf02144",
+      "bytes": 35871
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/rebuild-verification.json",
+      "sha256": "d6a0ebea7672e5e848fb71175ed7e3b03782a01636d88a326e7ce42646f89f45",
+      "bytes": 887
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/rebuild.log",
+      "sha256": "52d6f4fb730512fe0b554257170df7b36296d65e7b62fb6d1f39ce05ecc9bd17",
+      "bytes": 888
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/rebuilt-manifest.txt",
+      "sha256": "2e0387fb80538ee5bd5265a0cdb10088ee2293e3ab5f90e9d36e8268be5a3bf4",
+      "bytes": 35823
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/signature.log",
+      "sha256": "e28f9bf8ba6ac2bca58d88334860780cf472215c61a53d2e90896cd740f70952",
+      "bytes": 26
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/source-build.log",
+      "sha256": "ecc87abc2fe4d7c1e8f3931581c1304bc080a9928c5948109dcf722268dac5f0",
+      "bytes": 1803
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/source-flutter-assets.json",
+      "sha256": "22a4e9504945181aef893cbbc96abb6c9b93284c747e82f53ab04b215a6c6660",
+      "bytes": 243
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/source-gate.json",
+      "sha256": "d05f602ffdd686df0e38e32c58f2ac549fb9dbdc1f8a1c0fac6ebc5a7aeef5aa",
+      "bytes": 149
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/source-identity.log",
+      "sha256": "5af839abbd59c03654c031ed7410c05b05d1adceeee9175596bac011f0c033bf",
+      "bytes": 8790
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/source-resources.log",
+      "sha256": "5e558ccfd41acb29fa760374dcb4d0db4356a14c35f393511da9472550742ac5",
+      "bytes": 1189742
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/steps.tsv",
+      "sha256": "c52fc55f22eed741cfc9b11e2e5dec90f6aa9c96f73516ce42f370eef2407663",
+      "bytes": 1227
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/verification.json",
+      "sha256": "1521a02a4ba8017f7e3b56cfdd7b74d73adf19d882ebad56449b5589d545e03d",
+      "bytes": 885
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/verify-decode.log",
+      "sha256": "1abeac3165340b7e7c28860155c2224f4dac667aa45a7787295bd770ea3aa4cc",
+      "bytes": 569
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/version-contract.log",
+      "sha256": "603b1a324e6a4775c6100fc0f449b04382e3c38abd43b6e0e0619ed154b34463",
+      "bytes": 100
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/zipalign-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/zipalign.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/final-apk.json",
+      "sha256": "e3e8fa55a93e2b121f958ecbcb50a8780b28b408da591054a0f789772e8a406e",
+      "bytes": 1056022
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/gates.json",
+      "sha256": "f21d46b9da36c112090d7cd8c0898df8bf23ec2b4b292f145031fdfe6d21753c",
+      "bytes": 1162
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/ios-reuse.json",
+      "sha256": "49c1c33e1b428955464b994495938ea91f0a24bcd6a21cba2782ad2477b2b7ab",
+      "bytes": 1008
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/native-android.json",
+      "sha256": "a448d832f3d7e31110755d272dbca97818f00f0a248f116998617afbdbd3b6eb",
+      "bytes": 3751
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/policy-reuse-v2.json",
+      "sha256": "fda84de6aa2b5a623b66fabccf4987745825e0f2aaf9dfa1cfb4381c04f1ae25",
+      "bytes": 1552
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/policy-reuse.json",
+      "sha256": "954624762afe81c3fa51efe214d019ce4d6b17c943d17c80b9522f754de13a8d",
+      "bytes": 927
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/final-gates-r3/shared-flutter.json",
+      "sha256": "00999abb905cfa3097e600cb687b420813e531903de6574ac9358a340c70d909",
+      "bytes": 3059
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/git-evidence-stage-red.json",
+      "sha256": "2983c56bce6845bc0a9cec68ecaff2b254363d71085f0210fa61f7b78dff82bd",
+      "bytes": 1059
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/native-storage2214-r3/rebuild-verification.log",
+      "sha256": "69d912f0958afb6a06ee32b5296b73afb618e5c131621a7b33ba43d0c6b1ad58",
+      "bytes": 2264
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-analyze/gate.log",
+      "sha256": "96986c27bbf74569b4e8604d25e84ed0889e976fd786edbfd4b625e918fb4c9e",
+      "bytes": 203
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-analyze/input-after.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-analyze/input-before.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-analyze/receipt.json",
+      "sha256": "1eac27aad19d64f442560ac21c06e2bbe3d9f93dae8568568bcad7792527b84c",
+      "bytes": 493
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-boundaries/gate.log",
+      "sha256": "550f42e405d731fbd73d9a40e7d0fb079446f88d4661bd5f156e891a8fbfe025",
+      "bytes": 530
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-boundaries/input-after.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-boundaries/input-before.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-boundaries/receipt.json",
+      "sha256": "29f0246ad39d0a7baf8a618cbd45f7016d1ab9594561ba3a48a07ced05f36efc",
+      "bytes": 499
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-flutter/gate.log",
+      "sha256": "9192e7dc54562fc4a08813f1cb71369d2e41b505e5f8bbc275dd7ce287bc9b63",
+      "bytes": 3196907
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-flutter/input-after.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-flutter/input-before.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-flutter/receipt.json",
+      "sha256": "2f8dd454653b5a9efc77acec4db6712a6f45d442c2cb1ffc26075e7118fabcd0",
+      "bytes": 493
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-policy/gate.log",
+      "sha256": "e775f41e6c48a41d7870a60c6762b8512f22131c57eb2a574d0d943467b1d48a",
+      "bytes": 71
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-policy/input-after.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-policy/input-before.json",
+      "sha256": "1d07897788b78951112b9f9b38d24d570bc1b9705164fb60689435ef5daebd37",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r2-policy/receipt.json",
+      "sha256": "5c7d587ef5cec026e983366b63dadbbca784eab274f63def3c3a461cc84250c3",
+      "bytes": 491
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-analyze/gate.log",
+      "sha256": "4dc260a9a1ac906e5c933be34dbcf125cc167a22fc7224f0f3574a068c52f4a9",
+      "bytes": 203
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-analyze/input-after.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-analyze/input-before.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-analyze/receipt.json",
+      "sha256": "d6e38edc63c47bafa54482cd405739eff115a4fbf927eecb2844026359b938c2",
+      "bytes": 493
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-boundaries/gate.log",
+      "sha256": "2835c036fd6a18973489fd802b57b115a8fcffe483eafd5f2e7b663b3e3044b5",
+      "bytes": 530
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-boundaries/input-after.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-boundaries/input-before.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-boundaries/receipt.json",
+      "sha256": "1b5d6a7c187e52a6bbc1f20b247caac380b7b24190ad022bd29c1afff2f86763",
+      "bytes": 499
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-flutter/gate.log",
+      "sha256": "375475f10f5cc6fccfcca30505cea693dd20ad2ed832c1774111259498a768e6",
+      "bytes": 3250867
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-flutter/input-after.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-flutter/input-before.json",
+      "sha256": "905d73fb3f47931a4e3387abf8af6133556a69a8ee006ace0f9ae1615bbde3a8",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-flutter/receipt.json",
+      "sha256": "a18865c81dad2f5c0164ebbcadf0b99101c61d8ab0bb65dbc90794f6e4a4c341",
+      "bytes": 493
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-final-r3-summary.json",
+      "sha256": "00999abb905cfa3097e600cb687b420813e531903de6574ac9358a340c70d909",
+      "bytes": 3059
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/shared-mobile-input-final-r3.json",
+      "sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+      "bytes": 388833
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/source-backfill-preflight-r3.json",
+      "sha256": "5df4f54ebe4621163b1ad3259b97f96ce0fc125288481cfcae6ef7b2d70cf92f",
+      "bytes": 1325
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/version-preflight-5.json",
+      "sha256": "5f4d07fa35bffec4df209f63c0f569eef4e1756c0852e4be0d074dfa66cec4a0",
+      "bytes": 225
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/version-preflight-6.json",
+      "sha256": "534693e4edbb4308a70cabbb7fd00650405a880635afa3f213e6c2be2aa2fe98",
+      "bytes": 260
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-reliability-release/worker-active-lease-live-preflight.json",
+      "sha256": "af8c2c22e1f04c33dcd8a55ec951c540b089d7e505928c1da44f5c06971e8e15",
+      "bytes": 1198
+    }
+  ]
+}

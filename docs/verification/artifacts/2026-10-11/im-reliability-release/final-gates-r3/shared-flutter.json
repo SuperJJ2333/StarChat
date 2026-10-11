@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "overall_status": "pass",
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "gates": {
+    "flutter": {
+      "receipt": {
+        "gate": "Flutter",
+        "manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+        "started_utc": "2026-10-11T09:46:15.1741442+00:00",
+        "ended_utc": "2026-10-11T09:54:26.8929193+00:00",
+        "exit_code": 0,
+        "log": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\shared-final-r3-flutter\\gate.log",
+        "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8"
+      },
+      "receipt_sha256": "a18865c81dad2f5c0164ebbcadf0b99101c61d8ab0bb65dbc90794f6e4a4c341",
+      "log_sha256": "375475f10f5cc6fccfcca30505cea693dd20ad2ed832c1774111259498a768e6",
+      "log_bytes": 3250867,
+      "result": {
+        "passed": 5958,
+        "skipped": 9,
+        "failed": 0
+      }
+    },
+    "analyze": {
+      "receipt": {
+        "ended_utc": "2026-10-11T09:46:48.8715300+00:00",
+        "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+        "gate": "Analyze",
+        "log": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\shared-final-r3-analyze\\gate.log",
+        "exit_code": 0,
+        "started_utc": "2026-10-11T09:46:15.1838068+00:00",
+        "manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687"
+      },
+      "receipt_sha256": "d6e38edc63c47bafa54482cd405739eff115a4fbf927eecb2844026359b938c2",
+      "log_sha256": "4dc260a9a1ac906e5c933be34dbcf125cc167a22fc7224f0f3574a068c52f4a9",
+      "log_bytes": 203,
+      "result": {
+        "issues": 0
+      }
+    },
+    "boundaries": {
+      "receipt": {
+        "started_utc": "2026-10-11T09:46:15.1837281+00:00",
+        "exit_code": 0,
+        "log": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\shared-final-r3-boundaries\\gate.log",
+        "manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+        "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+        "gate": "Boundaries",
+        "ended_utc": "2026-10-11T09:48:43.4583940+00:00"
+      },
+      "receipt_sha256": "1b5d6a7c187e52a6bbc1f20b247caac380b7b24190ad022bd29c1afff2f86763",
+      "log_sha256": "2835c036fd6a18973489fd802b57b115a8fcffe483eafd5f2e7b663b3e3044b5",
+      "log_bytes": 530,
+      "result": {
+        "passed": 401,
+        "skipped": 1,
+        "failed": 0
+      }
+    },
+    "policy": {
+      "reused": true,
+      "report_sha256": "fda84de6aa2b5a623b66fabccf4987745825e0f2aaf9dfa1cfb4381c04f1ae25",
+      "result": "3 PASS, unchanged complete dependency closure"
+    }
+  }
+}

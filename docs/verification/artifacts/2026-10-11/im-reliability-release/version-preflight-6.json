@@ -1,0 +1,10 @@
+{
+  "checked_at_utc": "2026-10-11T17:54:47.662136+08:00",
+  "versions": {
+    "app_latest_build": "2213",
+    "app_latest_version": "0.4.44",
+    "app_ios_latest_build": "2213",
+    "app_ios_latest_version": "0.4.44"
+  },
+  "target_2214_files": []
+}

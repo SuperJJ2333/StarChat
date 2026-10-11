@@ -1,0 +1,26 @@
+{
+  "status": "LOCAL_REPRESENTATION_RECONCILIATION_REQUIRES_FINAL_REVIEW",
+  "files": {
+    "frontend/download.html": {
+      "local_raw_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "local_raw_bytes": 9245,
+      "git_blob_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "captured_raw_sha256": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "captured_raw_bytes": 9245,
+      "raw_equal": true,
+      "git_blob_equal_captured": true,
+      "equal_after_crlf_to_lf": true
+    },
+    "frontend/downloads/android-release.json": {
+      "local_raw_sha256": "d551fb5d6dad641cfcc2272571f758973236ec5b49ba60656457298822d83d63",
+      "local_raw_bytes": 381,
+      "git_blob_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "captured_raw_sha256": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "captured_raw_bytes": 372,
+      "raw_equal": false,
+      "git_blob_equal_captured": true,
+      "equal_after_crlf_to_lf": true
+    }
+  },
+  "rule": "Do not change frozen captured production before hashes. After audited publication, separately CAS local exact raw before SHA + Git before blob, then copy reviewed after bytes; stop on any new drift."
+}

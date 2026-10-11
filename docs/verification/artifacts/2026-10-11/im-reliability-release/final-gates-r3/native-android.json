@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "status": "pass",
+  "scope": "Unchanged Android native storage/default SQLCipher initialization functional gate, reused by exact change-impact check",
+  "candidate_source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "executed_source_commit": "0fc080e54bad0ad2789cc5d2c7fba28b753c2e17",
+  "device": "emulator-5558/API28/x86_64",
+  "package": "com.liuhetong.mobile.debug",
+  "fixture_apk_sha256": "0c0fbd6b52670e4422dc670f83f58bdcb2153e1d5cb1b8a3c1642dc13c1906b6",
+  "real_tests": 3,
+  "failures": 0,
+  "reporter_count_includes_teardown": 4,
+  "unchanged_source_paths": [
+    "apps/mobile_flutter/integration_test/reliability_media_native_test.dart",
+    "apps/mobile_flutter/integration_test/native_media_storage_test.dart",
+    "apps/mobile_flutter/integration_test/media_outbox_persistence_native_test.dart",
+    "apps/mobile_flutter/integration_test/permission_driver.dart",
+    "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart",
+    "apps/mobile_flutter/lib/core/matrix_local_binding.dart",
+    "apps/mobile_flutter/lib/core/local_database_factory.dart",
+    "apps/mobile_flutter/android",
+    "apps/mobile_flutter/third_party/matrix",
+    "apps/mobile_flutter/third_party/flutter_local_notifications",
+    "apps/mobile_flutter/pubspec.yaml",
+    "apps/mobile_flutter/pubspec.lock"
+  ],
+  "evidence": {
+    "receipt.json": {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\native-storage2214-r3\\receipt.json",
+      "sha256": "a658d4378cf0626bb023839d82ec092c9941f789f74e39823c6944a226ec34f2"
+    },
+    "native-drive.log": {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\native-storage2214-r3\\native-drive.log",
+      "sha256": "2933f805056445947334780774a4ca427822b2d933b2e98afd3ed3ea3a693bd6"
+    },
+    "steps.tsv": {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\native-storage2214-r3\\steps.tsv",
+      "sha256": "e91e8b6735007c2d0924a4430ca7a27cb79e0ae925ed955b87076e0c929a9ba4"
+    },
+    "identity.log": {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\native-storage2214-r3\\identity.log",
+      "sha256": "957df36721857eb36ad4db5dc43e4012c639ca1277b1a676f9b3016e0979c029"
+    },
+    "signature.log": {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\native-storage2214-r3\\signature.log",
+      "sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415"
+    },
+    "rebuild-verification.log": {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\native-storage2214-r3\\rebuild-verification.log",
+      "sha256": "69d912f0958afb6a06ee32b5296b73afb618e5c131621a7b33ba43d0c6b1ad58"
+    }
+  },
+  "limitations": [
+    "Not final ARM64 APK runtime testing",
+    "Not real-phone upgrade/backup restore/Doze/OEM/power/performance acceptance",
+    "Not a 16 KB page-size compatibility gate; separate libcrypto static finding remains open"
+  ],
+  "candidate_manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "reused_report_sha256": "113b3cf0100844df02df88ef799ac5566d78e83ed71b551972a4cfb28502bcce",
+  "bound_at_utc": "2026-10-11T09:46:55.667520+00:00"
+}

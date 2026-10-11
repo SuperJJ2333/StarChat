@@ -1,0 +1,5 @@
+# Preserve exact verification bytes and raw tool hashes across checkouts.
+*.json -text -diff
+*.log -text -diff
+*.tsv -text -diff
+*.txt -text -diff

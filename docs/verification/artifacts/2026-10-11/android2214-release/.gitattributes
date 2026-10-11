@@ -4,3 +4,7 @@ payload/hk-snapshot/** -text -diff
 *.py text eol=lf
 baseline/*.py text eol=lf
 payload/*.py text eol=lf
+
+# Preserve actual final package manifests byte-for-byte; do not rewrite frozen packages.
+final-package-e9d297-r3/freeze-manifest.json -text -diff
+final-package-e9d297-r3/source-backfill/plan.json -text -diff

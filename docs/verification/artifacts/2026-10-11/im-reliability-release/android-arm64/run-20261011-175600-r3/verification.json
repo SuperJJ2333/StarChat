@@ -1,0 +1,39 @@
+{
+  "added_native_assets": [],
+  "changed_dex_binary": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex",
+    "classes6.dex"
+  ],
+  "changed_native_assets": [],
+  "changed_smali_classes": [],
+  "final_class_count": 25414,
+  "final_dex": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex",
+    "classes6.dex"
+  ],
+  "final_entries": 867,
+  "final_resource_entries": 475,
+  "manifest_semantics_identical": true,
+  "native_asset_entries": 274,
+  "resources_arsc_present_and_nonempty": true,
+  "resources_rebuilt": true,
+  "source_class_count": 25414,
+  "source_dex": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex",
+    "classes6.dex"
+  ],
+  "source_entries": 864,
+  "source_resource_entries": 475
+}

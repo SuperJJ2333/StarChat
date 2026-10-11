@@ -1,0 +1,14 @@
+{
+  "preflight": "passed",
+  "worktree": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat",
+  "output_root": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\android-arm64",
+  "version": "0.4.45",
+  "build": 2214,
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "mobile_manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "mobile_file_count": 2101,
+  "isolated_build_cache": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\apps\\mobile_flutter\\build",
+  "production_android_build": 2213,
+  "production_ios_build": 2213,
+  "production_checked_at_utc": "2026-10-11T09:54:47.6621360+00:00"
+}

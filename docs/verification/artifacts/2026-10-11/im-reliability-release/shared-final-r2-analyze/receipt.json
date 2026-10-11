@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "gate": "Analyze",
+  "source_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "ended_utc": "2026-10-11T08:35:02.6427052+00:00",
+  "log": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\shared-final-r2-analyze\\gate.log",
+  "manifest_sha256": "5e5778f1dce7a17f2dedfda7a223499d7b8d1c8a102bf7a860382a04dcf1f3d7",
+  "started_utc": "2026-10-11T08:34:27.1429863+00:00"
+}

@@ -1,0 +1,8 @@
+{
+  "manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "run_id": "run-20261011-175600-r3",
+  "started_utc": "2026-10-11T09:55:51.7048173+00:00",
+  "ended_utc": "2026-10-11T10:01:31.7370804+00:00",
+  "exit_code": 0,
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8"
+}

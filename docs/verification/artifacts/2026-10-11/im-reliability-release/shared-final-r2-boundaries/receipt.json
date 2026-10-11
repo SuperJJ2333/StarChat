@@ -1,0 +1,9 @@
+{
+  "ended_utc": "2026-10-11T08:36:58.9610400+00:00",
+  "started_utc": "2026-10-11T08:34:27.1479906+00:00",
+  "exit_code": 0,
+  "log": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\shared-final-r2-boundaries\\gate.log",
+  "gate": "Boundaries",
+  "source_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "manifest_sha256": "5e5778f1dce7a17f2dedfda7a223499d7b8d1c8a102bf7a860382a04dcf1f3d7"
+}

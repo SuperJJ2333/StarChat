@@ -1,0 +1,22 @@
+{
+  "status": "pass",
+  "scope": "unchanged three repository/deployment/template policy scripts and their referenced inputs",
+  "candidate_source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "executed_source_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "changed_paths": [],
+  "compared_paths": [
+    "tests/repository",
+    "tests/powershell/Test-TemplateTools.ps1",
+    "scripts/TemplateTools.psm1",
+    "docker-compose.yml",
+    "services/matrix-bot/Dockerfile",
+    "services/business-api/Dockerfile",
+    "services/business-worker/Dockerfile",
+    "AGENTS.md",
+    "services/matrix-bot/AGENTS.md",
+    "services/matrix-bot/requirements-dev.txt"
+  ],
+  "receipt_sha256": "5c7d587ef5cec026e983366b63dadbbca784eab274f63def3c3a461cc84250c3",
+  "log_sha256": "e775f41e6c48a41d7870a60c6762b8512f22131c57eb2a574d0d943467b1d48a",
+  "result": "3 PASS; reused without duplicate execution"
+}

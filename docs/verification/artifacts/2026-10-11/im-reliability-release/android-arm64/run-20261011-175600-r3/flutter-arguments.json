@@ -1,0 +1,19 @@
+[
+  "build",
+  "apk",
+  "--release",
+  "--no-pub",
+  "--flavor",
+  "standard",
+  "--no-tree-shake-icons",
+  "--target-platform",
+  "android-arm64",
+  "--build-name",
+  "0.4.45",
+  "--build-number",
+  "2214",
+  "--dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com",
+  "--dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com",
+  "--dart-define=LIUHETONG_GETUI_URL=https://liuhetong888.com",
+  "--dart-define=CHATFLOW_PERFORMANCE_METRICS=true"
+]

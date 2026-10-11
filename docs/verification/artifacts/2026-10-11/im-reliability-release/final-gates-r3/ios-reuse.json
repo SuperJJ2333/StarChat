@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "status": "pass",
+  "scope": "unchanged iOS runtime/native/dependencies/workflow build and native evidence",
+  "candidate_source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "candidate_manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "executed_source_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "run_id": 38125303494,
+  "changed_mobile_or_workflow_paths": [
+    "apps/mobile_flutter/test/features/matrix/room_search_media_grid_test.dart"
+  ],
+  "reused_summary_sha256": "27ceed2767f1448e27467be7af667d09fdc7f7f9d553eb2c62c02d166b845680",
+  "ipa_sha256": "0fad8d42bcab9439ff35951e44b7f0df6b284660200b23b576f6d12ce72a4d3b",
+  "ipa_bytes": 34964622,
+  "native_passed": 20,
+  "limitations": [
+    "Unsigned IPA; enterprise identity and old-iPhone upgrade not validated",
+    "No actual APNs/Focus/locked-device arrival or power/performance acceptance"
+  ],
+  "bound_at_utc": "2026-10-11T09:46:55.668496+00:00"
+}

@@ -168,3 +168,17 @@ iOS38125303494双job于09:06Z前已SUCCESS。三native targets实际13+6+1=20 PA
 搜索网格诊断纠正17:15假设：没有证据证明永久丢失完成通知；序列化可选缓存写入在清理阶段额外pump才完成。非规范Windows路径还触发持久化目录枚举错误。f59单独被拒绝保持，最终f186仅test的canonical路径+同10秒真实deadline内16ms I/O/帧推进经原RED环境独立SPEC→QUALITY通过。阶段诊断两次persist-done均在assert前、零error；无trace完整十场景文件1PASS，真实2053ms/104pumps/fake1664ms；双decode2、导航前后HTTP1未放宽。集成为ad38bf67/04e712f3，独审8dc15a2a→f7097dea，10份独立证据原始SHA/bytes全部核验。
 
 最终运行时代码与5988相同，只有一个测试文件改变。final-r2 5957/9/1历史失败保留；下一步冻结final-r3并运行完整Flutter+analyze。边界用例自身虽未变，但privacy扫描包含新server代码，补跑该影响范围；policy输入未改变可复用精确范围。Android原生3项及iOS 20项/unsignedIPA通过运行时、依赖、原生、workflow闭包比较后绑定复用，不重复编译相同代码。全仓verify前置.env缺失继续明确为未执行，不能称全仓PASS。然后刷新线上版本，ARM64源码→常规重建→固定75b31签名及实际成品独审。
+
+## 2026-10-11T18:18:37+08:00 final-r3 全量通过、Android真实成品冻结，待独立发布审查
+
+源码候选e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8，2101 mobile输入manifest f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687。完整Flutter09:46:15–09:54:26Z自然完成，5958 PASS/9 SKIP/0 FAIL；analyze零问题，边界401 PASS/1条件skip。policy三项按18个真实依赖路径及动态前提不变复用；首份policy-reuse路径闭包不完整已保留并明确由v2取代。原生API28三项和iOS 20项/unsigned IPA通过闭包核对绑定到该候选，范围不扩大为ARM64手机或16K验收。证据在shared-final-r3-summary.json与final-gates-r3。
+
+真实Android构建09:55:51–10:01:31Z，6分40秒；固定Apktool2.12.1重建/zipalign/75b31签名等28步骤全部exit0。最终0.4.45+2214 ARM64，73336097bytes，SHA575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614。25414 smali类/清单语义保持，274 native+assets字节保持；14 native库、实际Matrix13FUNC导出和锁定AAR strip-aware对应经独立NDK读回。libcrypto仍与2213相同且4KiB LOAD，16KiB静态子门禁exit1保留。十项RELRO末端观察与2213相同，仅crypto观察到保护尾页后续RW段交集；不据其他九项模数声称已复现崩溃，真实16K运行仍未验。Kotlin插件迁移及deprecated/unchecked旧构建advisory未抑制，作为后续维护项。
+
+真实发布package final-package-e9d297-r3 已在本地冻结：freeze SHA b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297、runtime SHA1be3d1abdf7da35e26e363ae786b5334e5cd279d620a6d56bb9dd33be5e7c0f5。当前仅PLAN_ONLY检查；独立SPEC→QUALITY进行中，没有2214生产发布。source回填预检发现android-release.json仅本地CRLF381B/线上捕获LF372B差异，Git blob严格等捕获；具体local raw CAS+Git before等captured方案单独待审，不修改生产before哈希。
+
+R9b-2候选abda33f8镜像已在隔离入口检查70 PASS/1真实PG配置skip、三镜像协议通过；临时probe全清理，60个全部容器name/ID前后不变、running仍35，worker仍db300/bfde。部署准备及独立证据身份最后复核中，未切换。下一步：独立审查精确客户端package后按既有runtime→upload→assemble→HK/CDN→CAS发布→audit，再严格回填两文件；客户端发布后才执行worker守护切换。
+
+## 18:26+08 最终证据 Git 原始字节归档校验
+
+首次暂存发现两份最终包 JSON 被 Git CRLF 归一化，raw/index 比较主动拒绝继续；原始差异保留在 git-evidence-stage-red.json。修正包目录外的 .gitattributes 并仅对这两条路径执行 --renormalize 后，81 份暂存文件逐字节匹配工作区，身份清单为 final-r3-git-evidence-identities.json。实际冻结包文件没有修改，freeze SHA 仍为 b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297；没有重建或重新冻结未变更的产品。属于证据归档 RED→GREEN，不是产品回归修复。独立实际包审查已完成主要读取，正式 review JSON 尚待交付，生产尚未发布2214。

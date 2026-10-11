@@ -1,0 +1,23 @@
+{
+  "files": {
+    "frontend/download.html": {
+      "after": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44",
+      "before": "f8ecee91b7bbe8640e41a172a588c5c9cba49dbaf1856b14ff0061d165e577ff",
+      "staged": "source-backfill/frontend/download.html"
+    },
+    "frontend/downloads/android-release.json": {
+      "after": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "before": "286ae4bc798243dd6b3f9ef2b7a3205d9432ddc4c21fb5bf6d9d8b151dd96fbf",
+      "staged": "source-backfill/frontend/downloads/android-release.json"
+    }
+  },
+  "mode": "review-only-no-repository-write",
+  "preserved": {
+    "frontend/downloads/ios/manifest.plist": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "frontend/src/admin-home.js": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+    "frontend/src/download-network-selector.js": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "frontend/src/download-network.js": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "frontend/src/download-redirect.js": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+  },
+  "rule": "Parent compares exact before hashes, applies only these two files after publication review; any drift stops."
+}

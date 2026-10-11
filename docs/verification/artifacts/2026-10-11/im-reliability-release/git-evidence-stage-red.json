@@ -1,0 +1,22 @@
+{
+  "status": "RED_opaque_attributes_missing_for_two_frozen_package_json_files",
+  "files": [
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/freeze-manifest.json",
+      "raw_sha256": "b1abd1b18928d8f0306077bc64ff3d09f286b5af11c17a9344f877961abb8297",
+      "staged_before_sha256": "1e836fbfadc691f5b3c8d58ab52fa207820c6345c9cbbb6ce10c90d2c9eacaf1",
+      "raw_bytes": 7542,
+      "staged_bytes": 7461,
+      "equal_after_crlf_to_lf": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/android2214-release/final-package-e9d297-r3/source-backfill/plan.json",
+      "raw_sha256": "ee3a68104bea64ba8fe0a1a511c59b143419bb2b8f473407f4594efbf4a0584d",
+      "staged_before_sha256": "06578a8046698bdc7a19361246de4a874ec3d698364f05ae5836d2bebb84df9e",
+      "raw_bytes": 1340,
+      "staged_bytes": 1317,
+      "equal_after_crlf_to_lf": true
+    }
+  ],
+  "action": "Add exact external parent attributes; re-stage unchanged raw bytes. Do not modify frozen package."
+}

@@ -1,0 +1,9 @@
+{
+  "gate": "Flutter",
+  "manifest_sha256": "f7a9a63d118bb39994907e6d37e8179ebe3f78cb75e18db6ac0141b96b29a687",
+  "started_utc": "2026-10-11T09:46:15.1741442+00:00",
+  "ended_utc": "2026-10-11T09:54:26.8929193+00:00",
+  "exit_code": 0,
+  "log": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\shared-final-r3-flutter\\gate.log",
+  "source_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8"
+}
