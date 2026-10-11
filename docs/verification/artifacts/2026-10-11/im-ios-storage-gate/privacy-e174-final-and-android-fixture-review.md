@@ -12,6 +12,8 @@ QUALITY: inspected the capacity value's native-to-Dart consumers and local excep
 
 The focused source tests include native-channel readback requirements and low-space refusal preserving the selected original and actionable local intent. This follow-up did not rerun the implementer's broader durable suite or certify its unrelated concurrency behavior. Its scope is the previously open privacy-purpose condition.
 
+Root separately reported a new same-txid P1 in the durable outbox. This privacy-purpose conclusion does not resolve that finding; its repair and independent domain/quality acceptance remain separate requirements.
+
 Conclusion: **SPEC then QUALITY PASS for the E174.1 purpose/production-wiring condition at these frozen inputs**. Combined with the prior C617.1, CA92.1 and PBX inspection, there is no remaining source-level finding for the three declared reasons. Actual built-bundle evidence and real-device Data Protection remain separate pending gates. This is not complete third-party SDK privacy certification or product release approval. [Apple required-reason API purposes](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype).
 
 ## Android fixture helper: static review
