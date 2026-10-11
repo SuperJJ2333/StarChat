@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_room_sender_registry.dart';
 import 'package:liuhetong_mobile/core/outbox/message_send_scheduler.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
@@ -160,6 +161,128 @@ void main() {
           networkStateManager: manager,
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
+
+  for (final exitMode in ['inactive', 'unregister', 'replace', 'clear']) {
+    testWidgets(
+        'registry preserves deleted foreground ownership after page closes ($exitMode)',
+        (tester) async {
+      final pending = Completer<String>();
+      final transport = _FakeTransport()..responses.add(() => pending.future);
+      final controller = controllerFor(transport);
+      RoomTimelineController? currentController = controller;
+      var pageActive = true;
+      final registry = OutboxRoomSenderRegistry();
+      final sender = RoomOutboxSender(
+          roomId: '!room:test',
+          controller: () => currentController,
+          canSend: () => pageActive);
+      registry.register(sender);
+      final foreground = controller.sendText('foreground');
+      await tester.pump();
+      final first = (await outbox.unsent()).single;
+      final second = (await outbox.save(
+          receiverId: '@peer:test',
+          roomId: '!room:test',
+          content: 'second',
+          createdAt: first.createdAt.add(const Duration(seconds: 1))))!;
+      await tester.pump(const Duration(seconds: 21));
+      expect(await foreground, isNull);
+      await outbox.removeOrArchive(first.localId);
+      pageActive = false;
+      controller.dispose();
+      if (exitMode == 'unregister') {
+        registry.unregister(sender);
+      } else if (exitMode == 'replace') {
+        registry.register(RoomOutboxSender(
+            roomId: '!room:test',
+            controller: () => null,
+            canSend: () => false));
+        registry.unregister(sender);
+      } else if (exitMode == 'clear') {
+        registry.clear();
+      }
+      if (exitMode != 'inactive') {
+        currentController = null;
+      }
+      expect(registry.senderFor('!room:test'), isNull);
+      var leaseOpens = 0;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: registry.senderFor,
+          roomSettlements: registry.pendingRoomTransportSettlements,
+          leaseFactory: (_) async {
+            leaseOpens++;
+            return _TransportLease(transport);
+          });
+      addTearDown(() {
+        scheduler.dispose();
+        registry.clear();
+      });
+      unawaited(scheduler.drain());
+      await tester.pump(const Duration(seconds: 31));
+      expect(transport.txids, [first.txid],
+          reason: 'page handle loss must not become room transport settlement');
+      expect(leaseOpens, 0);
+      pending.complete('late-foreground');
+      await tester.pump();
+      expect(transport.txids, [first.txid, second.txid]);
+      expect(leaseOpens, 1);
+      expect(await outbox.unsent(), isEmpty);
+    });
+  }
+
+  testWidgets(
+      'deleted foreground room still counts toward global transport cap',
+      (tester) async {
+    final foregroundPending = Completer<String>();
+    final backgroundPending = Completer<String>();
+    final transport = _FakeTransport()
+      ..responses.addAll([
+        () => foregroundPending.future,
+        () => backgroundPending.future,
+      ]);
+    final controller = controllerFor(transport);
+    final registry = OutboxRoomSenderRegistry();
+    final sender = _controllerSender(controller);
+    registry.register(sender);
+    final foreground = controller.sendText('foreground');
+    await tester.pump();
+    final first = (await outbox.unsent()).single;
+    await tester.pump(const Duration(seconds: 21));
+    expect(await foreground, isNull);
+    await outbox.removeOrArchive(first.localId);
+    controller.dispose();
+    registry.unregister(sender);
+    final second = (await outbox.save(
+        receiverId: '@second:test',
+        roomId: '!second:test',
+        content: 'second',
+        createdAt: first.createdAt.add(const Duration(seconds: 1))))!;
+    final third = (await outbox.save(
+        receiverId: '@third:test',
+        roomId: '!third:test',
+        content: 'third',
+        createdAt: first.createdAt.add(const Duration(seconds: 2))))!;
+    final scheduler = MessageSendScheduler(
+        outbox: outbox,
+        senderFor: registry.senderFor,
+        roomSettlements: registry.pendingRoomTransportSettlements,
+        leaseFactory: (_) async => _TransportLease(transport));
+    addTearDown(() {
+      scheduler.dispose();
+      registry.clear();
+    });
+    unawaited(scheduler.drain());
+    await tester.pump(const Duration(seconds: 31));
+    expect(transport.txids, [first.txid, second.txid]);
+    foregroundPending.complete('foreground-ack');
+    await tester.pump();
+    expect(transport.txids, [first.txid, second.txid, third.txid]);
+    backgroundPending.complete('background-ack');
+    await tester.pump();
+    expect(await outbox.unsent(), isEmpty);
+    expect(registry.pendingRoomTransportSettlements(), isEmpty);
+  });
 
   testWidgets('page sender captures transport before UI timeout and disposal',
       (tester) async {

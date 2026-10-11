@@ -50,6 +50,7 @@ final class MessageSendScheduler {
   MessageSendScheduler({
     required this.outbox,
     required this.senderFor,
+    this.roomSettlements,
     this.networkState,
     this.canDispatch,
     this.authorizeSend,
@@ -62,6 +63,9 @@ final class MessageSendScheduler {
 
   /// 取某个房间当前打开的发送句柄；返回 null 表示房间没打开。
   final OutboxSender? Function(String roomId) senderFor;
+
+  /// Actual foreground ownership, including closed or non-sendable pages.
+  final Map<String, Future<void>> Function()? roomSettlements;
 
   final NetworkStateManager? networkState;
 
@@ -325,16 +329,19 @@ final class MessageSendScheduler {
           observe(resolving);
         }
       }
-      for (final room in byRoom.keys) {
+      final externalSettlements = roomSettlements?.call() ?? const {};
+      for (final room in {...byRoom.keys, ...externalSettlements.keys}) {
         if (_roomOperations.contains(room) ||
             _externalRoomOperations.contains(room) ||
             _inFlight.containsValue(room)) {
           continue;
         }
         final sender = senderFor(room);
-        if (sender is! OutboxTransportSettlement) continue;
-        final pending = (sender as OutboxTransportSettlement)
-            .pendingRoomTransportSettlement;
+        final pending = externalSettlements[room] ??
+            (sender is OutboxTransportSettlement
+                ? (sender as OutboxTransportSettlement)
+                    .pendingRoomTransportSettlement
+                : null);
         if (pending == null) continue;
         // Capture the actual foreground owner before its row or page can go
         // away. The snapshot also covers a row deleted before our first scan.

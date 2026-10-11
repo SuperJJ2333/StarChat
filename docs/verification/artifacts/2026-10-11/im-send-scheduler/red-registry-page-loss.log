@@ -1,0 +1,63 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart
+00:00 +0: registry preserves deleted foreground ownership after page closes (unregister: false)
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['local-1791689786508011-0']
+  Actual: ['local-1791689786508011-0', '58ecb610460644dab17cfb40911f7da7']
+   Which: at location [1] is ['local-1791689786508011-0', '58ecb610460644dab17cfb40911f7da7'] which
+longer than expected
+page handle loss must not become room transport settlement
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart:212:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart line 212
+The test description was:
+  registry preserves deleted foreground ownership after page closes (unregister: false)
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: registry preserves deleted foreground ownership after page closes (unregister: false) [E]
+  Test failed. See exception logs above.
+  The test description was: registry preserves deleted foreground ownership after page closes (unregister: false)
+
+00:00 +0 -1: registry preserves deleted foreground ownership after page closes (unregister: true)
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: ['local-1791689786632980-0']
+  Actual: ['local-1791689786632980-0', '1480b53f12f34d91963027acc80f91a1']
+   Which: at location [1] is ['local-1791689786632980-0', '1480b53f12f34d91963027acc80f91a1'] which
+longer than expected
+page handle loss must not become room transport settlement
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart:212:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart line 212
+The test description was:
+  registry preserves deleted foreground ownership after page closes (unregister: true)
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -2: registry preserves deleted foreground ownership after page closes (unregister: true) [E]
+  Test failed. See exception logs above.
+  The test description was: registry preserves deleted foreground ownership after page closes (unregister: true)
+
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (unregister: false)
+  C:/Users/Administrator/.codex/worktrees/im-send-scheduler/StarChat/apps/mobile_flutter/test/features/matrix/outbox_send_flow_test.dart: registry preserves deleted foreground ownership after page closes (unregister: true)

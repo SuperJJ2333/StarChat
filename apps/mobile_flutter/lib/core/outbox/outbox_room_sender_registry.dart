@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'outbox_message.dart';
 
 /// 一个**当前打开着**的房间会话的发送句柄。
@@ -33,16 +35,22 @@ final class OutboxRoomSenderRegistry {
   static final OutboxRoomSenderRegistry shared = OutboxRoomSenderRegistry();
 
   final Map<String, OutboxSender> _senders = <String, OutboxSender>{};
+  final Map<String, Set<Future<void>>> _detachedSettlements = {};
 
   int get length => _senders.length;
 
   /// 同一房间后注册的句柄覆盖先前的（页面重建），先前的注销不会误删新的。
   void register(OutboxSender sender) {
+    final previous = _senders[sender.roomId];
+    if (previous != null && !identical(previous, sender)) {
+      _retainSettlement(previous);
+    }
     _senders[sender.roomId] = sender;
   }
 
   void unregister(OutboxSender sender) {
     if (identical(_senders[sender.roomId], sender)) {
+      _retainSettlement(sender);
       _senders.remove(sender.roomId);
     }
   }
@@ -55,5 +63,50 @@ final class OutboxRoomSenderRegistry {
     return sender;
   }
 
-  void clear() => _senders.clear();
+  /// Transport ownership is independent of whether a page can still send.
+  /// Unregistered/replaced pages retain only their actual settlement futures.
+  Map<String, Future<void>> pendingRoomTransportSettlements() => {
+        for (final room in {..._senders.keys, ..._detachedSettlements.keys})
+          if (pendingRoomTransportSettlement(room) case final pending?)
+            room: pending,
+      };
+
+  Future<void>? pendingRoomTransportSettlement(String roomId) {
+    final sender = _senders[roomId];
+    final current = sender is OutboxTransportSettlement
+        ? (sender as OutboxTransportSettlement).pendingRoomTransportSettlement
+        : null;
+    final pending = [
+      ...?_detachedSettlements[roomId],
+      if (current != null) current,
+    ];
+    return pending.isEmpty ? null : Future.wait(pending).then<void>((_) {});
+  }
+
+  void _retainSettlement(OutboxSender sender) {
+    if (sender is! OutboxTransportSettlement) return;
+    final pending =
+        (sender as OutboxTransportSettlement).pendingRoomTransportSettlement;
+    if (pending == null) return;
+    final roomId = sender.roomId;
+    final retained = _detachedSettlements.putIfAbsent(roomId, () => {});
+    if (!retained.add(pending)) return;
+    void release() {
+      retained.remove(pending);
+      if (retained.isEmpty &&
+          identical(_detachedSettlements[roomId], retained)) {
+        _detachedSettlements.remove(roomId);
+      }
+    }
+
+    unawaited(pending.then<void>((_) => release(),
+        onError: (Object _, StackTrace __) => release()));
+  }
+
+  void clear() {
+    for (final sender in _senders.values) {
+      _retainSettlement(sender);
+    }
+    _senders.clear();
+  }
 }

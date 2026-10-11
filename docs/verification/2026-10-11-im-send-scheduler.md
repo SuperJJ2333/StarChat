@@ -79,3 +79,13 @@ exit 0，**194 PASS**，无跳过。范围 analyze 7 个修改 Dart 文件 exit 
 新增适配器用例断言：`send()` 返回后、第一次 pump 前，已捕获控制器原始 Future；UI 超时返回错误后清空页面 controller 并 dispose、删除行、再过 31 秒，该 Future 仍未完成且 room 查询仍有占用；只有完成模拟 SDK 原请求后才清空。原账号 teardown、429、迟到 ACK、取消和排序回归继续通过。
 
 最终补充冻结为 2026-10-11 11:32+08:00，输入见 [followup-input-hashes.json](artifacts/2026-10-11/im-send-scheduler/followup-input-hashes.json)。同一完整专项命令 **197 PASS**，exit 0，日志 `focused-green-followup.log`；8 个 Dart 文件范围 analyze exit 0、无问题，日志 `analyze-followup.log`；format 与 `git diff --check` 通过。旧日志及旧输入清单保持用于各轮 RED/GREEN 追踪。共享全量、双端与生产行为的验收边界仍按上文由主任务完成。
+
+## 审查补充：真实注册表离页组合
+
+第二候选 `d7aafb99a737d3e381636f314343b2019a30e8f6` 的生产适配器测试仍固定返回 sender，未覆盖真实 `OutboxRoomSenderRegistry.senderFor` 在 `canSend=false` 和页面 unregister 后返回 null 的行为。主任务提出该组合边界后，使用真实 registry、生产 adapter、控制器和后台 lease 复现：前台 SDK 未结算，用户删除 durable 行并离页，调度器首次扫描时错误派发第二条。两个预期失败记录在 `red-registry-page-loss.log`。
+
+注册表现在将可发送句柄与真实 settlement 生命周期分开：活动句柄查询不依赖 `canSend`；unregister、页面替换和 clear 捕获实际 Future，仅在该 Future 结算后移除。调度器新增可选 `roomSettlements` 回调，接收所有房间的真实占用快照；无 durable 行的旧前台房间也计入跨房二个在途上限。回调的错误或成功结算均仅释放对应 Future 的占用；旧页面注销不移除新页面句柄。保留对象为原实际 Future 和房间标识，不保存消息正文。
+
+实际回归覆盖 inactive / unregister / replace / clear 四种首次扫描前离页时序，以及“已删除 A 行的真实请求 + B pending + C queued”仍只启动两个真实传输，A ACK 后再轮到 C。相同专项命令 **202 PASS**，exit 0；范围 analyze 8 文件无问题，format 和 diff check 通过。证据 `focused-green-registry.log`、`analyze-registry.log`；11:40+08:00 输入冻结见 [registry-input-hashes.json](artifacts/2026-10-11/im-send-scheduler/registry-input-hashes.json)。
+
+**集成依赖**：本子任务未修改当前由 R5 owner 占有的 `app_home.dart`。必须在 `MessageSendScheduler` 构造处增加 `roomSettlements: OutboxRoomSenderRegistry.shared.pendingRoomTransportSettlements`，已把 [精确单参数补丁](artifacts/2026-10-11/im-send-scheduler/app-home-settlement-callback.patch) 交给 `/root/review_r1_r2`，在本树 `git apply --check` 通过；由该 owner 应用并单独提交、主任务最终候选验证。该接线合入前，本报告不宣称生产 AppHome 组合已闭环。
