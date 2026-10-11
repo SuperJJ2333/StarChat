@@ -10,7 +10,7 @@ $env:PUB_HOSTED_URL='https://pub.dev'
 $env:JAVA_HOME='C:/Program Files/Microsoft/jdk-17.0.20.8-hotspot'
 $env:Path=$env:JAVA_HOME+'/bin;'+$env:Path
 $env:ORG_GRADLE_PROJECT_chatflowParallelDebug='true'
-$env:GRADLE_OPTS='-Dorg.gradle.workers.max=2'
+$env:GRADLE_OPTS='-Dorg.gradle.workers.max=2 -Dorg.gradle.project.chatflowParallelDebug=true'
 $repoPath=[IO.Path]::GetFullPath($Repo)
 if($RunName -notmatch '^[a-zA-Z0-9-]+$'){throw 'Invalid run name'}
 $dest=Join-Path $repoPath ('docs/verification/artifacts/2026-10-11/im-reliability-release/native-'+$RunName)
@@ -74,7 +74,7 @@ try {
   Step 'rebuild-verification' 'D:/python/python.exe' @($verifier,$dest)
   $sha=(Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash.ToLowerInvariant()
   Assert-EmptyFixturePackage
-  Step 'install' $adb @('-s',$device,'install',$final)
+  Step 'install' 'py' @('-3.12',(Join-Path $PSScriptRoot 'bounded_native_adb_install.py'),$final)
   $installed=$true
   Push-Location -LiteralPath 'W:/apps/mobile_flutter'
   try {

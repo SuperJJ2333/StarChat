@@ -8,7 +8,7 @@
 
 旧发布 `/opt/starchat/releases/refresh-restore-20260924/release.py` 的 deploy/rollback（包括失败回退）曾调用 `business_release_guard.py freeze`，核对 Compose 与镜像后冻结配置；它硬编码 schema 0087，不能用于当前 0091。历史 `check --image` 命令也不满足新双角色证明，受控新门禁改用 `--api-image` 和 `--worker-image`。新 `freeze` 仅适用于具有两角色 `images.json` 或 `rollback-images.json` 和对应单服务私有 Compose 的发布目录；管理台受控发布器使用显式 `check` 与 `deploy/rollback`。
 
-角色化探针在最终不可变镜像中运行，无网络、只读根文件系统、移除全部 Linux capabilities、禁止提权；只传合成测试配置与内存 SQLite，不挂生产密钥或数据库。API 角色固定导入 `/opt/business-api/app` 并运行真实 ASGI 的 **9 项**：过期 access token 与刷新、无敏感回显的参数校验、相同操作的确定性结果且不延长过期时间、刷新后业务端点可用、超前结果拒绝、登出隔离与撤销、错配重放撤销 family、旧式严格轮换、管理员域与 Cookie 边界。Worker 角色固定核对 `/opt/business-worker/app/{main.py,tasks/identity.py,tasks/wallet_alert_email.py}` 与 `/usr/local/lib/python3.12/site-packages/app` 的真实导入来源，并执行 **8 项**：导入来源、凭据事件注册、安全字段拒绝、精确 T2 源读超时为 advisory 且不自动暂停、相同刷新结果不延寿、超前结果拒绝、错配重放撤销 family、旧式严格轮换。Worker 的告警处理模块只核对导入来源；实际邮件投递由独立 Worker/T2 测试证明。Worker 不提供完整 API ASGI 路由，因此不能用旧 `/opt/business-api` 副本的 API 九项检查代替其运行路径检查。
+角色化探针在最终不可变镜像中运行，无网络、只读根文件系统、移除全部 Linux capabilities、禁止提权；只传合成测试配置与内存 SQLite，不挂生产密钥或数据库。API 角色固定导入 `/opt/business-api/app` 并运行真实 ASGI 的 **9 项**：过期 access token 与刷新、无敏感回显的参数校验、相同操作的确定性结果且不延长过期时间、刷新后业务端点可用、超前结果拒绝、登出隔离与撤销、错配重放撤销 family、旧式严格轮换、管理员域与 Cookie 边界。Worker 角色固定核对 `/opt/business-worker/app/{main.py,worker.py,tasks/identity.py,tasks/wallet_alert_email.py}` 与 `/usr/local/lib/python3.12/site-packages/app` 的真实导入来源，并执行 **9 项**：导入来源、main 实际 Worker/已安装 Consumer 入口构造兼容、凭据事件注册、安全字段拒绝、精确 T2 源读超时为 advisory 且不自动暂停、相同刷新结果不延寿、超前结果拒绝、错配重放撤销 family、旧式严格轮换。Worker 的告警处理模块只核对导入来源；实际邮件投递由独立 Worker/T2 测试证明。Worker 不提供完整 API ASGI 路由，因此不能用旧 `/opt/business-api` 副本的 API 九项检查代替其运行路径检查。
 
 候选与回退的 API/Worker 镜像都必须以不可变 `sha256:` ID 明确标注角色。即使候选与回退 Worker 是同一镜像，仍应在清单中分别记录，两角色证明均不可缺少。`check` 缺任一角色即拒绝；`deploy/rollback` 即使只重建 API，也必须同时提供两份 Compose，先验证两个角色，再冻结实际渲染配置。示例中的镜像 ID 与路径须换成已复核的当次值：
 
@@ -28,7 +28,7 @@ python3 /opt/starchat/ops/refresh-guards/business_release_guard.py rollback \
 
 `--service` 只选择实际重建的服务，不缩小镜像检查范围。门禁仅接受精确角色、协议及断言列表，任一失败先于冻结配置或切换。它保存权限受限的冻结 Compose，转义字面 `$` 后执行 `up --no-deps --pull never --no-build`。发布器还必须绑定 guard 与 probe 两个文件的 SHA，重冻目标静态与镜像源码、Compose、schema 和其他容器，完成数据库兼容性、隔离恢复、健康及公网 HTTPS 验证。门禁证明不能代替完整发布验收。
 
-安装新 guard/probe 前，分别私有备份现行字节、权限和 SHA；安装后校验新 SHA，并对候选及回退 API 九项、Worker 八项实际不可变镜像检查。业务镜像回退仍保留新门禁以验证两角色；旧门禁备份只用于另行审阅的门禁恢复。主机 root 直接运行 Docker、改写运维脚本或使用未接入的旧 release.py 仍可绕过门禁；禁止这样发布。此门禁是受控发布入口，不是宿主机权限隔离机制。
+安装新 guard/probe 前，分别私有备份现行字节、权限和 SHA；安装后校验新 SHA，并对候选及回退 API 九项、Worker 九项实际不可变镜像检查。业务镜像回退仍保留新门禁以验证两角色；旧门禁备份只用于另行审阅的门禁恢复。主机 root 直接运行 Docker、改写运维脚本或使用未接入的旧 release.py 仍可绕过门禁；禁止这样发布。此门禁是受控发布入口，不是宿主机权限隔离机制。
 
 ## 邮件配置位置与检查
 

@@ -1,0 +1,28 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Installing C:\Users\Administrator\.codex\worktrees\im-reliability\StarChat\docs\verification\artifacts\2026-10-11\im-reliability-release\native-storage2214-r3\final.apk...         5.4s
+D/HostConnection( 6934): queryAndSetGLESMaxVersion select gles-version: 3.1 hostGLVersion:46 process:com.liuhetong.mobile.debug
+D/HostConnection( 6934): ExtendedRCEncoderContext GL_VERSION return OpenGL ES 3.1 v1
+E/eglCodecCommon( 6934): glUtilsParamSize: unknow param 0x000084ff
+E/eglCodecCommon( 6934): glUtilsParamSize: unknow param 0x000087fe
+W/FlutterWebRTCPlugin( 6934): audioFocusChangeListener [Speakerphone(name=Speakerphone)] Speakerphone(name=Speakerphone)
+W/ng.mobile.debu( 6934): Accessing hidden method Landroid/os/Trace;->asyncTraceEnd(JLjava/lang/String;I)V (light greylist, reflection)
+D/FlutterJNI( 6934): Sending viewport metrics to the engine.
+W/ng.mobile.debu( 6934): Accessing hidden method Landroid/os/Trace;->traceCounter(JLjava/lang/String;I)V (light greylist, reflection)
+VMServiceFlutterDriver: Connecting to Flutter application at http://127.0.0.1:13866/UdOmUJRy9SM=/
+VMServiceFlutterDriver: Isolate found with number: 5417093925095651
+VMServiceFlutterDriver: Isolate 5417093925095651 is runnable.
+VMServiceFlutterDriver: Isolate is paused at start.
+VMServiceFlutterDriver: Attempting to resume isolate
+I/flutter ( 6934): 00:00 +0: native pending files are protected and excluded with no path API
+VMServiceFlutterDriver: Connected to Flutter application.
+I/flutter ( 6934): 00:00 +1: native cold metadata first protects pending originals and preserves database formats
+D/sqlcipher( 6934): ERROR CORE sqlcipher_page_cipher: hmac check failed for pgno=1
+D/sqlcipher( 6934): ERROR CORE sqlite3Codec: error decrypting page 1 data: 1
+D/sqlcipher( 6934): ERROR CORE sqlcipher_codec_ctx_set_error 1
+I/flutter ( 6934): 00:01 +2: native cold Matrix cipher first protects pending originals and preserves database formats
+D/sqlcipher( 6934): ERROR CORE sqlcipher_page_cipher: hmac check failed for pgno=1
+D/sqlcipher( 6934): ERROR CORE sqlite3Codec: error decrypting page 1 data: 1
+D/sqlcipher( 6934): ERROR CORE sqlcipher_codec_ctx_set_error 1
+I/flutter ( 6934): 00:01 +3: (tearDownAll)
+I/flutter ( 6934): 00:01 +4: All tests passed!
+All tests passed.

@@ -1,0 +1,10 @@
+{
+  "artifact_sha256": "0c0fbd6b52670e4422dc670f83f58bdcb2153e1d5cb1b8a3c1642dc13c1906b6",
+  "device": "emulator-5558",
+  "scope": "synthetic native storage and SQLite persistence, not device performance or OEM behavior",
+  "result": "PASS",
+  "ended": "2026-10-11T15:43:06.4298861+08:00",
+  "source_commit": "0fc080e54bad0ad2789cc5d2c7fba28b753c2e17",
+  "package": "com.liuhetong.mobile.debug",
+  "started": "2026-10-11T15:40:13.8658333+08:00"
+}
