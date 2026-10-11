@@ -1,0 +1,127 @@
+{
+  "candidate": "7c567699ad0e21b9546df3c774ccb9da5a35fe7a",
+  "source_chain": [
+    "850710bd52d5763e8a3831e0665cb1eb5dbe44fd",
+    "3b8e1bd26ff562d6bfa695b1707127bc6cb9628b",
+    "7c567699ad0e21b9546df3c774ccb9da5a35fe7a"
+  ],
+  "captured_utc": "2026-10-11T06:29:41.3616775Z",
+  "candidate_clean_before_and_after": true,
+  "candidate_tree": "C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat",
+  "reviewer_tree": "C:\\Users\\Administrator\\.codex\\worktrees\\im-runtime-bounds\\StarChat",
+  "review_order": [
+    "SPEC/domain",
+    "QUALITY/security"
+  ],
+  "conclusion": "PASS for frozen source chain and bounded incremental scope; root integrated/native/package gates remain",
+  "independent_runs": [
+    {
+      "exit_code": 0,
+      "started_utc": "2026-10-11T06:26:18.9607744Z",
+      "ended_utc": "2026-10-11T06:26:24.5596351Z",
+      "command": "flutter test --no-pub <artifact>/duplicate_preparation_test.dart test/core/outbox/media_outbox_duplicate_preparation_test.dart --reporter expanded"
+    },
+    {
+      "command": "flutter test --no-pub <artifact>/duplicate_owner_revoke_test.dart --reporter expanded",
+      "exit_code": 0,
+      "ended_utc": "2026-10-11T06:27:27.7816508Z",
+      "started_utc": "2026-10-11T06:27:23.9197067Z"
+    }
+  ],
+  "independent_test_counts": [
+    5,
+    1
+  ],
+  "prior_evidence_reuse": "3b8 independent 4+2 PASS; original reports and identities retained. No equivalent unaffected large suite repeated.",
+  "owner_gate": "One final 45 PASS / exit 0, 700 synthetic reopen iterations, 18-file analyze zero; source_files hashes independently matched final gate identity. Unchanged 62 adjacent tests reused.",
+  "runtime": "Windows; C:/src/flutter/bin/flutter.bat; owner apps/mobile_flutter workdir; --no-pub; temporary paths confined to reviewer artifact tmp. SQLite/files real; source/send/native policy callbacks synthetic.",
+  "normalization": "Tracked logs normalize CRLF to LF and trim trailing horizontal whitespace; ignored raw/ preserves originals. UTF8 LF hash is checkout-stable.",
+  "sources": [
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart",
+      "git_blob": "2635a6ae4dfe1ad3899a976ab600ce619c363187"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_recovery_service.dart",
+      "git_blob": "44c159b468c93d60c81aea8c6a038c68eac597e3"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "git_blob": "24000ee3d9a89f793e00ff12ed23a93849b2043e"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "git_blob": "ac9815cd70040cbf8aae042cf60f6d80afe8a46e"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/app_home.dart",
+      "git_blob": "c58633bc631667ce7b77499af7b63fc3b3e699ac"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_duplicate_preparation_test.dart",
+      "git_blob": "cd51e4be3721d8b7295348434b84ddffa91f7ac0"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "git_blob": "7b5941422c32d5d26666802641576f4945f283f2"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-final.txt",
+      "git_blob": "0465a258f1d8ae1ccf78d8dc8d8b0e10b31400ac"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-analyze.txt",
+      "git_blob": "877c04f36084045e3dc1d7d1dde650ad32a892f7"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-input-hashes.json",
+      "git_blob": "3c24b5c61e0113544434d89ad2d0057d07bef9d0"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-preparation-review-fix.md",
+      "git_blob": "f70a371972d0fda80737eefeb23ab7fc3858c3c6"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "rereview-7c-spec.md",
+      "recorded_utc": "2026-10-11T06:28:54.3698508Z",
+      "raw_sha256": "4f4cda2bf1efa95ec77c50f5f56c4c7666b081348f1f75452abb5d521139aad2",
+      "utf8_lf_sha256": "4f4cda2bf1efa95ec77c50f5f56c4c7666b081348f1f75452abb5d521139aad2"
+    },
+    {
+      "path": "rereview-7c-quality.md",
+      "recorded_utc": "2026-10-11T06:28:54.3708275Z",
+      "raw_sha256": "cb71740dcca107747a007c1f318341815de0f04c34c1ddfb28f009fa963c5da4",
+      "utf8_lf_sha256": "cb71740dcca107747a007c1f318341815de0f04c34c1ddfb28f009fa963c5da4"
+    },
+    {
+      "path": "duplicate_owner_revoke_test.dart",
+      "recorded_utc": "2026-10-11T06:27:23.4917668Z",
+      "raw_sha256": "c7e85f128b6175d7194c9c75df13a67fd169c49f95ad223dbf913372a226bc09",
+      "utf8_lf_sha256": "c7e85f128b6175d7194c9c75df13a67fd169c49f95ad223dbf913372a226bc09"
+    },
+    {
+      "path": "duplicate_preparation_test.dart",
+      "recorded_utc": "2026-10-11T06:10:46.6825219Z",
+      "raw_sha256": "27a09edf3d1b95b6bbce7e8810af18361e72f9b223e905a3ed561ec4f694db51",
+      "utf8_lf_sha256": "27a09edf3d1b95b6bbce7e8810af18361e72f9b223e905a3ed561ec4f694db51"
+    },
+    {
+      "path": "rereview-7c-duplicate-green.log",
+      "recorded_utc": "2026-10-11T06:29:40.4623113Z",
+      "raw_sha256": "afd1e3bcee99c72dad5dd22c3bf883fb64befadd8486c5a5fb1da29e4a3d46ef",
+      "utf8_lf_sha256": "afd1e3bcee99c72dad5dd22c3bf883fb64befadd8486c5a5fb1da29e4a3d46ef",
+      "original_raw_sha256": "89b505539659331e0a756e5a643fadb88f0517b9c5564ff3c7984b5394e1aba9",
+      "original_raw_location": "raw/rereview-7c-duplicate-green.log"
+    },
+    {
+      "path": "rereview-7c-owner-revoke-green.log",
+      "recorded_utc": "2026-10-11T06:29:40.4662171Z",
+      "raw_sha256": "b6c55972d19105bd9c779fd52e41a2041fa51739b0ccec4c9c401df2873fee6d",
+      "utf8_lf_sha256": "b6c55972d19105bd9c779fd52e41a2041fa51739b0ccec4c9c401df2873fee6d",
+      "original_raw_sha256": "438fcbd7db9f42e2c0008970c4cc5ee75d0cff693e84eb01fd863f93c4ae62fd",
+      "original_raw_location": "raw/rereview-7c-owner-revoke-green.log"
+    }
+  ]
+}
