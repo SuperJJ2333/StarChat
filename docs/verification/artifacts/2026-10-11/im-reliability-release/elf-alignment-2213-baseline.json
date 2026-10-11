@@ -1,0 +1,361 @@
+{
+  "artifact": "D:\\pythonProject\\outsource\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\android2213-release\\delivery\\ChatFlow-0.4.44-build2213-arm64.apk",
+  "sha256": "08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271",
+  "scope": "ELF64 PT_LOAD static alignment only; not a runtime or ZIP alignment assertion",
+  "library_count": 14,
+  "failures": [
+    "lib/arm64-v8a/libcrypto.so"
+  ],
+  "libraries": [
+    {
+      "file": "lib/arm64-v8a/libapp.so",
+      "sha256": "3564b40d26aa3625301ee788a630b2a699cc9cc7e1529ccd044306b1153f5d14",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "offset": 7471104,
+          "vaddr": 7471104,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "offset": 19070976,
+          "vaddr": 19070976,
+          "align": 65536,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libbarhopper_v3.so",
+      "sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 4911488,
+          "vaddr": 4927872,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libc++_shared.so",
+      "sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 624800,
+          "vaddr": 641184,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 1250352,
+          "vaddr": 1299504,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libcrypto.so",
+      "sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "offset": 1040384,
+          "vaddr": 1044480,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "offset": 2586176,
+          "vaddr": 2598464,
+          "align": 4096,
+          "aligned_16k": false
+        }
+      ],
+      "pass": false
+    },
+    {
+      "file": "lib/arm64-v8a/libdartjni.so",
+      "sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 125968,
+          "vaddr": 142352,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 127344,
+          "vaddr": 160112,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libdatastore_shared_counter.so",
+      "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 4544,
+          "vaddr": 20928,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 5160,
+          "vaddr": 37928,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libflutter.so",
+      "sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "offset": 11554224,
+          "vaddr": 11685296,
+          "align": 65536,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libflutter_openssl_crypto.so",
+      "sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 1440,
+          "vaddr": 17824,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libimage_processing_util_jni.so",
+      "sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 29488,
+          "vaddr": 45872,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 30480,
+          "vaddr": 63248,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libjingle_peerconnection_so.so",
+      "sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 11372528,
+          "vaddr": 11405296,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libolm.so",
+      "sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 119280,
+          "vaddr": 135664,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 120456,
+          "vaddr": 153224,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libsqlcipher.so",
+      "sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 5163968,
+          "vaddr": 5196736,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libsurface_util_jni.so",
+      "sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 2480,
+          "vaddr": 18864,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    },
+    {
+      "file": "lib/arm64-v8a/libzxprotect.so",
+      "sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+      "loads": [
+        {
+          "offset": 0,
+          "vaddr": 0,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 522176,
+          "vaddr": 538560,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "offset": 536320,
+          "vaddr": 569088,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "pass": true
+    }
+  ]
+}

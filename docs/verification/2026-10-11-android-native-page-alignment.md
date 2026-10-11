@@ -1,0 +1,21 @@
+# Android native page-size follow-up
+
+Observed 2026-10-11 16:20–16:25 +08, during the IM reliability release review. This is a newly identified, existing compatibility risk, not a claim of a reproduced device crash. It does not invalidate the separately scoped API 28 native database tests.
+
+## Evidence and scope
+
+The locally retained official Android 2213 APK has SHA256 `08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271`. Static inspection of its 14 ARM64 libraries finds 13 with PT_LOAD alignment at least 16384 bytes. `lib/arm64-v8a/libcrypto.so` has four PT_LOAD entries with alignment 4096; its offset/address congruence also fails at 16384. An independent NDK 28.2.13676358 `llvm-readelf -Wl` confirms all four `0x1000` values. The library SHA is `13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831`.
+
+Evidence: [all-library inspection](artifacts/2026-10-11/im-reliability-release/elf-alignment-2213-baseline.json), [NDK readelf](artifacts/2026-10-11/im-reliability-release/elf-2213-libcrypto-readelf.txt). This is ELF program-header inspection; the existing signed ZIP `zipalign -P 16` check is a separate check and cannot establish ELF compatibility. These observations do not establish load success/failure on a particular 16 KB device or all RELRO/runtime assumptions of the other libraries.
+
+The locked `flutter_openssl_crypto` package is 0.5.0. Its Android build depends on `com.android.ndk.thirdparty:openssl:1.1.1q-beta-1`, which provides a prebuilt libcrypto; raising the application's NDK or zip alignment cannot relink that prebuilt binary. The cached AAR SHA is `a5b05c4b362d35c022238ef9b2e4e2196248adea3bac9dd683845ee75a3a8d66`. Its unstripped ARM64 libcrypto SHA differs from the stripped APK entry, so byte identity is not asserted without a strip-aware comparison. Matrix's native FFI opens `libcrypto.so` and uses it for hashes, AES-CTR and PBKDF2; this dependency cannot simply be removed or replaced with a no-op. The local source inputs still select this dependency in the current 2214 candidate; the actual final 2214 library must be inspected after building.
+
+## P1 finding and repair gate
+
+Trigger: an Android device configured for 16 KB memory pages loads the affected native cryptography library. Potential impact includes encrypted attachment and recovery operations; production incidence and precise user-visible failure remain unmeasured. Reproduce on an owned 16 KB image with `getconf PAGE_SIZE=16384`, the exact rebuilt APK, known-answer cryptography vectors, encrypted attachment round trips, and old encrypted database/key recovery fixtures. Keep an equivalent 4 KB control and do not use real user keys or messages.
+
+Repair requires a reproducible source-built, pinned libcrypto with compliant PT_LOAD and RELRO layout, or a separately vetted compatible maintained dependency. Preserve the existing cryptographic protocol, key handling and FFI interface; never patch only ELF header alignment values, weaken integrity, or silently edit the global Pub cache. Retain licenses, source/archive and toolchain hashes. If upgrading cryptography implementation, complete the protected E2EE domain/ADR and independent quality review before integration. Verify native symbols and known-answer outputs, 4 KB/16 KB execution, existing data compatibility, and final source/rebuilt APK byte correspondence.
+
+Acceptance: every final ARM64 library meets the official ELF and packaging checks; the above functional controls pass on both page sizes, and no cryptographic or existing-data compatibility regression is observed. Until then, 16 KB compatibility remains unverified and must not be included in the 2214 release's success claims. This follow-up is separate from the already scoped IM cancellation/database repairs; no dependency or native binary was changed by this investigation.
+
+Official reference consulted on 2026-10-11: [Android: Support 16 KB page sizes](https://developer.android.com/guide/practices/page-sizes). Upstream package source: [flutter_openssl_crypto](https://github.com/famedly/flutter_openssl_crypto); this source was archived by its owner on 2026-08-06. A failed direct Maven metadata request yielded no version-availability evidence.
