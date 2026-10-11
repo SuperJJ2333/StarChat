@@ -1,0 +1,42 @@
+{
+  "helper_workspace_sha256": "666ec0e02ae60668b74355d9db3112bed3ea507999e377d67d1a83948934c6ea",
+  "cases": [
+    {
+      "scenario": "empty",
+      "passed": true,
+      "expected_rejection": false,
+      "actual_rejection": false
+    },
+    {
+      "scenario": "installed",
+      "passed": true,
+      "expected_rejection": true,
+      "actual_rejection": true
+    },
+    {
+      "scenario": "retained-data",
+      "passed": true,
+      "expected_rejection": true,
+      "actual_rejection": true
+    },
+    {
+      "scenario": "offline",
+      "passed": true,
+      "expected_rejection": true,
+      "actual_rejection": true
+    },
+    {
+      "scenario": "inspection-failed",
+      "passed": true,
+      "expected_rejection": true,
+      "actual_rejection": true
+    },
+    {
+      "scenario": "different-package",
+      "passed": true,
+      "expected_rejection": false,
+      "actual_rejection": false
+    }
+  ],
+  "scope": "synthetic local function only; no device commands"
+}

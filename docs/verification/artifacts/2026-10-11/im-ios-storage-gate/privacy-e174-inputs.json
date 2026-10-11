@@ -1,0 +1,27 @@
+{
+  "reviewed_commit": "3b8e1bd26ff562d6bfa695b1707127bc6cb9628b",
+  "prerequisite": "850710bd52d5763e8a3831e0665cb1eb5dbe44fd",
+  "files": {
+    "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart": {
+      "git_blob_sha256": "0b0df0ae6512bfd570b0d870e41c421c3979213f9929df11cb9019d23705d459"
+    },
+    "apps/mobile_flutter/lib/core/outbox/media_outbox_recovery_service.dart": {
+      "git_blob_sha256": "a4a7bd67f8eb28a5f34b6f25c7f25f04276c556b1b136e0689762cc670ea8300"
+    },
+    "apps/mobile_flutter/lib/features/matrix/room_page.dart": {
+      "git_blob_sha256": "6f07ea4afa640c60dd581645607c77e60d816043d21ae7001104595c010f0ddf"
+    },
+    "apps/mobile_flutter/lib/features/matrix/media_outbox_pending_view.dart": {
+      "git_blob_sha256": "0bd9ae06cf23d098dc45b6ad97a368391a3712621f1021d821591f9aa7367067"
+    },
+    "apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart": {
+      "git_blob_sha256": "a9968498afe3a4f592eb192e3f8e43593270428bb1bda6046a3d35820611d4af"
+    },
+    "apps/mobile_flutter/test/core/outbox/pending_media_directory_test.dart": {
+      "git_blob_sha256": "ff3d1b3eed9c7530aa4eb9b624c5a925599e869c7aae82253a0e42f22bd1686e"
+    },
+    "apps/mobile_flutter/integration_test/media_outbox_persistence_native_test.dart": {
+      "git_blob_sha256": "165b517b1b6094f5033646b84d74699eda2e962b6f0677ff57ad4a26ba81d6ca"
+    }
+  }
+}
