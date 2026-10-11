@@ -2,6 +2,45 @@ import XCTest
 @testable import Runner
 
 final class IOSMediaStoragePolicyTests: XCTestCase {
+  func testReportsSyntheticFilesystemCapabilities() throws {
+    let manager = FileManager.default
+    let base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                               appropriateFor: nil, create: true)
+    let folder = base.appendingPathComponent("capability-" + UUID().uuidString, isDirectory: true)
+    defer { try? manager.removeItem(at: folder) }
+    try manager.createDirectory(at: folder, withIntermediateDirectories: false,
+        attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    var fresh = folder
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try fresh.setResourceValues(values)
+    let protection = try manager.attributesOfItem(atPath: folder.path)[.protectionKey]
+    let actual = (protection as? FileProtectionType)?.rawValue ?? (protection as? String)
+    let resource = try folder.resourceValues(forKeys: [.isExcludedFromBackupKey,
+        .volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+    let filesystem = try manager.attributesOfFileSystem(forPath: folder.path)
+    let report = "protection=\(actual ?? "nil"), excluded=\(String(describing: resource.isExcludedFromBackup)), " +
+        "importantCapacity=\(String(describing: resource.volumeAvailableCapacityForImportantUsage)), " +
+        "capacity=\(String(describing: resource.volumeAvailableCapacity)), systemFree=\(String(describing: filesystem[.systemFreeSize]))"
+    let attachment = XCTAttachment(string: report)
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    print("SYNTHETIC_STORAGE_CAPABILITIES " + report)
+  }
+
+  func testRepeatedDirectoryPreparationPreservesExistingContent() throws {
+    let policy = IOSMediaStoragePolicy()
+    let first = try policy.pendingDirectory()
+    let root = URL(fileURLWithPath: try XCTUnwrap(first["path"] as? String))
+    let marker = root.appendingPathComponent("synthetic-" + UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: marker) }
+    try Data("preserved".utf8).write(to: marker)
+    XCTAssertEqual(try policy.pendingDirectory()["path"] as? String, root.path)
+    XCTAssertEqual(try Data(contentsOf: marker), Data("preserved".utf8))
+    _ = try policy.documentsChatMediaPolicy()
+    _ = try policy.documentsChatMediaPolicy()
+  }
+
   func testPendingDirectoryIsProtectedExcludedAndSeparateFromCache() throws {
     let policy = IOSMediaStoragePolicy()
     let result = try policy.pendingDirectory()

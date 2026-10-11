@@ -5,7 +5,9 @@ import Darwin
 /// Caller supplies only opaque identifiers, never a filesystem path.
 final class IOSMediaStoragePolicy {
   private let manager = FileManager.default
-  private enum Failure: Error { case unavailable, invalidEntry }
+  private enum Failure: Error {
+    case unavailable, invalidEntry, protectionUnavailable, backupExclusionUnavailable, capacityUnavailable
+  }
 
   private func base(_ directory: FileManager.SearchPathDirectory) throws -> URL {
     try manager.url(for: directory, in: .userDomainMask,
@@ -35,9 +37,10 @@ final class IOSMediaStoragePolicy {
     try fresh.setResourceValues(values)
     let protection = try manager.attributesOfItem(atPath: path)[.protectionKey]
     let actual = (protection as? FileProtectionType)?.rawValue ?? (protection as? String)
-    guard actual == FileProtectionType.completeUntilFirstUserAuthentication.rawValue,
-          try URL(fileURLWithPath: path).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
-    else { throw Failure.unavailable }
+    guard actual == FileProtectionType.completeUntilFirstUserAuthentication.rawValue
+    else { throw Failure.protectionUnavailable }
+    guard try URL(fileURLWithPath: path).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+    else { throw Failure.backupExclusionUnavailable }
   }
 
   private func directory(_ name: String, inside parent: URL) throws -> URL {
@@ -45,8 +48,10 @@ final class IOSMediaStoragePolicy {
     let existing = try entryType(url)
     guard url.resolvingSymlinksInPath().path == url.path,
           existing == nil || existing == mode_t(S_IFDIR) else { throw Failure.invalidEntry }
-    try manager.createDirectory(at: url, withIntermediateDirectories: false,
-        attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    if existing == nil {
+      try manager.createDirectory(at: url, withIntermediateDirectories: false,
+          attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    }
     try apply(url, inside: parent, directory: true)
     return url
   }
@@ -59,7 +64,7 @@ final class IOSMediaStoragePolicy {
     let root = try pendingRoot()
     let capacity = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         .volumeAvailableCapacityForImportantUsage
-    guard let capacity = capacity, capacity >= 0 else { throw Failure.unavailable }
+    guard let capacity = capacity, capacity >= 0 else { throw Failure.capacityUnavailable }
     return ["path": root.path, "availableBytes": capacity,
             "protected": true, "backupExcluded": true]
   }

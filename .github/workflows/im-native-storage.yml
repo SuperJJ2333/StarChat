@@ -89,6 +89,24 @@ jobs:
             -only-testing:RunnerTests/IOSMediaStoragePolicyTests \
             -resultBundlePath "$STORAGE_EVIDENCE/storage.xcresult" \
             2>&1 | tee "$STORAGE_EVIDENCE/xctest.log"
+      - name: Export XCTest failure diagnostics
+        if: always()
+        run: |
+          if [ -d "$STORAGE_EVIDENCE/storage.xcresult" ]; then
+            xcrun xcresulttool get object --legacy --format json \
+              --path "$STORAGE_EVIDENCE/storage.xcresult" > "$STORAGE_EVIDENCE/result.json"
+            python3 <<'PY'
+          import json, os, pathlib
+          def walk(value):
+              if isinstance(value, dict):
+                  if value.get('_type', {}).get('_name') == 'TestFailureIssueSummary':
+                      print(value.get('testCaseName', {}).get('_value'), value.get('message', {}).get('_value'))
+                  for child in value.values(): walk(child)
+              elif isinstance(value, list):
+                  for child in value: walk(child)
+          walk(json.loads((pathlib.Path(os.environ['STORAGE_EVIDENCE']) / 'result.json').read_text()))
+          PY
+          fi
       - name: Preserve exact source, native results and limitations
         if: always()
         uses: actions/upload-artifact@v4
