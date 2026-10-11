@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -209,7 +210,9 @@ def create_profile_router(
                 )
             content_buffer.extend(chunk)
         content = bytes(content_buffer)
-        profiles.put_avatar_content(
+        # Create, use and close the service's Session in one bounded worker unit.
+        await run_in_threadpool(
+            profiles.put_avatar_content,
             claims["sub"],
             upload_id,
             content_type=(content_type or "").partition(";")[0].strip().casefold(),
@@ -221,7 +224,7 @@ def create_profile_router(
         "/profile/avatar/uploads/{upload_id}/complete",
         response_model=ProfileResponse,
     )
-    async def complete_avatar_upload(
+    def complete_avatar_upload(
         upload_id: str,
         request: Request,
         idempotency_key: Annotated[
@@ -240,7 +243,7 @@ def create_profile_router(
         )
 
     @router.delete("/profile/avatar/uploads/{upload_id}", status_code=204)
-    async def cancel_avatar_upload(
+    def cancel_avatar_upload(
         upload_id: str,
         claims: dict = Depends(current_claims),
     ) -> Response:
@@ -248,7 +251,7 @@ def create_profile_router(
         return Response(status_code=204)
 
     @router.delete("/profile/avatar", status_code=204)
-    async def delete_avatar(
+    def delete_avatar(
         request: Request,
         idempotency_key: Annotated[
             str,
@@ -269,7 +272,7 @@ def create_profile_router(
         "/profile/avatar/content/{token}",
         include_in_schema=False,
     )
-    async def read_avatar(token: str, expires_in: int) -> Response:
+    def read_avatar(token: str, expires_in: int) -> Response:
         if not isinstance(storage, LocalPrivateObjectStorage):
             raise AppError(
                 code="AVATAR_URL_INVALID",

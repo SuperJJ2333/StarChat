@@ -1,0 +1,18 @@
+[
+  {
+    "Path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-reliability\\StarChat\\services\\business-api\\app\\api\\media_platform.py",
+    "Hash": "3BCCE1128C6E6CF3BF02A3E6B2E288CC9F4262B0427BF31F6C07690DD1650E8B"
+  },
+  {
+    "Path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-reliability\\StarChat\\services\\business-api\\app\\api\\profile.py",
+    "Hash": "4B6016AB2E7C73DC314072E09DD5F67B02E64A8BDEDC1508BE5C9BA7C5015882"
+  },
+  {
+    "Path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-reliability\\StarChat\\tests\\business_api\\media_platform\\test_media_event_loop.py",
+    "Hash": "A1AC393D0C47E983FCC84F6AA078B1FC1E73185E54B1114A081BC9A07ECF3C35"
+  },
+  {
+    "Path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-reliability\\StarChat\\services\\business-api\\requirements.lock",
+    "Hash": "F64B119C66265CB59B3272D074AFE32B4560DA1715F30499580C3A046346BF8F"
+  }
+]

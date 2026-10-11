@@ -1,0 +1,17 @@
+{"timestamp":"2026-10-11T02:34:55.208913+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"d80e640bdf974bd5a069da08f32ed0d2"}
+{"timestamp":"2026-10-11T02:34:55.611608+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"fbb94364f5b3499ca6781f205723063b"}
+Process SpawnProcess-2:
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\multiprocessing\process.py", line 314, in _bootstrap
+    self.run()
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\multiprocessing\process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\Administrator\.codex\worktrees\im-media-reliability\StarChat\docs\verification\artifacts\2026-10-11\im-media-reliability\two_worker_probe.py", line 75, in worker
+    assert result["loop_lag_p99_ms"] < 50, result
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'worker': 1, 'pid': 37924, 'requests': 12, 'object_bytes': 65536, 'storage_wait_ms': 250, 'thread_tokens': 2, 'max_borrowed_tokens': 2, 'elapsed_seconds': 1.8283167999979923, 'samples': 4, 'loop_lag_p99_ms': 91.89550000155577, 'loop_lag_max_ms': 91.89550000155577, 'live_p99_ms': 1550.0707000028342}
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-reliability\StarChat\docs\verification\artifacts\2026-10-11\im-media-reliability\two_worker_probe.py", line 100, in <module>
+    assert process.exitcode == 0, f"worker exit {process.exitcode}"
+           ^^^^^^^^^^^^^^^^^^^^^
+AssertionError: worker exit 1

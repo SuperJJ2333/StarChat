@@ -1,0 +1,12 @@
+........................................................................ [ 32%]
+.....................................................................F.. [ 65%]
+........................................................................ [ 97%]
+.....                                                                    [100%]
+================================== FAILURES ===================================
+______________ test_cleanup_worker_retry_rejects_current_pointer ______________
+tests\business_api\media_storage\test_s3_avatar_cleanup.py:136: in test_cleanup_worker_retry_rejects_current_pointer
+    from tasks.avatar_cleanup import AvatarCleanupTask
+E   ModuleNotFoundError: No module named 'tasks'
+=========================== short test summary info ===========================
+FAILED tests/business_api/media_storage/test_s3_avatar_cleanup.py::test_cleanup_worker_retry_rejects_current_pointer
+1 failed, 220 passed in 347.97s (0:05:47)

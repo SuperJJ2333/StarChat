@@ -1,0 +1,103 @@
+FFFFFFFFF                                                                [100%]
+================================== FAILURES ===================================
+__ test_slow_storage_leaves_shared_loop_and_light_request_responsive[signed] __
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1ce16cb30: set>.is_set
+E    +      where <threading.Event at 0x1c1ce16cb30: set> = <test_media_event_loop.StorageGate object at 0x000001C1CE21AED0>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:30:47.354675+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"76dccbdc5add49a1b8edc8796d78a36f"}
+_ test_slow_storage_leaves_shared_loop_and_light_request_responsive[variant] __
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1cd479f40: set>.is_set
+E    +      where <threading.Event at 0x1c1cd479f40: set> = <test_media_event_loop.StorageGate object at 0x000001C1CEA77110>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:30:54.031318+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"ae60bcc20d594535b970d089088763ea"}
+__ test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar] __
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d0c56e40: set>.is_set
+E    +      where <threading.Event at 0x1c1d0c56e40: set> = <test_media_event_loop.StorageGate object at 0x000001C1D0A93DA0>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:30:59.318465+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"22145d09a60b48328eaedb98b6b8a1dd"}
+__ test_slow_storage_leaves_shared_loop_and_light_request_responsive[ingest] __
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d1367d40: set>.is_set
+E    +      where <threading.Event at 0x1c1d1367d40: set> = <test_media_event_loop.StorageGate object at 0x000001C1CD4B50A0>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:31:04.284226+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"1b3447cc1b83400790d218e3960a7ac7"}
+_ test_slow_storage_leaves_shared_loop_and_light_request_responsive[moment_attach] _
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d205b0b0: set>.is_set
+E    +      where <threading.Event at 0x1c1d205b0b0: set> = <test_media_event_loop.StorageGate object at 0x000001C1D1ADF110>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:31:08.865497+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"7000a80b9e17497cab75df68f7c933d6"}
+_ test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_put] _
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d2e27050: set>.is_set
+E    +      where <threading.Event at 0x1c1d2e27050: set> = <test_media_event_loop.StorageGate object at 0x000001C1D2E27980>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:31:14.315667+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"19f2558809d24a8082af49134363ee1a"}
+_ test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_complete] _
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d4557e90: set>.is_set
+E    +      where <threading.Event at 0x1c1d4557e90: set> = <test_media_event_loop.StorageGate object at 0x000001C1D44FFD40>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:31:17.549932+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"554a008c1ad4437cab01e6648790f55b"}
+_ test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_cancel] _
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d4bfbfe0: set>.is_set
+E    +      where <threading.Event at 0x1c1d4bfbfe0: set> = <test_media_event_loop.StorageGate object at 0x000001C1D4BFBEC0>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:31:21.939461+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"c75534ae94f54996b1a79ccde1b6c765"}
+_ test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_delete] _
+tests\business_api\media_platform\test_media_event_loop.py:214: in test_slow_storage_leaves_shared_loop_and_light_request_responsive
+    assert not gate.finished.is_set(), "synchronous media I/O blocked the shared ASGI event loop"
+E   AssertionError: synchronous media I/O blocked the shared ASGI event loop
+E   assert not True
+E    +  where True = is_set()
+E    +    where is_set = <threading.Event at 0x1c1d5377f50: set>.is_set
+E    +      where <threading.Event at 0x1c1d5377f50: set> = <test_media_event_loop.StorageGate object at 0x000001C1D2EB2510>.finished
+---------------------------- Captured stderr setup ----------------------------
+{"timestamp":"2026-10-11T02:31:25.195499+00:00","schema_version":1,"service":"business-api","component":"api","event":"service_starting","level":"INFO","trace_id":"e87378a38a824dd08f2b45687a1a9655"}
+=========================== short test summary info ===========================
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[signed]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[variant]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[ingest]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[moment_attach]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_put]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_complete]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_cancel]
+FAILED tests/business_api/media_platform/test_media_event_loop.py::test_slow_storage_leaves_shared_loop_and_light_request_responsive[avatar_delete]
+9 failed in 46.24s

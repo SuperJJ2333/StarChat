@@ -20,6 +20,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -236,7 +237,10 @@ def create_media_platform_router(
                 message="媒体参数不合法",
                 status_code=422,
             ) from None
-        result = service.ingest(
+        # Keep the complete synchronous unit (including its Session lifetime) in
+        # Starlette's bounded worker pool; only request-body I/O belongs on the loop.
+        result = await run_in_threadpool(
+            service.ingest,
             owner_id=claims["sub"],
             origin_domain=origin_domain,
             kind=parsed_kind,
@@ -302,7 +306,7 @@ def create_media_platform_router(
         }
 
     @router.get("/media/platform/objects/{media_id}/variants/{variant_kind}")
-    async def read_variant(
+    def read_variant(
         media_id: str,
         variant_kind: str,
         claims: dict = Depends(current_claims),
@@ -537,7 +541,7 @@ def create_media_platform_router(
         }
 
     @router.get("/media/platform/content/{token}")
-    async def read_signed_content(
+    def read_signed_content(
         token: str,
         authorization: Annotated[str | None, Header()] = None,
     ) -> Response:
@@ -583,7 +587,8 @@ def create_media_platform_router(
                 status_code=503,
             )
         content = await request.body()
-        attachment = bridge.attach(
+        attachment = await run_in_threadpool(
+            bridge.attach,
             actor_id=claims["sub"],
             file_name=file_name,
             mime=(request.headers.get("content-type") or mime).split(";")[0].strip() or mime,

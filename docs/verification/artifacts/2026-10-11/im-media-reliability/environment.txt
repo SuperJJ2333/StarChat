@@ -1,0 +1,14 @@
+{
+  "os": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "packages": {
+    "fastapi": "0.141.1",
+    "starlette": "1.6.0",
+    "anyio": "4.14.2",
+    "sqlalchemy": "2.0.52",
+    "boto3": "1.40.40",
+    "pytest": "8.4.2",
+    "httpx": "0.28.1"
+  }
+}
+AST PASS
