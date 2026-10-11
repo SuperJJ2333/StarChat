@@ -85,6 +85,7 @@ final class MatrixPusherService {
     this.deviceDisplayName = 'ChatFlow',
     this.nativeMetadata,
     this.iosSoundEnabled,
+    this.iosPolicy,
     DateTime Function()? now,
     NotificationDiagnostics? diagnostics,
   })  : now = now ?? DateTime.now,
@@ -113,6 +114,7 @@ final class MatrixPusherService {
   final String deviceDisplayName;
   final Map<String, Object>? Function()? nativeMetadata;
   final bool Function()? iosSoundEnabled;
+  final Future<Map<String, Object>> Function()? iosPolicy;
   final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
   static const verificationInterval = Duration(minutes: 5);
@@ -238,12 +240,21 @@ final class MatrixPusherService {
       if (generation == _generation) _scheduleRetry();
       return false;
     }
-    final metadata = nativeMetadata?.call();
-    if (nativeMetadata != null && metadata == null) return false;
-    final audible =
-        appId == appIdIOS ? (iosSoundEnabled?.call() ?? true) : null;
-    final identity = jsonEncode([token, metadata, audible]);
     try {
+      final metadata = nativeMetadata?.call();
+      if (nativeMetadata != null && metadata == null) return false;
+      final policy = appId == appIdIOS && iosPolicy != null
+          ? Map<String, Object>.unmodifiable(
+              await iosPolicy!().timeout(const Duration(seconds: 10)))
+          : null;
+      if (generation != _generation) return false;
+      final policyReady = policy == null ||
+          (policy['timezone'] is String &&
+              (policy['timezone'] as String).isNotEmpty);
+      final audible = appId == appIdIOS
+          ? (iosSoundEnabled?.call() ?? true) && policyReady
+          : null;
+      final identity = jsonEncode([token, metadata, audible, policy]);
       final binding = _lease(token);
       if (binding.owner > _owner) return false;
       binding.owner = _owner;
@@ -261,6 +272,7 @@ final class MatrixPusherService {
             url: url,
             additionalProperties: appId == appIdIOS
                 ? {
+                    if (policy != null) 'chatflow_ios_policy': policy,
                     'default_payload': {
                       'aps': {
                         'alert': {
@@ -281,8 +293,7 @@ final class MatrixPusherService {
             return false;
           }
           if (matches) {
-            _verified();
-            return true;
+            return _verified(policyReady: policyReady);
           }
         }
         _remoteKnown = false;
@@ -302,13 +313,16 @@ final class MatrixPusherService {
         final matches = await _readMatches(desired);
         if (generation != _generation || binding.owner != _owner) return false;
         if (!matches) throw StateError('pusher readback mismatch');
-        _verified();
+        final verified = _verified(policyReady: policyReady);
         diagnostics.record(NotificationDiagStage.push,
-            'pusher registered (format=$_pushFormat)');
-        return true;
+            'pusher ${verified ? 'registered' : 'silent pending policy'} (format=$_pushFormat)');
+        return verified;
       });
     } catch (error) {
-      if (generation != _generation || _binding?.owner != _owner) return false;
+      if (generation != _generation ||
+          (_binding != null && _binding!.owner > _owner)) {
+        return false;
+      }
       _remoteKnown = false;
       _lastFailureKind = error.runtimeType.toString();
       _lastFailureAt = now();
@@ -344,11 +358,18 @@ final class MatrixPusherService {
     }
   }
 
-  void _verified() {
-    _remoteKnown = true;
+  bool _verified({bool policyReady = true}) {
+    _remoteKnown = policyReady;
     _lastRemoteVerifiedAt = now();
+    if (!policyReady) {
+      _lastFailureAt = now();
+      _lastFailureKind = 'timezone-unavailable';
+      _scheduleRetry();
+      return false;
+    }
     _lastFailureKind = '';
     _cancelRetry();
+    return true;
   }
 
   static bool _sameJson(Object? left, Object? right) {

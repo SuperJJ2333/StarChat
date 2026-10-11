@@ -2,6 +2,7 @@ import 'dart:async';
 import '../../../features/settings/voice_auto_play_preferences.dart';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -111,15 +112,14 @@ final class _NotificationSettingsPageState
             padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
             children: [
               if (_permission == NotificationAuthorizationStatus.denied)
-                _permissionWarning(context),              // BUG-40（D7 默认开）：同会话语音连播开关。
+                _permissionWarning(context), // BUG-40（D7 默认开）：同会话语音连播开关。
               ListenableBuilder(
                   listenable: voiceAutoPlayPreferences,
                   builder: (context, _) => _switchTile(
                       '语音自动连播',
                       voiceAutoPlayPreferences.autoPlayNext,
-                      (v) =>
-                          unawaited(voiceAutoPlayPreferences
-                              .setAutoPlayNext(v)))),
+                      (v) => unawaited(
+                          voiceAutoPlayPreferences.setAutoPlayNext(v)))),
 
               _section(context, notificationSettingsNewMessagesSection, [
                 _switchTile(
@@ -186,7 +186,8 @@ final class _NotificationSettingsPageState
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
                   '会话级 默认/静音/特别关注 在各聊天信息页设置。'
-                  '系统勿扰与通知权限始终以操作系统设置为准。',
+                  '系统勿扰与通知权限始终以操作系统设置为准。'
+                  '${!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS ? 'iOS 后台普通消息在勿扰期间静音，特别关注例外仅在应用内生效。修改需同步成功后生效，可在通知诊断中查看状态。' : ''}',
                   style: TextStyle(
                     fontSize: 12,
                     color: CupertinoDynamicColor.withBrightness(
@@ -393,8 +394,7 @@ final class WeChatSettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) =>
-      Column(
+  Widget build(BuildContext context) => Column(
         children: [
           CupertinoListTile(
             title: Text(label),

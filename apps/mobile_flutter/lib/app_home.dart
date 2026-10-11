@@ -108,6 +108,7 @@ import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/message_reminder_service.dart';
 import 'features/push/firebase_push_token_provider.dart';
 import 'features/push/native_apns_push_token_provider.dart';
+import 'features/push/ios_push_policy.dart';
 import 'features/push/native_message_policy.dart';
 import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
@@ -509,6 +510,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 与点击冷启动路由。每通道一个 pusher 服务与 token 提供方。
   PushTapRouter? _pushTapRouter;
   final _pusherServices = <MatrixPusherService>[];
+  final _iosPushPolicy = IosPushPolicy();
   final _pushTokenProviders = <PushTokenProvider>[];
 
   ProfileRepository? _chatIdentityCache;
@@ -965,6 +967,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           deviceDisplayName: 'ChatFlow iOS',
           iosSoundEnabled: () =>
               _notificationCoordinator?.preferences.soundEnabled ?? false,
+          iosPolicy: () => _iosPushPolicy.prepare(
+              _notificationCoordinator?.preferences ??
+                  const NotificationPreferenceValues()),
         ));
       }
     } else {

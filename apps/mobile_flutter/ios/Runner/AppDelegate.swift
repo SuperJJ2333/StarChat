@@ -137,6 +137,8 @@ enum IOSMessageNavigationGate {
         UIApplication.shared.registerForRemoteNotifications()
         result(nil)
         self.deliverPendingTap()
+      case "getTimeZoneIdentifier":
+        result(TimeZone.current.identifier)
       case "getNotificationSettings":
         UNUserNotificationCenter.current().getNotificationSettings { settings in
           let status: String

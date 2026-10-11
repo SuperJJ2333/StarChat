@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/features/settings/notification/notification_settings_page.dart';
@@ -35,6 +36,35 @@ final class _ThemeStore implements ThemePreferenceStore {
 }
 
 void main() {
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('DND background exception copy is scoped to $platform',
+        (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        await tester
+            .pumpWidget(const CupertinoApp(home: NotificationSettingsPage()));
+        await tester.pump();
+        final seen = <String>{};
+        for (var step = 0; step < 12; step++) {
+          seen.addAll(tester
+              .widgetList<Text>(find.byType(Text))
+              .map((text) => text.data)
+              .whereType<String>());
+          await tester.drag(find.byType(ListView).first, const Offset(0, -200));
+          await tester.pump();
+        }
+        expect(seen.any((text) => text.contains('iOS 后台普通消息在勿扰期间静音')),
+            platform == TargetPlatform.iOS);
+        if (platform == TargetPlatform.iOS) {
+          expect(seen.any((text) => text.contains('特别关注例外仅在应用内生效')), true);
+          expect(seen.any((text) => text.contains('修改需同步成功后生效')), true);
+        }
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     motionReduceMotionResolver = () => motionPreferences.reduceMotion;
@@ -43,8 +73,7 @@ void main() {
 
   test('BUG-07 notification settings never leak the internal PRD reference',
       () {
-    expect(
-        notificationSettingsSectionTitles, isNot(contains('勿扰模式（PRD §30）')));
+    expect(notificationSettingsSectionTitles, isNot(contains('勿扰模式（PRD §30）')));
     expect(
         notificationSettingsSectionTitles.where((title) =>
             title.contains('PRD') ||
@@ -56,8 +85,8 @@ void main() {
 
   testWidgets('BUG-07 the do-not-disturb section shows plain user copy',
       (tester) async {
-    await tester.pumpWidget(
-        const CupertinoApp(home: NotificationSettingsPage()));
+    await tester
+        .pumpWidget(const CupertinoApp(home: NotificationSettingsPage()));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
@@ -114,8 +143,7 @@ void main() {
 
     final route = MotionPageRoute<void>(builder: (_) => const SizedBox());
     // 与框架处理系统级「减少动态效果」一致：压到 5%，肉眼等同于无转场。
-    expect(route.transitionDuration,
-        const Duration(milliseconds: 500) * 0.05);
+    expect(route.transitionDuration, const Duration(milliseconds: 500) * 0.05);
 
     await preferences.setReduceMotion(false);
     final full = MotionPageRoute<void>(builder: (_) => const SizedBox());
