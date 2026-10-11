@@ -14,8 +14,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: im-native-storage-38112151641-1
-          run-id: 38112151641
+          name: im-native-storage-38113845125-1
+          run-id: 38113845125
           github-token: ${{ github.token }}
           path: docs/verification/artifacts/2026-10-11/im-storage-ci-diagnosis
       - name: Export precise failure diagnostics without rebuilding
@@ -23,13 +23,14 @@ jobs:
           set -euo pipefail
           folder="$GITHUB_WORKSPACE/docs/verification/artifacts/2026-10-11/im-storage-ci-diagnosis"
           xcrun xcresulttool get object --legacy --format json --path "$folder/storage.xcresult" > "$folder/result.json"
+          xcrun xcresulttool export attachments --path "$folder/storage.xcresult" --output-path "$folder/attachments"
           python3 - "$folder/result.json" <<'PY'
           import json, sys
           data=json.load(open(sys.argv[1]))
           def walk(value):
               if isinstance(value,dict):
                   kind=value.get('_type',{}).get('_name','')
-                  if kind.endswith('IssueSummary'):
+                  if kind == 'TestFailureIssueSummary':
                       print(json.dumps(value,ensure_ascii=False))
                   else:
                       for nested in value.values(): walk(nested)
@@ -37,8 +38,18 @@ jobs:
                   for nested in value: walk(nested)
           walk(data)
           PY
+          python3 - "$folder/attachments" <<'PY'
+          import pathlib, sys
+          for path in pathlib.Path(sys.argv[1]).rglob('*'):
+              if path.is_file() and path.stat().st_size < 8192:
+                  content = path.read_text(errors='replace')
+                  if 'protection=' in content:
+                      print('SYNTHETIC_STORAGE_CAPABILITIES ' + content)
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: im-storage-result-diagnostics-${{ github.run_id }}
-          path: docs/verification/artifacts/2026-10-11/im-storage-ci-diagnosis/result.json
+          path: |
+            docs/verification/artifacts/2026-10-11/im-storage-ci-diagnosis/result.json
+            docs/verification/artifacts/2026-10-11/im-storage-ci-diagnosis/attachments/
           retention-days: 14
