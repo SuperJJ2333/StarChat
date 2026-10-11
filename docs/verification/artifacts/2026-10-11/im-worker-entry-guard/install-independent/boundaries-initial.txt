@@ -1,0 +1,144 @@
+........FFFFFF                                                           [100%]
+================================== FAILURES ===================================
+_________ test_failed_atomic_write_removes_its_temporary_file[fsync] __________
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu...ess_release_guard.py': b"VERSION = 'new-business_release_guard.py'\n"}, metadata=[], proofs=[], directory_fd=123456789)
+operation = 'fsync'
+
+    @pytest.mark.parametrize('operation', ['fsync', 'chmod', 'chown', 'replace'])
+    def test_failed_atomic_write_removes_its_temporary_file(install, operation):
+        m = install.module
+        path = m.TARGET / install.names[0]
+        setattr(m.os, operation, lambda *_: (_ for _ in ()).throw(OSError('injected')))
+        with pytest.raises(OSError):
+            m.atomic_bytes(path, b'new', path.stat())
+        assert path.read_bytes() == install.before[path.name]
+>       assert not path.with_name(path.name + '.entry-gate-install.tmp').exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov0/ops/business_refresh_image_probe.py.entry-gate-install.tmp').exists
+E        +      where WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov0/ops/business_refresh_image_probe.py.entry-gate-install.tmp') = with_name(('business_refresh_image_probe.py' + '.entry-gate-install.tmp'))
+E        +        where with_name = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov0/ops/business_refresh_image_probe.py').with_name
+E        +        and   'business_refresh_image_probe.py' = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov0/ops/business_refresh_image_probe.py').name
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries.py:163: AssertionError
+_________ test_failed_atomic_write_removes_its_temporary_file[chmod] __________
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu...ess_release_guard.py': b"VERSION = 'new-business_release_guard.py'\n"}, metadata=[], proofs=[], directory_fd=123456789)
+operation = 'chmod'
+
+    @pytest.mark.parametrize('operation', ['fsync', 'chmod', 'chown', 'replace'])
+    def test_failed_atomic_write_removes_its_temporary_file(install, operation):
+        m = install.module
+        path = m.TARGET / install.names[0]
+        setattr(m.os, operation, lambda *_: (_ for _ in ()).throw(OSError('injected')))
+        with pytest.raises(OSError):
+            m.atomic_bytes(path, b'new', path.stat())
+        assert path.read_bytes() == install.before[path.name]
+>       assert not path.with_name(path.name + '.entry-gate-install.tmp').exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov1/ops/business_refresh_image_probe.py.entry-gate-install.tmp').exists
+E        +      where WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov1/ops/business_refresh_image_probe.py.entry-gate-install.tmp') = with_name(('business_refresh_image_probe.py' + '.entry-gate-install.tmp'))
+E        +        where with_name = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov1/ops/business_refresh_image_probe.py').with_name
+E        +        and   'business_refresh_image_probe.py' = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov1/ops/business_refresh_image_probe.py').name
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries.py:163: AssertionError
+_________ test_failed_atomic_write_removes_its_temporary_file[chown] __________
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu...c_write_remov2\\ops\\business_refresh_image_probe.py.entry-gate-install.tmp', 438)], proofs=[], directory_fd=123456789)
+operation = 'chown'
+
+    @pytest.mark.parametrize('operation', ['fsync', 'chmod', 'chown', 'replace'])
+    def test_failed_atomic_write_removes_its_temporary_file(install, operation):
+        m = install.module
+        path = m.TARGET / install.names[0]
+        setattr(m.os, operation, lambda *_: (_ for _ in ()).throw(OSError('injected')))
+        with pytest.raises(OSError):
+            m.atomic_bytes(path, b'new', path.stat())
+        assert path.read_bytes() == install.before[path.name]
+>       assert not path.with_name(path.name + '.entry-gate-install.tmp').exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov2/ops/business_refresh_image_probe.py.entry-gate-install.tmp').exists
+E        +      where WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov2/ops/business_refresh_image_probe.py.entry-gate-install.tmp') = with_name(('business_refresh_image_probe.py' + '.entry-gate-install.tmp'))
+E        +        where with_name = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov2/ops/business_refresh_image_probe.py').with_name
+E        +        and   'business_refresh_image_probe.py' = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov2/ops/business_refresh_image_probe.py').name
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries.py:163: AssertionError
+________ test_failed_atomic_write_removes_its_temporary_file[replace] _________
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu..._write_remov3\\ops\\business_refresh_image_probe.py.entry-gate-install.tmp', 0, 0)], proofs=[], directory_fd=123456789)
+operation = 'replace'
+
+    @pytest.mark.parametrize('operation', ['fsync', 'chmod', 'chown', 'replace'])
+    def test_failed_atomic_write_removes_its_temporary_file(install, operation):
+        m = install.module
+        path = m.TARGET / install.names[0]
+        setattr(m.os, operation, lambda *_: (_ for _ in ()).throw(OSError('injected')))
+        with pytest.raises(OSError):
+            m.atomic_bytes(path, b'new', path.stat())
+        assert path.read_bytes() == install.before[path.name]
+>       assert not path.with_name(path.name + '.entry-gate-install.tmp').exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov3/ops/business_refresh_image_probe.py.entry-gate-install.tmp').exists
+E        +      where WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov3/ops/business_refresh_image_probe.py.entry-gate-install.tmp') = with_name(('business_refresh_image_probe.py' + '.entry-gate-install.tmp'))
+E        +        where with_name = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov3/ops/business_refresh_image_probe.py').with_name
+E        +        and   'business_refresh_image_probe.py' = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_failed_atomic_write_remov3/ops/business_refresh_image_probe.py').name
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries.py:163: AssertionError
+__________ test_staged_source_drift_never_installs_unverified_bytes ___________
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu..._drift_never0\\ops\\business_refresh_image_probe.py.entry-gate-install.tmp', 0, 0)], proofs=[], directory_fd=123456789)
+
+    def test_staged_source_drift_never_installs_unverified_bytes(install):
+        m = install.module
+        def identities():
+            (m.ROOT / install.names[0]).write_bytes(b'UNVERIFIED_SOURCE')
+            return {'worker': 'same'}
+        m.identities = identities
+        try:
+            m.main()
+        except AssertionError:
+            pass
+>       assert (m.TARGET / install.names[0]).read_bytes() in (
+            install.before[install.names[0]], install.after[install.names[0]])
+E       assert b'UNVERIFIED_SOURCE' in (b"VERSION = 'old-business_refresh_image_probe.py'\n", b"VERSION = 'new-business_refresh_image_probe.py'\n")
+E        +  where b'UNVERIFIED_SOURCE' = read_bytes()
+E        +    where read_bytes = (WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_staged_source_drift_never0/ops') / 'business_refresh_image_probe.py').read_bytes
+E        +      where WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_staged_source_drift_never0/ops') = <module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-guard\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-worker-entry-guard\\install-independent\\install_pair_reviewed.py'>.TARGET
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries.py:176: AssertionError
+---------------------------- Captured stdout call -----------------------------
+{"after_sha256": {"business_refresh_image_probe.py": "e6b58b69bb70a55d96c639ee77d2bb670539520f823eb62231ced79a210e6244", "business_release_guard.py": "331ab3fcf2af4c8a29ad70fecfdfdc4768026711dc5dc2d09da1c8f4304148f1"}, "before_sha256": {"business_refresh_image_probe.py": "a62eac5c366386f7879d0306304b0779118718fd1adf0d0f3a2621585aa7a389", "business_release_guard.py": "990a1c82b042390af764554b64b5363f6eb457111e9a95fc13ae7e385e5e1b8e"}, "ended_utc": "2026-10-11T07:50:48.943603+00:00", "failure_type": "AssertionError", "manual_inspection_required": true, "recovery_failure_type": "AssertionError", "stage": "FAILED", "started_utc": "2026-10-11T07:50:48.938721+00:00"}
+_________ test_corrupted_backup_is_never_written_over_exact_new_bytes _________
+
+install = namespace(module=<module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-gu...kup_is_never0\\ops\\business_refresh_image_probe.py.entry-gate-install.tmp', 0, 0)], proofs=[], directory_fd=123456789)
+
+    def test_corrupted_backup_is_never_written_over_exact_new_bytes(install):
+        m = install.module
+        def guard_failure(_):
+            (m.ROOT / 'private-guard-before' / install.names[0]).write_bytes(b'CORRUPTED_BACKUP')
+            raise ValueError('proof failure')
+        m.runpy.run_path = guard_failure
+        with pytest.raises(ValueError):
+            m.main()
+>       assert (m.TARGET / install.names[0]).read_bytes() in (
+            install.before[install.names[0]], install.after[install.names[0]])
+E       assert b'CORRUPTED_BACKUP' in (b"VERSION = 'old-business_refresh_image_probe.py'\n", b"VERSION = 'new-business_refresh_image_probe.py'\n")
+E        +  where b'CORRUPTED_BACKUP' = read_bytes()
+E        +    where read_bytes = (WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_corrupted_backup_is_never0/ops') / 'business_refresh_image_probe.py').read_bytes
+E        +      where WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1249/test_corrupted_backup_is_never0/ops') = <module 'isolated_install_pair' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-entry-guard\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-worker-entry-guard\\install-independent\\install_pair_reviewed.py'>.TARGET
+
+docs\verification\artifacts\2026-10-11\im-worker-entry-guard\install-independent\test_install_boundaries.py:188: AssertionError
+---------------------------- Captured stdout call -----------------------------
+{"after_sha256": {"business_refresh_image_probe.py": "e6b58b69bb70a55d96c639ee77d2bb670539520f823eb62231ced79a210e6244", "business_release_guard.py": "331ab3fcf2af4c8a29ad70fecfdfdc4768026711dc5dc2d09da1c8f4304148f1"}, "before_sha256": {"business_refresh_image_probe.py": "a62eac5c366386f7879d0306304b0779118718fd1adf0d0f3a2621585aa7a389", "business_release_guard.py": "990a1c82b042390af764554b64b5363f6eb457111e9a95fc13ae7e385e5e1b8e"}, "ended_utc": "2026-10-11T07:50:48.983653+00:00", "failure_type": "ValueError", "restored_old_pair": false, "stage": "FAILED", "started_utc": "2026-10-11T07:50:48.969017+00:00"}
+=========================== short test summary info ===========================
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries.py::test_failed_atomic_write_removes_its_temporary_file[fsync]
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries.py::test_failed_atomic_write_removes_its_temporary_file[chmod]
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries.py::test_failed_atomic_write_removes_its_temporary_file[chown]
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries.py::test_failed_atomic_write_removes_its_temporary_file[replace]
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries.py::test_staged_source_drift_never_installs_unverified_bytes
+FAILED docs/verification/artifacts/2026-10-11/im-worker-entry-guard/install-independent/test_install_boundaries.py::test_corrupted_backup_is_never_written_over_exact_new_bytes
+6 failed, 8 passed in 0.68s
