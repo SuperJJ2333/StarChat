@@ -39,3 +39,11 @@ run38116935821，源码11904803，2026-10-11T06:05:43Z开始、06:16:43Z工作�
 root逐行独立复核f0c629e4的原guard提取和能力条件，保持原语义；Swift实际编译由上述CI补齐。d17689f2隐私声明另经独立审查C617.1/CA92.1/PBX接线通过，E174.1在持久任务冻结850710bd+3b8e1bd的真实低空间准入及用户可见错误路径核验后通过，容量不进入manifest/日志或设备外。该结论不关闭新发现的same-txid准备竞争，也不替代整个产品隐私审计。
 
 日志保留第三方Pod最低版本警告，以及photo_manager的PrivacyInfo处理警告；本次Runner manifest实测存在不能代替最终全插件IPA内各SDK隐私资源检查。后续完整iPhoneOS unsigned包仍需独立构建。4项skip不是手机保护/备份排除/覆盖升级验收，最终签名与真机门禁继续保留。
+
+## 15:43+08 Android实际原生冷顺序门禁通过
+
+源码0fc080e54bad0ad2789cc5d2c7fba28b753c2e17，r3于15:40:13–15:43:06+08执行。API28 x86_64独立5558模拟器；com.liuhetong.mobile.debug / 0.4.45+2214；完整源码build、Apktool2.12.1重建、16KiB对齐、固定75b31签名、语义/资产/身份核验均exit0。最终APK SHA256 `0c0fbd6b52670e4422dc670f83f58bdcb2153e1d5cb1b8a3c1642dc13c1906b6`。
+
+实际3个测试通过：无路径参数的固定目录保护与备份排除；metadata-first冷初始化；Matrix-cipher-first冷初始化。后两项各在新Dart isolate中执行真实channel/defaultfactory、源文件seal/持久化/重开/取消、plain metadata与加密Matrix文件头、正确key重开与错误key拒绝。日志的两组SQLCipher hmac错误来自明确的wrong-key负例，正确key后续读取通过。Flutter计数+4包含tearDownAll，不能写成4个真实测试。r2原缺libsqlite3.so失败仍保留，r3通过不改写历史。
+
+非streaming安装有180秒上限，安装前两次确认专用包不存在；测试后pm list packages -u无该包，W映射已释放。未触碰5556原有数据。证据见`artifacts/2026-10-11/im-reliability-release/native-storage2214-r3/`。此为API28模拟器功能验证，不代表真实设备备份恢复、锁屏/Doze、厂商ROM、功耗、端到端延迟或旧数据覆盖升级验收；iOS cold-order仍待最终CI。
