@@ -1,7 +1,7 @@
 # 当前工作状态
 ## 2026-10-11 IM可靠性：服务端分批已部署，客户端修复集成中
 
-用户已授权产品修改、服务重启和部署。恢复鉴权8082、Getui跨房去重/节流、业务媒体同步IO、核心日志轮转、worker逐条领取与代次校验已部署；Sygnal发出时DND策略需新客户端元数据。R9b首候选导入位置错误已回滚；第二候选bfde7c86在07:16:20Z部署成功，07:18:08Z healthy/0 restart，真实installed Consumer读回正确；active超过五分钟仍未解决。精确镜像/回退/测试见[任务](tasks/2026-10-11-im-reliability-implementation.md)。客户端共享回归发现媒体调度/缓存准备缺陷，作者已修、late-store取消边界复审中；Android真实原生目录fixture通过、持久附件SQLite初始化失败调查中。源码候选0.4.45+2214，正式Android/iOS仍2213；iOS9902完整unsigned候选成功但需最终修复后重建，模拟器文件保护能力、最终企业签名/真机、OEM审核及长期容量门禁未完成。续作按[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)，不重做已冻结输入的等价门禁。
+用户已授权产品修改、服务重启和部署。恢复鉴权8082、Getui跨房去重/节流、业务媒体同步IO、核心日志轮转、worker逐条领取与代次校验已部署；Sygnal发出时DND策略需新客户端元数据。R9b首候选导入位置错误已回滚；第二候选bfde7c86在07:16:20Z部署成功，07:18:08Z healthy/0 restart，真实installed Consumer读回正确；active超过五分钟仍未解决。精确镜像/回退/测试见[任务](tasks/2026-10-11-im-reliability-implementation.md)。客户端共享回归发现媒体调度/缓存准备缺陷；复审又发现共享对象的A取消误伤有效B，修复中，尚未发布。Android缺SQLite库根因已修为统一现有SQLCipher loader，r3实际3原生用例（目录保护及两种冷启动开库顺序）通过，固定75b31重建APK SHA0c0fbd6b；不冒充真机覆盖验收。源码候选0.4.45+2214，正式Android/iOS仍2213；iOS9902完整unsigned候选成功但需最终修复后重建，模拟器文件保护能力、最终企业签名/真机、OEM审核及长期容量门禁未完成。续作按[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)，不重做已冻结输入的等价门禁。
 
 ## 2026-10-09 iOS0.4.44+2213普通更新弹窗已启用
 

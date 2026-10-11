@@ -124,3 +124,8 @@ iOS完整插件unsigned候选run38118485155（9902）两个job SUCCESS，但不�
 Android r2 实际失败已确认是生产初始化顺序耦合：sqflite_common_ffi 每个调用 isolate 只创建一个 SQL worker，首次 factory 的 ffiInit 决定载入库；metadata 先开会查找未打包的 libsqlite3.so，Matrix 先开则偶然正常。9218be37 已集成 a37fad28，六个 metadata 默认入口统一使用现有 SQLCipher loader；未改变 schema、key、PRAGMA 或文件格式。真实 Windows DLL 两个全新 isolate 的 metadata-first RED/Matrix-first GREEN，修复后两者GREEN；11文件135 PASS、九文件analyze0，独立SPEC/domain→QUALITY通过。不能将此计为Android验收，原native r2失败证据保留。
 
 Android原生fixture追加两种全新isolate冷启动顺序、真实channel/文件seal/默认factory、原件持久与取消、明文metadata和加密Matrix文件头、正确key重开及错key拒绝。iOS既有SQLCipher native target另增两种cold order（df1b3e92→218d2c73），不依赖或放宽模拟器文件保护；root独立静态双审通过，原生执行待最终候选CI。07:33:16Z只读复查worker仍bfde7c86/db3001d6 healthy/0 restart/OOMfalse。永久protocol guard漏检修补及缓存c3c66fbc增量双审并行进行。
+## 15:53+08 原生与发布守卫进度
+
+Android r3实际3用例通过（Flutter+4含tearDownAll），源码0fc080e5、APK0c0fbd6b，完整固定重建/签名门禁通过；5558专用包及W映射已按身份清理。见原生报告。缓存c3取消修复独立审查新增cross-source同digest共享flight回归：parent44dab两例PASS，c3控制PASS/取消FAIL，已阻止集成并交owner按聚合有效消费者修正。原7边界全部PASS也不能掩盖新增失败。
+
+永久worker组合guard 7407f374→bd3ab547已root独立SPEC→QUALITY通过：40专项、915 infra PASS/20显式PG-DSN skip；现在线上bfde、回退18a与APIa935均通过新检查，首次坏候选13f3精确因入口构造缺接口被拒绝。原八项worker协议及九项API协议全部保留。安装器单独独立审查发现预检后source再读、恢复backup未验hash、失败临时文件残留三个边界，已RED→修源码，等待同组增量验证；未在审查通过前安装，也没有业务服务重启。Android2214分发准备已分离委派，不含虚构APK SHA或未通过门禁的发布动作。
