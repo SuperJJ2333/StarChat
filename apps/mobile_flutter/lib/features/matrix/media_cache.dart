@@ -29,6 +29,37 @@ final _mediaPublicationGuardKey = Object();
 void _checkMediaPublication() =>
     (Zone.current[_mediaPublicationGuardKey] as VoidCallback?)?.call();
 
+// Independently verified legacy sources may discover the same object digest.
+// The object write belongs to all of them; references still belong to each
+// source. Keep every source's dynamic demand until the actual write settles.
+final class _MediaObjectFlight {
+  _MediaObjectFlight(this.accountId)
+      : generation = _mediaGeneration,
+        accountEpoch = MediaCache.accountGeneration(accountId);
+
+  final String accountId;
+  final int generation;
+  final int accountEpoch;
+  final demand = <Object, VoidCallback>{};
+  late final Future<File> value;
+
+  void checkPublication() {
+    if (generation != _mediaGeneration ||
+        accountEpoch != MediaCache.accountGeneration(accountId)) {
+      throw StateError('Media cache session changed');
+    }
+    for (final check in demand.values) {
+      try {
+        check();
+        return;
+      } on MediaLoadCanceled {
+        // One source leaving cannot cancel another verified source's object.
+      }
+    }
+    throw MediaLoadCanceled();
+  }
+}
+
 /// 本地媒体磁盘配额策略（Phase 2：账号内软配额 + 设备硬上限）。
 @immutable
 final class MediaQuotaPolicy {
@@ -116,7 +147,7 @@ final class MediaCache {
   }
 
   static final _storeFlights = <String, Future<File>>{};
-  static final _objectFlights = <String, Future<File>>{};
+  static final _objectFlights = <String, _MediaObjectFlight>{};
   static final _legacyCleanups = <String, Future<void>>{};
   static final _clearingAccounts = <String>{};
   static final _clearingRoots = <String>{};
@@ -647,11 +678,10 @@ final class MediaCache {
         accountEpoch != accountGeneration(accountId)) {
       throw StateError('Media cache session changed');
     }
-    final flightKey = '${_digest(jsonEncode([accountId, roomId, eventId]))}'
-        ':${verified.digest}';
-    final existing = _storeFlights[flightKey];
-    if (existing != null) return existing;
-    final flight = _root(accountId).then((root) {
+    // Keep each source's reference publication in its own consumer context.
+    // Only the authenticated content-object write is shared, after every
+    // independently verified source has registered its current demand.
+    return _root(accountId).then((root) {
       if (generation != _mediaGeneration ||
           accountEpoch != accountGeneration(accountId)) {
         throw StateError('Media cache session changed');
@@ -669,14 +699,6 @@ final class MediaCache {
           height: height,
           durationMs: durationMs);
     });
-    _storeFlights[flightKey] = flight;
-    _storeAccounts[flightKey] = accountId;
-    try {
-      return await flight;
-    } finally {
-      _storeFlights.remove(flightKey);
-      _storeAccounts.remove(flightKey);
-    }
   }
 
   static Future<File> _store(Directory root, String accountId, String roomId,
@@ -692,14 +714,31 @@ final class MediaCache {
     final name = '$digest${_videoContainerSuffix(bytes) ?? ''}';
     final objectKey = '${root.path}/objects/$name';
     final existing = _objectFlights[objectKey];
-    final flight = existing ?? _storeObject(accountId, File(objectKey), bytes);
-    if (existing == null) _objectFlights[objectKey] = flight;
+    final flight = existing ?? _MediaObjectFlight(accountId);
+    final token = Object();
+    final scope = MediaConsumerScope.current;
+    flight.demand[token] =
+        (Zone.current[_mediaPublicationGuardKey] as VoidCallback?) ??
+            () {
+              if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+            };
+    if (existing == null) {
+      _objectFlights[objectKey] = flight;
+      flight.value = runZoned(
+          () => _storeObject(accountId, File(objectKey), bytes),
+          zoneValues: {_mediaPublicationGuardKey: flight.checkPublication});
+    }
     late File file;
     try {
-      file = await flight;
+      file = await flight.value;
     } finally {
-      if (existing == null) _objectFlights.remove(objectKey);
+      flight.demand.remove(token);
+      if (flight.demand.isEmpty &&
+          identical(_objectFlights[objectKey], flight)) {
+        _objectFlights.remove(objectKey);
+      }
     }
+    _checkMediaPublication();
     MediaCacheMetrics.recordWrite(bytes.length);
     final ref = await _reference(accountId, roomId, eventId);
     await _atomicBytes(ref, utf8.encode(name));

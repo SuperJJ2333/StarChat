@@ -205,7 +205,9 @@ final class _HeldAtomicFiles extends IOOverrides {
   @override
   File createFile(String path) {
     final file = previous?.createFile(path) ?? super.createFile(path);
-    if (path.startsWith('$target.') && path.endsWith('.tmp')) {
+    if (path.startsWith('$target.') &&
+        !path.startsWith('$target.len.') &&
+        path.endsWith('.tmp')) {
       return _HeldFile(file, this);
     }
     return file;

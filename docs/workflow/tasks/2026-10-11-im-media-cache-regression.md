@@ -16,6 +16,12 @@ The unchanged reviewer probe is reproduced RED (1 PASS / 1 FAIL); new root/flush
 
 New gates: 7 publication tests PASS (including two unchanged independent probes), 93 impacted tests PASS in one run, two-file analyze zero issues. Counts overlap and are not added as unique tests. See publication-followup.md and publication-input-identities.json in the existing artifact directory for exact boundaries, inputs and timing. Next step: backend_review independently reviews this follow-up SPEC/domain then quality/security, then parent integrates the accepted SHA. These implementer gates are not independent approval or device/platform acceptance.
 
+## Shared object-demand review correction
+
+Independent review of c3 found a newly introduced cross-source cancellation regression: source B joined A's verified object Future and inherited A's publication guard. New object demand aggregation preserves one write and actual settlement while references keep their individual source checks. An additional same-event/different-source RED demonstrated an earlier whole-store join bypass; removing that redundant join preserves all unique synchronous preparation registrations for playback and account cleanup. See object-join-followup.md and object-join-input-identities.json in the same artifact directory.
+
+New evidence: independent c3 probe 1 PASS / 1 FAIL; actual-object-flush probe 2 PASS / 1 FAIL; intermediate same-reference probe 3 PASS / 1 FAIL. Final 13 boundary cases PASS, impacted 12 files / 97 tests PASS, three-file analyze zero issues. The 97 include prior 93 plus the new four join cases; counts overlap the 13 and are not summed. The new report explicitly corrects the original sidecar-versus-object test barrier description. No df1b3/iOS test dependency; cherry-pick order is 44dab -> c3 -> this follow-up. Parent must still validate the integrated shared SQLCipher factory/full suite/native package candidate. Next executable step: backend_review's independent SPEC/domain -> quality/security review of the frozen follow-up, then accepted integration.
+
 ## Evidence and decisions
 
 The artifact README maps each reported failure to its demonstrated cause and correction. Baseline five-file run was 20 PASS/14 FAIL; the dedicated priority RED observed 192 MiB reserved before source scheduling. Final impact suite is 87 PASS; separate chain suite is 111 PASS with six overlapping consumer tests; eight-file analysis has zero issues. Failed intermediate lifecycle output is retained, followed by its real-settlement GREEN.

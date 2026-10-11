@@ -1,0 +1,22 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_object_join_test.dart
+00:00 +0: independent legacy sources sharing verified object: cancelFirst=false cancelSecond=false
+[chatflow/mediaindex] degraded: UnimplementedError
+synthetic_first_cancel=false second_active=true second_error=null object_published=true
+00:00 +1: independent legacy sources sharing verified object: cancelFirst=true cancelSecond=false
+synthetic_first_cancel=true second_active=true second_error=MediaLoadCanceled object_published=false
+00:00 +1 -1: independent legacy sources sharing verified object: cancelFirst=true cancelSecond=false [E]
+  Expected: null
+    Actual: MediaLoadCanceled:<Bad state: Media load canceled>
+  An independent live source must not inherit another source cancellation
+
+  package:matcher                                                expect
+  package:flutter_test/src/widget_tester.dart 473:18             expect
+  test\features\matrix\media_cache_object_join_test.dart 140:13  main.<fn>
+
+00:00 +1 -1: independent legacy sources sharing verified object: cancelFirst=true cancelSecond=true
+synthetic_first_cancel=true second_active=false second_error=MediaLoadCanceled object_published=false
+00:00 +2 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_cache_object_join_test.dart: independent legacy sources sharing verified object: cancelFirst=true cancelSecond=false
