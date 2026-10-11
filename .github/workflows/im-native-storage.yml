@@ -1,0 +1,106 @@
+name: IM protected media storage native gate
+
+on:
+  push:
+    branches: ['codex/im-native-storage-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-storage:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      STORAGE_EVIDENCE: ${{ github.workspace }}/docs/verification/artifacts/2026-10-11/im-native-storage-ci
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      PUB_HOSTED_URL: https://pub.dev
+      FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Bind source and configure simulator-only native host
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          mkdir -p "$STORAGE_EVIDENCE" build/ios/SourcePackages
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD > "$STORAGE_EVIDENCE/source.txt"
+          xcodebuild -version > "$STORAGE_EVIDENCE/toolchain.txt"
+          flutter --version >> "$STORAGE_EVIDENCE/toolchain.txt"
+          shasum -a 256 ios/Runner/IOSMediaStoragePolicy.swift ios/RunnerTests/IOSMediaStoragePolicyTests.swift \
+            ios/Runner/AppDelegate.swift ios/Runner.xcodeproj/project.pbxproj \
+            > "$STORAGE_EVIDENCE/input-sha256.txt"
+          flutter config --no-enable-swift-package-manager
+          cp pubspec.lock "$STORAGE_EVIDENCE/pubspec.lock.production"
+          flutter pub get --enforce-lockfile
+          cmp pubspec.lock "$STORAGE_EVIDENCE/pubspec.lock.production"
+          python3 <<'PY'
+          import os, pathlib
+          source = pathlib.Path('pubspec.yaml')
+          text = source.read_text()
+          assert text.count('  mobile_scanner: 6.0.11\n') == 1
+          source.write_text(text.replace('  mobile_scanner: 6.0.11\n', ''))
+          folder = pathlib.Path(os.environ['STORAGE_EVIDENCE'])
+          (folder / 'limitations.txt').write_text(
+              'Native storage XCTest on a fresh simulator; no real device, signing, backup extraction, '
+              'release APK/IPA or account data. Diagnostic host excludes only mobile_scanner/MLKit '
+              'because its current binary has no arm64 simulator slice. Production packaging '
+              'must retain all production plugins and run its independent gate.\n')
+          host = pathlib.Path(os.environ['STORAGE_EVIDENCE']) / 'storage-host.dart'
+          host.write_text("import 'package:flutter/widgets.dart';\nvoid main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const SizedBox.shrink()); }\n")
+          PY
+          flutter pub get
+          cp pubspec.lock "$STORAGE_EVIDENCE/pubspec.lock.diagnostic"
+          flutter build ios --config-only --simulator --debug --no-codesign --no-pub \
+            --target="$STORAGE_EVIDENCE/storage-host.dart"
+      - name: Run actual protected-directory and symlink tests
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes -j > "$STORAGE_EVIDENCE/runtimes.json"
+          python3 <<'PY'
+          import json, os, pathlib, subprocess
+          folder = pathlib.Path(os.environ['STORAGE_EVIDENCE'])
+          runtimes = json.loads((folder / 'runtimes.json').read_text())['runtimes']
+          eligible = [r for r in runtimes if r.get('isAvailable') and r['name'].startswith('iOS ')
+                      and r['version'].split('.')[0] == '26']
+          assert eligible, 'iOS 26 required; no silent fallback'
+          runtime = max(eligible, key=lambda r: tuple(map(int, r['version'].split('.'))))
+          udid = subprocess.check_output(['xcrun', 'simctl', 'create', 'IM storage synthetic gate',
+              'com.apple.CoreSimulator.SimDeviceType.iPhone-15', runtime['identifier']], text=True).strip()
+          (folder / 'simulator.json').write_text(json.dumps({'runtime':runtime,'id':udid}, indent=2))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write('SIMULATOR_ID=' + udid + '\n')
+          subprocess.run(['xcrun', 'simctl', 'boot', udid], check=True)
+          subprocess.run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], check=True)
+          PY
+          simulator=$(python3 -c 'import json,os,pathlib; print(json.loads((pathlib.Path(os.environ["STORAGE_EVIDENCE"])/"simulator.json").read_text())["id"])')
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
+            -configuration Debug -sdk iphonesimulator \
+            "BUILD_DIR=$PWD/build/ios" ONLY_ACTIVE_ARCH=YES "ARCHS=$(uname -m)" \
+            -destination "id=$simulator" \
+            -only-testing:RunnerTests/IOSMediaStoragePolicyTests \
+            -resultBundlePath "$STORAGE_EVIDENCE/storage.xcresult" \
+            2>&1 | tee "$STORAGE_EVIDENCE/xctest.log"
+      - name: Preserve exact source, native results and limitations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: im-native-storage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.STORAGE_EVIDENCE }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Dispose only this synthetic simulator
+        if: always()
+        run: |
+          if [ -n "${SIMULATOR_ID:-}" ]; then
+            xcrun simctl shutdown "$SIMULATOR_ID" || true
+            xcrun simctl delete "$SIMULATOR_ID"
+          fi

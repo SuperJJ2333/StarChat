@@ -1,5 +1,6 @@
 import Foundation
 import Flutter
+import Darwin
 
 /// Caller supplies only opaque identifiers, never a filesystem path.
 final class IOSMediaStoragePolicy {
@@ -11,11 +12,21 @@ final class IOSMediaStoragePolicy {
                     appropriateFor: nil, create: true).resolvingSymlinksInPath()
   }
 
-  private func apply(_ url: URL, inside root: URL) throws {
+  private func entryType(_ url: URL) throws -> mode_t? {
+    var info = stat()
+    guard lstat(url.path, &info) == 0 else {
+      if errno == ENOENT { return nil }
+      throw Failure.unavailable
+    }
+    return info.st_mode & mode_t(S_IFMT)
+  }
+
+  private func apply(_ url: URL, inside root: URL, directory: Bool = false) throws {
     let path = url.standardizedFileURL.path
     guard path == root.path || path.hasPrefix(root.path + "/"),
           url.resolvingSymlinksInPath().path == path,
-          manager.fileExists(atPath: path) else { throw Failure.invalidEntry }
+          try entryType(url) == mode_t(directory ? S_IFDIR : S_IFREG)
+    else { throw Failure.invalidEntry }
     try manager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
                               ofItemAtPath: path)
     var fresh = URL(fileURLWithPath: path)
@@ -31,10 +42,12 @@ final class IOSMediaStoragePolicy {
 
   private func directory(_ name: String, inside parent: URL) throws -> URL {
     let url = parent.appendingPathComponent(name, isDirectory: true).standardizedFileURL
-    guard url.resolvingSymlinksInPath().path == url.path else { throw Failure.invalidEntry }
+    let existing = try entryType(url)
+    guard url.resolvingSymlinksInPath().path == url.path,
+          existing == nil || existing == mode_t(S_IFDIR) else { throw Failure.invalidEntry }
     try manager.createDirectory(at: url, withIntermediateDirectories: false,
         attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
-    try apply(url, inside: parent)
+    try apply(url, inside: parent, directory: true)
     return url
   }
 
@@ -62,19 +75,19 @@ final class IOSMediaStoragePolicy {
     let root = try pendingRoot()
     let namespace = root.appendingPathComponent(scope, isDirectory: true)
     // Do not manufacture a missing namespace or manifest and call it recovery.
-    try apply(namespace, inside: root)
+    try apply(namespace, inside: root, directory: true)
     try apply(namespace.appendingPathComponent("manifest-v1.db"), inside: root)
     for suffix in ["-journal", "-wal", "-shm"] {
       let file = namespace.appendingPathComponent("manifest-v1.db" + suffix)
-      if manager.fileExists(atPath: file.path) { try apply(file, inside: root) }
+      if try entryType(file) != nil { try apply(file, inside: root) }
     }
     let sources = namespace.appendingPathComponent("sources", isDirectory: true)
-    if manager.fileExists(atPath: sources.path) { try apply(sources, inside: root) }
+    if try entryType(sources) != nil { try apply(sources, inside: root, directory: true) }
     if let sourceId = sourceId {
       var found = false
       for suffix in [".bin", ".bin.part"] {
         let file = sources.appendingPathComponent(sourceId + suffix)
-        if manager.fileExists(atPath: file.path) {
+        if try entryType(file) != nil {
           try apply(file, inside: root)
           found = true
         }

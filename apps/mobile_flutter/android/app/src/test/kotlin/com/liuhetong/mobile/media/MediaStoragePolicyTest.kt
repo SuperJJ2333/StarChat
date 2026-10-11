@@ -3,6 +3,7 @@ package com.liuhetong.mobile.media
 import android.app.Application
 import android.content.ContextWrapper
 import java.io.File
+import java.nio.file.Files
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -17,7 +18,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class, manifest = Config.NONE)
 class MediaStoragePolicyTest {
-    private val repository = generateSequence(File(System.getProperty("user.dir"))) { it.parentFile }
+    private val repository = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
         .first { File(it, "docs/verification").isDirectory }
     private val fixture = File(repository,
         "docs/verification/artifacts/2026-10-11/im-reliability-implementation/native-storage/${UUID.randomUUID()}")
@@ -63,5 +64,36 @@ class MediaStoragePolicyTest {
         assertEquals(true, policy.sealPendingFiles(scope, source)["protected"])
         assertEquals("synthetic-source", File(sources, "$source.bin.part").readText())
         assertEquals(true, policy.sealPendingFiles(scope, source)["backupExcluded"])
+    }
+
+    @Test fun rejectsDirectoryInManifestOrSourcePosition() {
+        val policy = MediaStoragePolicy(context())
+        val scope = "e".repeat(64)
+        val source = "f".repeat(64)
+        val root = File(policy.pendingDirectory()["path"] as String, scope).apply { mkdirs() }
+        val manifest = File(root, "manifest-v1.db").apply { mkdirs() }
+        assertFails { policy.sealPendingFiles(scope, null) }
+        check(manifest.delete())
+        manifest.writeText("synthetic")
+        File(root, "sources/$source.bin").mkdirs()
+        assertFails { policy.sealPendingFiles(scope, source) }
+    }
+
+    @Test fun rejectsDanglingOptionalJournalAndPart() {
+        val policy = MediaStoragePolicy(context())
+        val scope = "e".repeat(64)
+        val source = "f".repeat(64)
+        val root = File(policy.pendingDirectory()["path"] as String, scope).apply { mkdirs() }
+        File(root, "manifest-v1.db").writeText("synthetic")
+        val sources = File(root, "sources").apply { mkdirs() }
+        File(sources, "$source.bin").writeText("synthetic-source")
+        val wal = File(root, "manifest-v1.db-wal").toPath()
+        Files.createSymbolicLink(wal, File(root, "absent-wal").toPath())
+        assertFails { policy.sealPendingFiles(scope, source) }
+        Files.delete(wal)
+        Files.createSymbolicLink(File(sources, "$source.bin.part").toPath(),
+            File(sources, "absent-part").toPath())
+        assertFails { policy.sealPendingFiles(scope, source) }
+        assertEquals("synthetic-source", File(sources, "$source.bin").readText())
     }
 }

@@ -12,4 +12,8 @@ iOS 使用 Application Support/pending-media-v1，设置 CompleteUntilFirstUserA
 
 Flutter集成测试仅analyze通过，尚未在手机/模拟器执行。新增iOS两个XCTest及生产Swift尚未在Windows编译，必须在macOS/iOS门禁验证；缺helper/保护false时持久任务拒绝准入，无cache回退。SPEC→QUALITY及实际接线仍待。
 
-证据：artifacts/2026-10-11/im-reliability-implementation/native-storage-*。实现时间约12:17–12:26 UTC+08，单步精确起止未全记录。未打包、未分发、未改变服务器。
+证据：artifacts/2026-10-11/im-reliability-implementation/native-storage-*。实现时间约12:17–12:24 UTC+08，单步精确起止未全记录。未打包、未分发、未改变服务器。
+
+独立首审发现两项边界：Swift未拒绝目录占据普通文件名；两端exists跟随链接会漏过悬空optional WAL/part。Android旧实现新增专项得到6项中1项预期行为RED，修复为NOFOLLOW_LINKS属性类型检查后6存储+11相邻原生测试=17PASS（native-storage-boundary-*-test/green.txt）。首次错误任务名testDebugUnitTest在flavor下歧义，留native-storage-boundary-red.txt作为环境失败，不算行为RED。iOS改用lstat并增加同类XCTest，仍待macOS编译/执行。文件操作限定固定sandbox，无法据此声称对同进程恶意并发替换提供原子防护。新增测试nullable警告改为requireNotNull，历史第三方/Gradle警告保留。
+
+新增独立macOS工作流im-native-storage.yml，精确源码与锁文件存证，真实XCTest读回目录策略；诊断host仅排除当前不支持arm64 simulator的mobile_scanner/MLKit，最终生产包仍须全插件构建。尚未执行前不标PASS，亦不替代真实设备备份/锁屏验收。

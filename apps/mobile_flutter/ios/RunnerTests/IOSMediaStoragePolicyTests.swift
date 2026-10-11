@@ -35,4 +35,34 @@ final class IOSMediaStoragePolicyTests: XCTestCase {
     try FileManager.default.createSymbolicLink(at: file, withDestinationURL: folder.appendingPathComponent("manifest-v1.db"))
     XCTAssertThrowsError(try policy.sealPendingFiles(scope: scope, sourceId: source))
   }
+
+  func testRejectsDirectoriesAndDanglingOptionalEntries() throws {
+    let manager = FileManager.default
+    let policy = IOSMediaStoragePolicy()
+    let root = URL(fileURLWithPath: try XCTUnwrap(try policy.pendingDirectory()["path"] as? String))
+    let scope = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() + String(repeating: "0", count: 32)
+    let folder = root.appendingPathComponent(scope, isDirectory: true)
+    defer { try? manager.removeItem(at: folder) }
+    let sources = folder.appendingPathComponent("sources", isDirectory: true)
+    try manager.createDirectory(at: sources, withIntermediateDirectories: true)
+    let manifest = folder.appendingPathComponent("manifest-v1.db")
+    try manager.createDirectory(at: manifest, withIntermediateDirectories: false)
+    XCTAssertThrowsError(try policy.sealPendingFiles(scope: scope, sourceId: nil))
+    try manager.removeItem(at: manifest)
+    try Data("synthetic".utf8).write(to: manifest)
+    let source = String(repeating: "f", count: 64)
+    let file = sources.appendingPathComponent(source + ".bin")
+    try manager.createDirectory(at: file, withIntermediateDirectories: false)
+    XCTAssertThrowsError(try policy.sealPendingFiles(scope: scope, sourceId: source))
+    try manager.removeItem(at: file)
+    try Data("synthetic-source".utf8).write(to: file)
+    let wal = folder.appendingPathComponent("manifest-v1.db-wal")
+    try manager.createSymbolicLink(at: wal, withDestinationURL: folder.appendingPathComponent("absent-wal"))
+    XCTAssertThrowsError(try policy.sealPendingFiles(scope: scope, sourceId: source))
+    try manager.removeItem(at: wal)
+    try manager.createSymbolicLink(at: sources.appendingPathComponent(source + ".bin.part"),
+                                  withDestinationURL: sources.appendingPathComponent("absent-part"))
+    XCTAssertThrowsError(try policy.sealPendingFiles(scope: scope, sourceId: source))
+    XCTAssertEqual(try Data(contentsOf: file), Data("synthetic-source".utf8))
+  }
 }
