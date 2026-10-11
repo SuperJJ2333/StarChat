@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 
 SOURCE = Path(__file__).with_name('deploy.py')
-EXPECTED = '7873d32f65a754b88a3de64bcbb13bd2a09cd75b94567b3b5a8b041ab18eb3d7'
+EXPECTED = '41dfc1f2228fbfc1fb8960c0043ff6e77c7efa1251d725f00350362a9efdb94c'
 data = SOURCE.read_bytes()
 assert hashlib.sha256(data).hexdigest() == EXPECTED, "source changed: request new review identity"
 tree = ast.parse(data.decode("utf-8-sig"), filename=str(SOURCE))

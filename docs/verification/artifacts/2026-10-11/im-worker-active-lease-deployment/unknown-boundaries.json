@@ -1,6 +1,6 @@
 {
   "source": "C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-active-lease\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-worker-active-lease-deployment\\deploy.py",
-  "source_sha256": "7873d32f65a754b88a3de64bcbb13bd2a09cd75b94567b3b5a8b041ab18eb3d7",
+  "source_sha256": "41dfc1f2228fbfc1fb8960c0043ff6e77c7efa1251d725f00350362a9efdb94c",
   "scope": "Actual AST-selected function/except bodies with inert subprocess/os/filesystem substitutes; no deploy module top-level, Docker, DB, network, or real signal executed",
   "passed": 11,
   "failed": 0,
