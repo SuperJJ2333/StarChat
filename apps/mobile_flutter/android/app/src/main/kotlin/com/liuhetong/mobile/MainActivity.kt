@@ -70,6 +70,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        com.liuhetong.mobile.media.MediaStoragePolicy.attach(
+            applicationContext, flutterEngine.dartExecutor.binaryMessenger,
+        )
         com.dexterous.flutterlocalnotifications.ForegroundService.setResourceOwner(keepAliveOwner)
         val foregroundLifecycle = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/foreground_service")
         keepAliveOwner.onEvent = { event -> foregroundLifecycle.invokeMethod(event, null) }

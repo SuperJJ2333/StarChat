@@ -54,6 +54,7 @@ enum IOSMessageNavigationGate {
   }
 
   private func configureChannels(messenger: FlutterBinaryMessenger) {
+    IOSMediaStoragePolicy.attach(messenger: messenger)
     backgroundMedia.attach(messenger: messenger)
     iosCalls.attach(messenger: messenger)
     secureSession.attach(messenger: messenger)
