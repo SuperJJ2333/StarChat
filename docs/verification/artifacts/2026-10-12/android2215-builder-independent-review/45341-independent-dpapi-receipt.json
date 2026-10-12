@@ -1,0 +1,20 @@
+{
+  "candidate": "45341ce97e60e7ceee55675f725e1dec0357b36a",
+  "started_utc": "2026-10-12T13:04:42.830602+00:00",
+  "ended_utc": "2026-10-12T13:04:43.730335+00:00",
+  "elapsed_seconds": 0.89,
+  "command": [
+    "py",
+    "-3.12",
+    "-B",
+    "test_sign_wrapper.py",
+    "WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts",
+    "-v"
+  ],
+  "exit_code": 0,
+  "log_sha256": "4a428163a7db861f5b046ea8a67b532e9ba848104779ea1ec2480dff8ac14110",
+  "test_scope": "Pinned bf6fa639 synthetic DPAPI expression only; no signer invocation or real identity",
+  "signer_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+  "real_identity_read_or_build_signing_device_remote": false,
+  "test_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d"
+}

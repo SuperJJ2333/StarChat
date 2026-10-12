@@ -1,0 +1,10 @@
+{
+  "candidate": "e9878d5dd7d7f4681feb900b1af5817df7b43e68",
+  "started_utc": "2026-10-12T12:50:32.8417147Z",
+  "exit_code": 1,
+  "expected_exit": 1,
+  "test_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
+  "ended_utc": "2026-10-12T12:50:33.7486253Z",
+  "scope": "Synthetic DPAPI text only; no real signing identity or signing invoked",
+  "command": "py -3.12 -B test_sign_wrapper.py WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts -v (test-only candidate override e987-export/tools/sign-existing-identity.ps1)"
+}

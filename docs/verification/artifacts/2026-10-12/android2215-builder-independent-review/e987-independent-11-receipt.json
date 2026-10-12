@@ -1,0 +1,8 @@
+{
+  "started_utc": "2026-10-12T12:50:11.2708589Z",
+  "ended_utc": "2026-10-12T12:50:14.2713867Z",
+  "scope": "Synthetic closure and actual preflight prefix; real build tail replaced by unconditional throw before invocation; fake identity only",
+  "command": "py -3.12 -B -m unittest -v test_lock_closure test_candidate_preflight",
+  "exit_code": 0,
+  "candidate": "e9878d5dd7d7f4681feb900b1af5817df7b43e68"
+}

@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "review_kind": "build_preparation_only",
+  "candidate_commit": "45341ce97e60e7ceee55675f725e1dec0357b36a",
+  "rejected_prior_candidate": "e9878d5dd7d7f4681feb900b1af5817df7b43e68",
+  "recorded_utc": "2026-10-12T13:08:52.731608+00:00",
+  "review_order": [
+    "SPEC/domain",
+    "QUALITY/security"
+  ],
+  "spec_domain": "PASS_PREPARATION_ONLY",
+  "quality_security": "PASS_PREPARATION_ONLY",
+  "blocking_findings_remaining_in_reviewed_scope": [],
+  "closed_finding": {
+    "candidate": "45341ce97e60e7ceee55675f725e1dec0357b36a",
+    "priority": "P1 execution blocker",
+    "cause": "Old serialized DPAPI envelope read failed on CRLF",
+    "old_signer_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "corrected_signer_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+    "reference_source_commit": "3edbf0031e540a1ee067f9e686475b3227f5ac5b",
+    "independent_red_retained": true,
+    "independent_green": true
+  },
+  "original_e987_tests": {
+    "pass": 11,
+    "fail": 0,
+    "seconds": 2.824
+  },
+  "original_signer_expected_red": {
+    "fail": 1,
+    "seconds": 0.702
+  },
+  "corrected_candidate_tests": {
+    "preflight_pass": 4,
+    "preflight_seconds": 3.666,
+    "dpapi_pass": 1,
+    "dpapi_seconds": 0.746
+  },
+  "unchanged_evidence_reused": [
+    "7 closure tests with exact unchanged inputs",
+    "actual historical source400/APK/receipt/steps/decoded57/manifest closure"
+  ],
+  "actual_new_artifact_reviewed": false,
+  "actual_signing_performed": false,
+  "actual_device_reviewed": false,
+  "production_operations_authorized_by_this_document": false,
+  "executable_publication_review": false,
+  "actual_candidate_apk": null,
+  "limits": [
+    "Preparation-only scope; actual root input freeze and true preflight still required",
+    "Final new APK smali/manifest closure and complete source/rebuild/signature/assets checks still required",
+    "Actual media main-debug reproduction/repair and final source gates remain root responsibility",
+    "No final ARM64-phone/OEM/background/16KiB/iOS-signing/device/SLO acceptance"
+  ],
+  "next_step": "Root freezes actual final inputs, obtains fresh production-version observation, runs true default preflight; actual Execute and final gates are separate",
+  "reports": {
+    "01-spec-domain.md": "28e288704a664a7ec5e024c61a40d1f9da92aa598f0a6a9de06e69d0a1c29575",
+    "02-quality-security.md": "44c4c4ab87ae65083ab602fda306bfe2e8a789e91f289ad655800b74243cec05"
+  },
+  "receipts": {
+    "e987-independent-11-receipt.json": "19087f83c51a489767b986cbec99316f3a2b2625275cec852aab5703521122ff",
+    "e987-signer-format-red-receipt.json": "4415b4ddce2857ee469425a15cac4f39a6cac35841960b1408da5314d6b176c3",
+    "independent-reference-closure.json": "3f14e87d4a9a37f00d554cfe61479c1d1092c5057c06c22638942cc6b50fb9a1",
+    "45341-independent-preflight-receipt.json": "9d79bcddf61137e35c237ddaba94e2a63fb42890b43e640613cbca3ccf9ae2db",
+    "45341-independent-dpapi-receipt.json": "ac590430d3e458abcad49878adbff26ceffe7e4527229c725e67f2d8d53e2f2d"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "reviewed_candidate": "e9878d5dd7d7f4681feb900b1af5817df7b43e68",
+  "review_order": [
+    "SPEC/domain",
+    "QUALITY/security"
+  ],
+  "static_checks": [
+    "Explicit Execute required; default preflight cannot reach build tail",
+    "Source 0.4.46+2215 and production Android2214/iOS2213 gate with 30-minute timestamp",
+    "Output restricted below task directory, existing directories reject reparse components, run folder exclusive",
+    "W/V aliases only after Execute, conflicting mapping fails, finally removes only owned matching mapping",
+    "Eight helper SHA pins and pinned Apktool SHA checked before execution",
+    "Frozen exact Git HEAD, raw source inventory and generated package/plugin inputs checked before/after build and verification",
+    "No actual production upload/install operation in builder",
+    "ARM64 standard release lib/main.dart and fixed hosted dependency lock",
+    "Source/rebuild/final signed APK assets, native payload, identity and whole-manifest/method semantic checks",
+    "Signed APK stable 75b31 certificate, one signer, v2/v3 independently verified after wrapper",
+    "DPAPI old serialization whitespace defect is a confirmed execution blocker; not covered by safe preflight suite",
+    "Signer has immutable existing identity only; memory/process env credential passing; sanitized tool failure; no key generation",
+    "Final metadata is written only after all native steps and exact freeze readback pass",
+    "Historical lock-screen evidence reuse limited to frozen 400-source plus final 57-class/full-manifest closure",
+    "No new APK, new-device, background/OEM, 16KiB or SLO acceptance inferred from historical closure"
+  ],
+  "known_rejection": {
+    "priority": "P1 release execution blocker",
+    "file": "tools/sign-existing-identity.ps1",
+    "line": 95,
+    "sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "cause": "DPAPI serialized text trailing line terminator is passed without Trim into ConvertTo-SecureString",
+    "fix_expected_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4"
+  },
+  "actual_build_signing_devices_or_remote_operations": false,
+  "closed_actual_new_artifact_gates": false
+}

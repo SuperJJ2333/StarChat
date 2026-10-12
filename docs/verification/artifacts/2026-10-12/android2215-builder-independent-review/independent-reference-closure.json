@@ -1,0 +1,19 @@
+{
+  "checked_utc": "2026-10-12T12:51:27.710614+00:00",
+  "baseline_sha256": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f",
+  "reference_commit": "e9d297b2b49c8b2198fb3225bf7e04ed80ab4bd8",
+  "source_baseline_400_git_blobs_verified": true,
+  "old_final_apk_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "old_final_apk_bytes": 73336097,
+  "old_artifact_json_sha256": "4bf1b56e7d56425bc1ddd4802d7c6b952a98bf30d042da504d523beeba73d3dc",
+  "historical_receipt_exact": true,
+  "historical_steps_exact": true,
+  "historical_final_lock_boundary_exit": 0,
+  "old_decoded_class_count": 57,
+  "old_decoded_all_class_hashes_exact": true,
+  "old_manifest_normalized_exact": true,
+  "current_root_head": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "current_source_files_exact_except_approved_version": 400,
+  "new_final_apk_or_decoded_verified": false,
+  "device_or_signing_action": false
+}

@@ -1,0 +1,6 @@
+test_dpapi_line_terminator_preserves_password_and_decrypts (__main__.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.746s
+
+OK

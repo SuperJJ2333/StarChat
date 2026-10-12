@@ -1,0 +1,9 @@
+test_default_prefix_returns_preflight_without_writes_or_build_tail (test_candidate_preflight.CandidatePreflight.test_default_prefix_returns_preflight_without_writes_or_build_tail) ... ok
+test_explicit_execute_is_required_to_reach_guarded_off_test_tail (test_candidate_preflight.CandidatePreflight.test_explicit_execute_is_required_to_reach_guarded_off_test_tail) ... ok
+test_old_source_version_refused_in_preflight (test_candidate_preflight.CandidatePreflight.test_old_source_version_refused_in_preflight) ... ok
+test_tool_drift_and_closure_failure_refused (test_candidate_preflight.CandidatePreflight.test_tool_drift_and_closure_failure_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 3.666s
+
+OK

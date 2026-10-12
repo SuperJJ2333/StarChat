@@ -1,0 +1,315 @@
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/README.md b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/README.md
+index d17da74a..439606e8 100644
+--- a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/README.md
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/README.md
+@@ -14,7 +14,7 @@
+ 
+ - Apktool固定2.12.1，使用root已取得的`android2214-media-regression/tools/apktool_2.12.1.jar`，SHA `66cf4524a4a45a7f56567d08b2c9b6ec237bcdd78cee69fd4a59c8a0243aeafa`；文件夹中的2214是历史工具来源，不是新包版本。
+ - JDK17.0.20.8、Flutter C:/src/flutter、SDK build-tools36.0.0。完整decode→rebuild→`zipalign -P 16 -f 4`→现有固定75b31签名→apksigner(v2/v3/单signer)→签后`zipalign -c -P 16 4`。
+-- 新签名和语义工具从root已审538f90f6的`media-debug-packaging-tools/`精确Git字节复制到本目录`tools/`，由`candidate-tool-identities.json`锁定。签名调用必须显式`-Apksigner`与`-Execute`，缺key/DPAPI即拒绝，不生成新身份。本轮没有读取key/DPAPI内容或签名。
++- 语义工具从root已审538f90f6、签名工具从root已修3edbf003的`media-debug-packaging-tools/`精确Git字节复制到本目录`tools/`，由`candidate-tool-identities.json`锁定。签名工具SHA为eef1c12e…13a4：仅对序列化DPAPI文本.Trim()，不修剪解密后的密码；e987初始复制的旧版本已被独审合成用例判定失败，修复及增量证据见`signer-followup.md`。签名调用必须显式`-Apksigner`与`-Execute`，缺key/DPAPI即拒绝，不生成新身份。本轮没有读取key/DPAPI内容或签名。
+ - 缺失的legacy `verify_lock_boundary.py`不被静默删除。root明确批准严格closure复用：旧签名APK575e24f4…af614/73336097B、本地旧receipt SHA a933c16c…c77f67、步骤final-lock-boundary exit0。基线冻结400个Android/third_party/calls/依赖输入；文本仅CRLF→LF，二进制保持原字节，主pubspec只容许精确2214→2215版本行。最终新包必须再次核对57个MainActivity全家族/整个call包smali逐字节及全aapt清单（只容许版本字段/element源行号）。增删类、类变化、重复DEX类、其它manifest变化、lock/native输入变化均拒绝复用。不是重新运行失落工具，也不是新手机锁屏或媒体UI通过。
+ - 2026-10-12T12:36Z当前原生source/旧包closure已只读核验；随后root升为2215，`current-closure-preparation.json`另记录新版本source闭包成功。最终新APK尚未存在，最终decoded检查仍待真正构建。
+ 
+@@ -40,7 +40,7 @@
+ 
+ - `closure-red.log`：缺失新closure实施时6FAIL；实现后6PASS。`normalization-red.log`另证明二进制/manifest字面内容不能被过宽归一化隐藏，修正后完整7项closure通过。
+ - `test_candidate_preflight.py`只运行真实脚本preflight前缀，真实build尾部先替换为无条件throw；Python verify调用为替身，key/DPAPI为无效假文件，New-Item/subst为抛错替身。默认返回preflight、Execute才抵达不可执行的测试尾部、旧版本/工具漂移/closure失败拒绝，证明不启动构建。第一次失败是测试spy的PowerShell script scope归属，已保留`preflight-fixture-scope.log`，改用测试进程global计数，没有放宽builder。
+-- `git-export-boundaries.log`：精确Git blob导出11PASS/4.232s；26输入和8工具身份全部一致。`final-boundaries.log`：原工作树11PASS/3.425s（7closure+4preflight）。PowerShell两文件解析及7Python AST通过。未运行恢复signer/semantic的旧等价全套；工具Git字节完全相同且已有独审/旧真实包回放记录。
++- `git-export-boundaries.log`：精确Git blob导出11PASS/4.232s；26输入和8工具身份全部一致。`final-boundaries.log`：原工作树11PASS/3.425s（7closure+4preflight）。PowerShell两文件解析及7Python AST通过。此处为e987冻结时记录，未运行恢复signer/semantic的旧等价全套。后续独审识别旧copied signer缺少root已修的DPAPI换行处理；见`signer-followup.md`的精确替换及专项RED→GREEN，不能把本段历史11项当作该缺陷通过。
+ - 不执行全局verify.ps1：本任务只改独立构建工具/验证证据，无产品输入变化，全球render/build会写共享root并与父任务冲突。root仍负责最终产品门禁，不能把本11项称App测试。
+ 
+ 准备阶段没有新APK、真签名、真preflight输入全链或设备通过；下一步是独立双审和root实际候选preflight。缺失/漂移停止，不能用旧通过日志补新身份。
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-input-identities.json b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-input-identities.json
+index 2b189f8e..8a475efc 100644
+--- a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-input-identities.json
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-input-identities.json
+@@ -3,10 +3,10 @@
+   "files": {
+     ".gitattributes": "e5377008754db765026a76c2603f8fa84b93e5cb078cc6215f7f82e49a874bc9",
+     ".gitignore": "608c5ec7c35abfd4b956451619563cb8b4d4013436e71cec33ab3d6b54d9b2df",
+-    "README.md": "644c01e6b69bb5ee269095fc3c7037986b631e830abc472c5af8615d03993d09",
++    "README.md": "596110db6d246310ae4afd0c95edcf5d862776e6475b1159c8d86af4ba923d3b",
+     "build-android-2215-arm64.ps1": "7e16778d40ec7d6e661df33ce3cef6e87adb85990bec34e51f954fb289c09fb0",
+     "builder-adaptation.diff": "0e0642df37d0a33fcb2b68b8544c781d48c67cf46e2431451fdf8e9383fe5b87",
+-    "candidate-tool-identities.json": "8d2847b24691e76292c4c1448090fbc674348d1d8c56acfd00e7ab3d45a88c85",
++    "candidate-tool-identities.json": "3d5a9b6f69dca6ffcc7c84479c557fee4a505fdc0d4d7cb9efbefbee9596c238",
+     "closure-green.log": "50a8515e2908bd5e894bc02ea86ad5cc0e17d8b9ac1adce53646ae46c2cfefdb",
+     "closure-red.log": "5193c1db9c23b6d66e1a488128273262be2cc51298a687f3d2d933314455baaf",
+     "current-closure-preparation.json": "40354090184e5add029be374ae219bf4f6c0c6f108181a7fe58e51850d303b24",
+@@ -19,15 +19,22 @@
+     "lock-closure-baseline.json": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f",
+     "normalization-red.log": "330d9f6773bc44cb57047ebd55ab178630e8d82cda392ef8a25f505dc97f992f",
+     "preflight-fixture-scope.log": "b8870b20d6576373a75d25c7d7d982e3553e091d09b577462d7bdec749170a6d",
+-    "source-provenance.json": "8dc49384f11cfef2ef5c6f7937a6fa3338a7e1d267588601035b0aa00aa58dff",
++    "signer-dpapi-green-receipt.json": "e9cb2a58ad61405ef23f91e2dfb660cc580b0e0af307a6ce731eedd49c0a0670",
++    "signer-dpapi-green.log": "f65701e96ae87932a8721743f64d573eccd05808f57ba21172151b27cf430bfb",
++    "signer-dpapi-red-receipt.json": "e146a323dfd9496b1c91d03156a259467e2dcd9d8e9d787f87b709fb92fd2ec3",
++    "signer-dpapi-red.log": "9e1ebfcd3be1f0339d073d3887c266300658a2a8a67f0575a4c72fef330f73eb",
++    "signer-followup.md": "4d7f238aa8d7800a0f71da04f087e7034afef7e8c7ca580b71925240d1656e1f",
++    "signer-preflight-green.log": "ec9034b55967ba544d8a46df5a5fdcf21eeeb543bb8801ce7355bdbebaa82509",
++    "source-provenance.json": "7e1f9717168a28c4a1d6e9abbf17cc88425d7549b60859222b6d0c1ed34d9b4d",
+     "strip_dev_plugin_registrant.py": "5b44e5e5ae2ca4693c6f55b64980f5433bab5c4d27dc7c0c8cd99d50b46edaf4",
+     "test_candidate_preflight.py": "5ffd8dabd71325d826b38d006e10d6764dbfca756d182f924657401066ad2173",
+     "test_lock_closure.py": "a44f904d7c40ec72a1d244deac757516d8b0838a76468ec0027f55c47f15e594",
+-    "tools/sign-existing-identity.ps1": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
++    "tools/sign-existing-identity.ps1": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+     "tools/verify_rebuild.py": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7",
+     "verification-receipt.json": "f00b93ae8a8355091b88cdde1092cdb750ed165365ad47e1bdb9092e52b8be54",
+     "verify_android_flutter_assets.py": "58076c8d541391f0f0842a12e79fbe7126304c2c7e068ccc462d6139dab124a6",
+-    "verify_lock_closure.py": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3"
++    "verify_lock_closure.py": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3",
++    "verify_signer_dpapi_regression.py": "f74b6086af0201408089726cbf1fdcd4fb35c76840c0922535820271405e8679"
+   },
+   "actual_candidate_apk": null
+ }
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-tool-identities.json b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-tool-identities.json
+index 3a91d4a2..1c4f6bfa 100644
+--- a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-tool-identities.json
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/candidate-tool-identities.json
+@@ -8,7 +8,7 @@
+     "verify_lock_closure.py": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3",
+     "lock-closure-baseline.json": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f",
+     "historical-lock-boundary.json": "a933c16c38843f75202357e2e17c0f8f61b8646c79c167127557bec6f8c77f67",
+-    "tools/sign-existing-identity.ps1": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
++    "tools/sign-existing-identity.ps1": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+     "tools/verify_rebuild.py": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7"
+   }
+ }
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-green-receipt.json b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-green-receipt.json
+new file mode 100644
+index 00000000..d6add3d4
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-green-receipt.json
+@@ -0,0 +1,17 @@
++{
++  "started_utc": "2026-10-12T13:01:32.236327+00:00",
++  "elapsed_seconds": 0.781,
++  "phase": "green",
++  "exit_code": 0,
++  "wrapper_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
++  "test_commit": "bf6fa639fa3a02fab067b2708d27832c8299992f",
++  "test_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/test_sign_wrapper.py",
++  "test_git_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
++  "test_name": "test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts",
++  "log_sha256": "f65701e96ae87932a8721743f64d573eccd05808f57ba21172151b27cf430bfb",
++  "synthetic_windows_dpapi_only": true,
++  "real_identity_read": false,
++  "actual_signing_or_build": false,
++  "red_expected_failure": "System.FormatException while parsing CRLF serialized DPAPI envelope",
++  "green_assertion": "CRLF envelope decrypts and preserves both plaintext boundary spaces; no signer/output APK"
++}
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-green.log b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-green.log
+new file mode 100644
+index 00000000..73617b90
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-green.log
+@@ -0,0 +1,6 @@
++test_dpapi_line_terminator_preserves_password_and_decrypts (test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts) ... ok
++
++----------------------------------------------------------------------
++Ran 1 test in 0.698s
++
++OK
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-red-receipt.json b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-red-receipt.json
+new file mode 100644
+index 00000000..0dad73e9
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-red-receipt.json
+@@ -0,0 +1,17 @@
++{
++  "started_utc": "2026-10-12T13:01:00.702071+00:00",
++  "elapsed_seconds": 0.703,
++  "phase": "red",
++  "exit_code": 1,
++  "wrapper_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
++  "test_commit": "bf6fa639fa3a02fab067b2708d27832c8299992f",
++  "test_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/test_sign_wrapper.py",
++  "test_git_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
++  "test_name": "test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts",
++  "log_sha256": "9e1ebfcd3be1f0339d073d3887c266300658a2a8a67f0575a4c72fef330f73eb",
++  "synthetic_windows_dpapi_only": true,
++  "real_identity_read": false,
++  "actual_signing_or_build": false,
++  "red_expected_failure": "System.FormatException while parsing CRLF serialized DPAPI envelope",
++  "green_assertion": "CRLF envelope decrypts and preserves both plaintext boundary spaces; no signer/output APK"
++}
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-red.log b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-red.log
+new file mode 100644
+index 00000000..d91f94fd
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-dpapi-red.log
+@@ -0,0 +1,15 @@
++test_dpapi_line_terminator_preserves_password_and_decrypts (test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts) ... FAIL
++
++======================================================================
++FAIL: test_dpapi_line_terminator_preserves_password_and_decrypts (test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts)
++----------------------------------------------------------------------
++Traceback (most recent call last):
++  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test-scratch\dpapi-expression-0oui_4_n\test_sign_wrapper.py", line 186, in test_dpapi_line_terminator_preserves_password_and_decrypts
++    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
++AssertionError: 1 != 0 : {"dpapi_roundtrip_pass":false,"failure_type":"System.FormatException","fixture_line_ending":"CRLF"}
++
++
++----------------------------------------------------------------------
++Ran 1 test in 0.604s
++
++FAILED (failures=1)
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-followup.md b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-followup.md
+new file mode 100644
+index 00000000..509af067
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-followup.md
+@@ -0,0 +1,26 @@
++# Android2215 builder：DPAPI 序列化换行增量
++
++本增量修复 e9878d5dd7d7f4681feb900b1af5817df7b43e68 的确定性独审阻断：此前复制的是 538f90f6 中旧 signer，未包含 root 后续已修的序列化 DPAPI `.Trim()`。旧脚本在 CRLF 终止的合成 DPAPI 文本上抛 `System.FormatException`，历史 11 项准备门禁没有覆盖这条路径，不能据此宣称 signer 通过。
++
++## 最小修复及输入身份
++
++- 仅替换 `tools/sign-existing-identity.ps1` 为 root `3edbf0031e540a1ee067f9e686475b3227f5ac5b:docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/sign-existing-identity.ps1` 的精确 Git 字节。
++- 旧 SHA256：`1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0`；新 SHA256：`eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4`。
++- 可执行差异只有第 95 行：对 `Get-Content -Raw` 取得的 DPAPI 序列化文本调用 `.Trim()` 后再 `ConvertTo-SecureString`；解密后的密码不修剪。签名身份、调用参数、清理和证书校验不变。
++- `candidate-tool-identities.json`、`source-provenance.json` 更新该工具身份；`candidate-input-identities.json` 从 staged Git blobs 重新生成，保持 Git 字节域。builder 本体、闭包工具、400 source 基线、旧 APK/receipt/57 smali/full manifest 输入均未变。
++
++## 本次实际执行
++
++`verify_signer_dpapi_regression.py` 精确载入已有测试 `bf6fa639fa3a02fab067b2708d27832c8299992f:docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/test_sign_wrapper.py`，SHA256 `7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d`，只运行 `WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts`。它给测试设置独立 synthetic USERPROFILE，用 PowerShell AST 只提取实际脚本的 DPAPI 赋值语句；不执行 signer 主体，不读取真实 P12/DPAPI，不调用 apksigner。
++
++| 精确输入 | 结果 | 证据 |
++|---|---|---|
++| 旧 copied signer 1baf91b7 | 1 FAIL，exit 1；实际 `System.FormatException` | `signer-dpapi-red.log`、`signer-dpapi-red-receipt.json` |
++| 新 copied signer eef1c12e，同一测试 | 1 PASS，exit 0；CRLF 外壳正确解密，合成密码两端空格保留；无 signer 调用/输出 APK | `signer-dpapi-green.log`、`signer-dpapi-green-receipt.json` |
++| 新工具身份下原 builder 4 项有界 preflight 替身 | 4 PASS / 2.798s，exit 0 | `signer-preflight-green.log` |
++
++原始日志/receipt 保留；不重复未变的旧 7 项锁屏闭包或全量签名门禁。4 项 preflight 仍将实际 build 尾部替换为不可执行的 throw，并使用无效假 key/DPAPI 和 Python 替身；此通过不是正式构建、真签名或实际设备证明。既有独审报告中的 19+1 项 DPAPI/sign-wrapper 证据按上述精确测试/工具身份引用，不声称本次重跑了全部。
++
++## 交付边界
++
++仅新增/修改本独立候选准备目录；已冻结 `android2215-release`、root/mobile/version 和产品源码未改。本轮没有构建、签名、设备、网络或生产操作。下一步是非作者对该精确增量做 SPEC/domain → QUALITY/security 审查；通过后由 root 取得真实最终输入并按原 builder 及三个实际门禁执行。当前没有新候选 APK 身份或 gate 批准。
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-preflight-green.log b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-preflight-green.log
+new file mode 100644
+index 00000000..d1322051
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/signer-preflight-green.log
+@@ -0,0 +1,9 @@
++test_default_prefix_returns_preflight_without_writes_or_build_tail (test_candidate_preflight.CandidatePreflight.test_default_prefix_returns_preflight_without_writes_or_build_tail) ... ok
++test_explicit_execute_is_required_to_reach_guarded_off_test_tail (test_candidate_preflight.CandidatePreflight.test_explicit_execute_is_required_to_reach_guarded_off_test_tail) ... ok
++test_old_source_version_refused_in_preflight (test_candidate_preflight.CandidatePreflight.test_old_source_version_refused_in_preflight) ... ok
++test_tool_drift_and_closure_failure_refused (test_candidate_preflight.CandidatePreflight.test_tool_drift_and_closure_failure_refused) ... ok
++
++----------------------------------------------------------------------
++Ran 4 tests in 2.798s
++
++OK
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/source-provenance.json b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/source-provenance.json
+index 06cbeaef..4ef6c029 100644
+--- a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/source-provenance.json
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/source-provenance.json
+@@ -28,10 +28,10 @@
+     "exact_equal": true
+   },
+   "tools/sign-existing-identity.ps1": {
+-    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
++    "reference_commit": "3edbf0031e540a1ee067f9e686475b3227f5ac5b",
+     "reference_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/sign-existing-identity.ps1",
+-    "reference_git_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+-    "candidate_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
++    "reference_git_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
++    "candidate_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+     "exact_equal": true
+   },
+   "tools/verify_rebuild.py": {
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/tools/sign-existing-identity.ps1 b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/tools/sign-existing-identity.ps1
+index d99c43a9..c2b8a31c 100644
+--- a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/tools/sign-existing-identity.ps1
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/tools/sign-existing-identity.ps1
+@@ -92,7 +92,7 @@ try {
+     }
+ 
+     $taskStage = 'protected identity loading'
+-    $taskSecurePassword = Get-Content -LiteralPath $taskDpapi -Raw -Encoding utf8 | ConvertTo-SecureString
++    $taskSecurePassword = (Get-Content -LiteralPath $taskDpapi -Raw -Encoding utf8).Trim() | ConvertTo-SecureString
+     $taskPasswordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($taskSecurePassword)
+     $taskPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($taskPasswordPointer)
+     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($taskPasswordPointer)
+diff --git a/docs/verification/artifacts/2026-10-12/android2215-release-candidate/verify_signer_dpapi_regression.py b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/verify_signer_dpapi_regression.py
+new file mode 100644
+index 00000000..3a5a4e94
+--- /dev/null
++++ b/docs/verification/artifacts/2026-10-12/android2215-release-candidate/verify_signer_dpapi_regression.py
+@@ -0,0 +1,74 @@
++"""Run one existing synthetic-DPAPI test; never execute the signing wrapper."""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import time
++from datetime import datetime, timezone
++
++HERE = Path(__file__).resolve().parent
++TEST_COMMIT = 'bf6fa639fa3a02fab067b2708d27832c8299992f'
++TEST_PATH = 'docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/test_sign_wrapper.py'
++TEST_SHA = '7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d'
++TEST_NAME = 'test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts'
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--phase', choices=('red', 'green'), required=True)
++    args = parser.parse_args()
++    receipt_path = HERE / f'signer-dpapi-{args.phase}-receipt.json'
++    log_path = HERE / f'signer-dpapi-{args.phase}.log'
++    if receipt_path.exists() or log_path.exists():
++        parser.error('Evidence already exists; do not overwrite it')
++    test_bytes = subprocess.check_output(
++        ['git', 'show', f'{TEST_COMMIT}:{TEST_PATH}'], cwd=HERE, timeout=15)
++    if hashlib.sha256(test_bytes).hexdigest() != TEST_SHA:
++        raise RuntimeError('Exact regression test input drift')
++    wrapper = HERE / 'tools' / 'sign-existing-identity.ps1'
++    wrapper_sha = hashlib.sha256(wrapper.read_bytes()).hexdigest()
++    scratch = HERE / 'test-scratch'
++    scratch.mkdir(exist_ok=True)
++    started = datetime.now(timezone.utc).isoformat()
++    monotonic = time.monotonic()
++    # The pinned test gives itself a synthetic USERPROFILE and extracts only the
++    # DPAPI assignment with the PowerShell AST. No main-script invocation occurs.
++    with tempfile.TemporaryDirectory(prefix='dpapi-expression-', dir=scratch) as tmp:
++        Path(tmp, 'test_sign_wrapper.py').write_bytes(test_bytes)
++        env = os.environ.copy()
++        env.update(CHATFLOW_SIGN_WRAPPER_UNDER_TEST=str(wrapper),
++                   PYTHONUTF8='1', PYTHONIOENCODING='utf-8',
++                   PYTHONDONTWRITEBYTECODE='1')
++        result = subprocess.run(
++            [sys.executable, '-m', 'unittest', '-v', TEST_NAME],
++            cwd=tmp, env=env, capture_output=True, text=True,
++            encoding='utf-8', timeout=40)
++    elapsed = round(time.monotonic() - monotonic, 3)
++    output = result.stdout + result.stderr
++    if 'synthetic-dpapi-line-ending-value' in output:
++        raise RuntimeError('Unexpected synthetic plaintext in output; evidence withheld')
++    log_path.write_text(output, encoding='utf-8', newline='\n')
++    receipt = {
++        'started_utc': started, 'elapsed_seconds': elapsed,
++        'phase': args.phase, 'exit_code': result.returncode,
++        'wrapper_sha256': wrapper_sha,
++        'test_commit': TEST_COMMIT, 'test_path': TEST_PATH,
++        'test_git_sha256': TEST_SHA, 'test_name': TEST_NAME,
++        'log_sha256': hashlib.sha256(log_path.read_bytes()).hexdigest(),
++        'synthetic_windows_dpapi_only': True,
++        'real_identity_read': False, 'actual_signing_or_build': False,
++        'red_expected_failure': 'System.FormatException while parsing CRLF serialized DPAPI envelope',
++        'green_assertion': 'CRLF envelope decrypts and preserves both plaintext boundary spaces; no signer/output APK',
++    }
++    receipt_path.write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8', newline='\n')
++    print(json.dumps({'phase': args.phase, 'test_exit_code': result.returncode,
++                      'wrapper_sha256': wrapper_sha, 'elapsed_seconds': elapsed}))
++    return result.returncode
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
