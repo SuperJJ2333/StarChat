@@ -1,0 +1,9 @@
+{
+  "status": "OWNER_TIMESTAMP_FORMAT_RED_GREEN",
+  "fixture": "real receipt parsed as System.DateTime; actual timestamp copied into local test variable, no process action",
+  "old_string_comparison_reproduces_false_rejection": true,
+  "utc_ticks_accepts_exact": true,
+  "utc_ticks_rejects_one_tick_drift": true,
+  "process_actions": 0,
+  "http_requests": 0
+}

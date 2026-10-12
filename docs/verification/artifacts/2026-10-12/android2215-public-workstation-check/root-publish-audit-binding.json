@@ -1,0 +1,48 @@
+{
+  "status": "ROOT_READBACK_BINDING_PASS",
+  "source_kind": "Root server-side actual route function and three-audit readback; not inferred from public 401",
+  "receipts": {
+    "publish.json": {
+      "root_path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release\\publication-final-2215-20261012-r2\\execution\\mediafix-20261012-2215\\publish.json",
+      "repository_relative_path": "docs/verification/artifacts/2026-10-12/android2215-release/publication-final-2215-20261012-r2/execution/mediafix-20261012-2215/publish.json",
+      "sha256": "410be3f5df4e7021567c3f639cebbac2b34ba810bd5f8270c01b1dc3f31f6d63",
+      "checked_at_utc": "2026-10-12T14:25:00.622041+00:00",
+      "operation": "publish",
+      "status": "PASS",
+      "result_status": "PUBLISH_PASS",
+      "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b"
+    },
+    "audit.json": {
+      "root_path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release\\publication-final-2215-20261012-r2\\execution\\mediafix-20261012-2215\\audit.json",
+      "repository_relative_path": "docs/verification/artifacts/2026-10-12/android2215-release/publication-final-2215-20261012-r2/execution/mediafix-20261012-2215/audit.json",
+      "sha256": "57a0fadab5ccd96416ccfdaf480e91305cf200268f841e21dfeb552aa0079a92",
+      "checked_at_utc": "2026-10-12T14:28:48.558508+00:00",
+      "operation": "audit",
+      "status": "PASS",
+      "result_status": "ROUTE_AND_AUDIT_READBACK_PASS",
+      "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+      "projections": {
+        "android": {
+          "platform": "android",
+          "configured": true,
+          "latest_version": "0.4.46",
+          "latest_build": 2215,
+          "min_supported_build": 3
+        },
+        "ios": {
+          "platform": "ios",
+          "configured": true,
+          "latest_version": "0.4.44",
+          "latest_build": 2213,
+          "min_supported_build": 3
+        }
+      },
+      "audit_count": 3,
+      "audit_keys": [
+        "app_latest_build",
+        "app_latest_version",
+        "app_update_notes"
+      ]
+    }
+  }
+}

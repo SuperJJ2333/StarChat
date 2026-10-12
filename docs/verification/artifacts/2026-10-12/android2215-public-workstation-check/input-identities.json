@@ -1,0 +1,20 @@
+{
+  "identity_domain": "exact Git blobs; JSON receipts and public bodies retain raw bytes with -text",
+  "files": {
+    ".gitattributes": "c6b735d704fcc585175fc476a766ad6bea4114db316fabf496acfa20a3d5406e",
+    "README.md": "5cc25fec3fefbe49bf16656248b4296a9a11978ce2ffe04eff669202bb4dc0f4",
+    "check_public.py": "dae263618443f54f189250893af08440adbd918a19d9750ab4e8a31573c74419",
+    "download.body": "eeb75215b8bcea683202923ff27f5ce5c130e139a94d8a286c90f6dd82576dd4",
+    "ios_manifest.body": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "public-receipt.json": "a77be6c68b0196a4bcda70390fdc3891c8a6a21b0da6a49ed44d26827510bb10",
+    "registry.body": "cf772f9d1a9e464bc71622ad4603d70ae96cfb14bf8d2966e24bcedde5f6ce5b",
+    "root-publish-audit-binding.json": "95ec177d9f213d15fb6eca2ee28bd1cfd4ebe782023b5d8c1146ffdab8d1cd8c",
+    "start_tunnel.ps1": "029590af70d94d4b66bec0049bcdaa7c6f1e59a5f7601435d77b9fda878d1a7e",
+    "stop_tunnel.ps1": "461181515481772fdcb4134ff8fb3cf604fbbde5e12b51b1f8801f773eae796c",
+    "tunnel-owner-format-red-green.json": "69917d15a8c363ac2cad073ec5f4ab8b9a264baadfb3711736c71b493bd26f16",
+    "tunnel-start.json": "808383453e9bdbd3f4dfa0a07ecaf004ee345e8108fc20f4a168750cdd94fcb5",
+    "tunnel-stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tunnel-stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tunnel-stop.json": "c38177a614bd488e210c5c07235ab6ce954101cd663930797220055f3f56d4c3"
+  }
+}
