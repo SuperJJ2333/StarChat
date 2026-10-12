@@ -6,17 +6,17 @@
 - 关联：[批准的IM修复计划R8](../../superpowers/plans/2026-10-11-im-reliability-remediation.md)、[前轮实际发布](../../verification/2026-10-11-im-reliability-release-result.md)。本任务单列P0媒体发送回归，不改旧通过证据。
 - Root工作树：C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat，codex/im-reliability，起始0ef24bd1（运行时e9d297），tracked干净。primary仍5c83及原评审未跟踪文档，保留不覆盖。
 - owner：root拥有媒体最小修复/失败测试/设备操作/任务与计划；media_regression_trace只读追客户端；backend_review只读聚合服务端。当前未授权其他agent同时改产品文件。
-- 最后更新时间：2026-10-12T19:17:40.677831+08:00；状态：根因调查；下一步：构建未修复2214真实main debug，固定签名/重建后模拟器复现；与源码/服务端证据交叉定位。
+- 最后更新时间：2026-10-12T19:17:40.677831+08:00；状态：已真实复现并定位、修复候选ec9a38a8冻结；下一步：完成2215 main debug常规重建→保数据覆盖→同会话相册图片/视频UI+服务端ACK验收。最终全量并行运行。
 
 ## 验收台账
 
 | ID | 场景/预期 | 当前状态 |
 | --- | --- | --- |
-| M1 | 图片从实际房间入口准备→加密上传→事件ACK成功，无红叹号 | 待复现 |
-| M2 | 视频从实际房间入口准备→加密上传→事件ACK成功，无红叹号 | 待复现 |
-| M3 | 最小根因回归RED→GREEN，重试/取消/账号/大小及相邻媒体路径保持 | 待定位 |
-| M4 | 固定签名/常规重建debug安装至模拟器，保留已有数据，实际图片/视频验证并记录SHA/机型/版本 | 待构建 |
-| M5 | 独立规格→质量、安全与最终适用共享门禁；需要正式修复发行时递增版本并独立记录 | 待实现 |
+| M1 | 图片从实际房间入口准备→加密上传→事件ACK成功，无红叹号 | 2214真实失败；待2215复测 |
+| M2 | 视频从实际房间入口准备→加密上传→事件ACK成功，无红叹号 | 2214真实失败；待2215复测 |
+| M3 | 最小根因回归RED→GREEN，重试/取消/账号/大小及相邻媒体路径保持 | 固定依赖RED→GREEN 14及相邻7PASS，独审14PASS |
+| M4 | 固定签名/常规重建debug安装至模拟器，保留已有数据，实际图片/视频验证并记录SHA/机型/版本 | baseline2214固定签名已覆盖、UID10090保留；2215构建中 |
+| M5 | 独立规格→质量、安全与最终适用共享门禁；需要正式修复发行时递增版本并独立记录 | 源码双审通过；2215发布准备32PASS及独审32PASS；最终门禁/成品待 |
 
 ## 设备与边界
 
@@ -25,3 +25,11 @@
 ## 计时与证据
 
 开始：2026-10-12T19:17:40.677831+08:00；工具实际计时分别记录。证据仅放docs/verification/artifacts/2026-10-12/android2214-media-regression/；原始截图、APK、运行数据不入Git，错误摘要脱敏。无.env的全仓verify预检限制继续保留，但本次有新产品修改必须完成影响门禁，不能复用旧5958来宣称新源码通过。
+
+## 2026-10-12复现与最小修复
+
+- 源码根因：`_bindConnectionStatus`间接进入`_bindMediaOutbox`时generation为0，secure binding的await后`_startup.open()`已推进为1，因此有效账号也被过期检查拒绝，图片/视频共同`owner-unavailable`。最小改动是先open/ready再bind，保留代际、账号、撤销与E2EE保护。原提交ccd45e8e，root集成4024d2a8；当前产品冻结ec9a38a8（0.4.46+2215）。
+- 未修复main debug2214 SHAeec916a1…015f8、125933914B、x86_64，常规重建/固定75b31签名/语义比较PASS；12:22:38Z保数据覆盖2212→2214，UID10090不变。首次签名DPAPI换行解析失败留证，修正仅trim序列化密文，签名身份未改变。
+- 实际唯一成员加密测试房间从真实SDK创建，经公共导航回调进入普通RoomPage，相册UI发送自制JPEG红叹号、MP4提示暂无法发送，queue.active=false。原始截图仅本机、脱敏receipt入证据；未向任何已有多人房间发消息。
+- [复现证据](../../verification/artifacts/2026-10-12/android2214-media-regression/baseline-runtime-receipt.json)、[源码RED/GREEN](../../verification/artifacts/2026-10-12/media-send-startup/README.md)、[独审](../../verification/artifacts/2026-10-12/media-startup-independent-review/README.md)、[服务器只读排查](../../verification/artifacts/2026-10-12/android-2214-media-server-triage/REPORT.md)。服务端窗口六次media upload200不能归属本次2214，不据此声称全部成功。
+- 修复debug构建run：fixed-main-debug-2215，独立最终门禁owner media_regression_trace；root拥有设备、源码版本、文档与正式交付。iOS正式2213及Android厂商通道审核边界保持。
