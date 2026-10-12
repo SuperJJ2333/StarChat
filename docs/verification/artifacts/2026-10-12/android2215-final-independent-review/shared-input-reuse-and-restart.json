@@ -1,0 +1,158 @@
+{
+  "checked_utc": "2026-10-12T13:35:26.237217+00:00",
+  "tested_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "actual_commit": "9990ca6e752271d2a37610bc3be37e68f80a14c0",
+  "actual_manifest_sha256": "fb3e8fd4996747f4f81ebf9b6f39d93dcf430be9829fe3ee2751c1a7d2a4e42d",
+  "source_paths": 2102,
+  "raw_equal_source_files": 2096,
+  "representation_differences_exactly_six": {
+    "apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile/media/MediaStoragePolicy.kt": {
+      "tested_sha256": "de3e959a21d96d52b87d21010ad7a1b530a310afefe849305a0c90062057bb5b",
+      "actual_sha256": "22bd630170e9fcbccc386f89b43e94c575daf46ed65cdf1a575bf7c6c1644074",
+      "tested_CRLF_count": 105,
+      "actual_CRLF_count": 0,
+      "normalized_lf_sha256": "22bd630170e9fcbccc386f89b43e94c575daf46ed65cdf1a575bf7c6c1644074"
+    },
+    "apps/mobile_flutter/android/app/src/test/java/com/liuhetong/mobile/media/NoFollowPosix.java": {
+      "tested_sha256": "27ad2fece2766922e4407ef227b422436bc6781d8bb88498b247ec4d37857e9c",
+      "actual_sha256": "e0250021080e3e6b4d18385fc921c9002e10049b56a7cab922b2874650c4963b",
+      "tested_CRLF_count": 15,
+      "actual_CRLF_count": 0,
+      "normalized_lf_sha256": "e0250021080e3e6b4d18385fc921c9002e10049b56a7cab922b2874650c4963b"
+    },
+    "apps/mobile_flutter/ios/Runner/PrivacyInfo.xcprivacy": {
+      "tested_sha256": "787f9ae6d23746a2586adb7f4651f175b0f2cc0f4b15c0ef2de9beab32a14ffb",
+      "actual_sha256": "5cd41ca734da315f7381ad1cd698f5e898b39bb9fa059e41cd465aaf663097d5",
+      "tested_CRLF_count": 27,
+      "actual_CRLF_count": 0,
+      "normalized_lf_sha256": "5cd41ca734da315f7381ad1cd698f5e898b39bb9fa059e41cd465aaf663097d5"
+    },
+    "apps/mobile_flutter/lib/core/app_config.dart": {
+      "tested_sha256": "c6fa896fca644cf9c87b175a9f4576c0a594c4a6f320c6c0ec2d0dc0b69ebd3f",
+      "actual_sha256": "45200f1420b4d104ade4ce4024c23004943ad79368a4fc9742795ed86ff9bc32",
+      "tested_CRLF_count": 0,
+      "actual_CRLF_count": 74,
+      "normalized_lf_sha256": "c6fa896fca644cf9c87b175a9f4576c0a594c4a6f320c6c0ec2d0dc0b69ebd3f"
+    },
+    "apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart": {
+      "tested_sha256": "38651f0c11c83dec36d625c2728015315cd27107c3703eae595527a10a4b46ea",
+      "actual_sha256": "ff11c524ab84b39cb0f347a67c870d9af3ee591e2b08d165635ef886e949997c",
+      "tested_CRLF_count": 403,
+      "actual_CRLF_count": 0,
+      "normalized_lf_sha256": "ff11c524ab84b39cb0f347a67c870d9af3ee591e2b08d165635ef886e949997c"
+    },
+    "apps/mobile_flutter/test/features/moments/moment_video_test.dart": {
+      "tested_sha256": "9babc4c05d685dcf91449b4dbc6200cfaff4640ece1c327fef0a5639421374ae",
+      "actual_sha256": "80e45f56f1469d75f03343c979369c350e18d0bdda0c7c9cb99f4d4ace3d2b0e",
+      "tested_CRLF_count": 0,
+      "actual_CRLF_count": 1708,
+      "normalized_lf_sha256": "9babc4c05d685dcf91449b4dbc6200cfaff4640ece1c327fef0a5639421374ae"
+    }
+  },
+  "package_config_raw_equal_sha256": "bb7ffa0d3540dd3d2a974fe1506fc541f80f81a49a5a38c74e8fd911b1bafc47",
+  "plugin_metadata_differences_exactly_seven": [
+    {
+      "path": [
+        "plugins",
+        "ios",
+        7,
+        "path"
+      ],
+      "tested": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\media-send-startup-2214\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\flutter_local_notifications\\\\19.4.2\\\\",
+      "actual": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\im-reliability\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\flutter_local_notifications\\\\19.4.2\\\\"
+    },
+    {
+      "path": [
+        "plugins",
+        "ios",
+        26,
+        "path"
+      ],
+      "tested": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\media-send-startup-2214\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\video_compress\\\\",
+      "actual": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\im-reliability\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\video_compress\\\\"
+    },
+    {
+      "path": [
+        "plugins",
+        "android",
+        7,
+        "path"
+      ],
+      "tested": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\media-send-startup-2214\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\flutter_local_notifications\\\\19.4.2\\\\",
+      "actual": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\im-reliability\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\flutter_local_notifications\\\\19.4.2\\\\"
+    },
+    {
+      "path": [
+        "plugins",
+        "android",
+        29,
+        "path"
+      ],
+      "tested": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\media-send-startup-2214\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\video_compress\\\\",
+      "actual": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\im-reliability\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\video_compress\\\\"
+    },
+    {
+      "path": [
+        "plugins",
+        "macos",
+        7,
+        "path"
+      ],
+      "tested": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\media-send-startup-2214\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\flutter_local_notifications\\\\19.4.2\\\\",
+      "actual": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\im-reliability\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\flutter_local_notifications\\\\19.4.2\\\\"
+    },
+    {
+      "path": [
+        "plugins",
+        "macos",
+        21,
+        "path"
+      ],
+      "tested": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\media-send-startup-2214\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\video_compress\\\\",
+      "actual": "C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\im-reliability\\\\StarChat\\\\apps\\\\mobile_flutter\\\\third_party\\\\video_compress\\\\"
+    },
+    {
+      "path": [
+        "date_created"
+      ],
+      "tested": "2026-10-12 19:45:46.049573",
+      "actual": "2026-10-12 21:18:14.387785"
+    }
+  ],
+  "plugin_path_targets": {
+    "flutter_local_notifications": {
+      "relative_directory": "apps/mobile_flutter/third_party/flutter_local_notifications/19.4.2",
+      "files": 105,
+      "inventory_sha256": "676464192c8ed0f419fbb9b8083f133d0b5c653bd8331be61687afe5e9daa791",
+      "all_raw_bytes_equal": true
+    },
+    "video_compress": {
+      "relative_directory": "apps/mobile_flutter/third_party/video_compress",
+      "files": 29,
+      "inventory_sha256": "bc134a3f5279664c9b6c546b12c2bbbdbd0d38cd65824409f5658c38d03e9ed1",
+      "all_raw_bytes_equal": true
+    }
+  },
+  "archived_gate_hashes_verified": 53,
+  "gate_result_scope": {
+    "flutter_pass": 5965,
+    "flutter_skip": 9,
+    "flutter_fail": 0,
+    "analyze_exit": 0,
+    "python_pass": 401,
+    "python_skip": 1,
+    "whole_verify_exit": 1,
+    "whole_verify_reason": "missing local .env; later unrelated stages not executed"
+  },
+  "decision": "Equivalent scoped test inputs, not raw-identical manifests; no new Flutter run required",
+  "actual_apk_approval": false,
+  "process_restart_supplement": {
+    "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2214-media-regression\\fixed-process-restart-receipt.json",
+    "sha256": "22bb472c87949f6938142e130df01989c1452e943a982494700e4a8f856fea86",
+    "before_pid": 10821,
+    "after_pid": 11824,
+    "ack_receipt_sha256": "e9ba07eb50cefd11c250aa0d1a4adcb0c610e3c5714eacedb602d3938c24989f",
+    "timestamps": "Actual force-stop/start wall timestamps unknown, explicitly retained",
+    "source_of_action_evidence": "Root persisted actual command exit and distinct observed PIDs; reviewer no ADB"
+  }
+}

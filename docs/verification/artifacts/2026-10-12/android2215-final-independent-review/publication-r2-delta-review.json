@@ -1,0 +1,322 @@
+{
+  "checked_utc": "2026-10-12T13:56:31.485303+00:00",
+  "status": "PASS_LOCAL_PACKAGE_DELTA_ONLY",
+  "previous_freeze_sha256": "b93b674b717219871374dbe94fb4c6fcd0f6810dccf598f691d544532b4511c8",
+  "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+  "artifact_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+  "source_commit": "9990ca6e752271d2a37610bc3be37e68f80a14c0",
+  "source_manifest_sha256": "fb3e8fd4996747f4f81ebf9b6f39d93dcf430be9829fe3ee2751c1a7d2a4e42d",
+  "runtime_sha256": "2926e0b4c1ced432d97ca37e20a872f983c79f545e4b7d86babb06ebf4b27248",
+  "runtime_bytes": 50856,
+  "frozen_file_hashes": 38,
+  "changed_frozen_members": [
+    "evidence/final_apk.json",
+    "evidence/gates.json",
+    "runtime-2215.tar.gz"
+  ],
+  "runtime_files_and_payloads_identical": true,
+  "runtime_archive_metadata_only_difference": {
+    "old_sha256": "252c69fa6bba2bd76b2dd980917e831c59139b37a63c722afb9e45c93e740f79",
+    "new_sha256": "2926e0b4c1ced432d97ca37e20a872f983c79f545e4b7d86babb06ebf4b27248",
+    "old_bytes": 50885,
+    "new_bytes": 50856,
+    "old_gzip_mtime": 1791812452,
+    "new_gzip_mtime": 1791812925,
+    "tar_member_metadata": [
+      {
+        "name": "bucket-policy-before.json",
+        "old_mtime": 1791812451.8871226,
+        "new_mtime": 1791812924.9983823,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561"
+      },
+      {
+        "name": "cloudfront-before.json",
+        "old_mtime": 1791812451.885169,
+        "new_mtime": 1791812924.9964526,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "49609a753f12ed762b2bb8a8ce22d7c1be1eacd0e562195e642548f5075e9323"
+      },
+      {
+        "name": "delivery_2215.py",
+        "old_mtime": 1791812451.87004,
+        "new_mtime": 1791812924.9834917,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "c3a1f09928796284c20793ec9e68c225dd8f5ff563033ec22adc9f9945314139"
+      },
+      {
+        "name": "hk-live-snapshot.json",
+        "old_mtime": 1791812451.8783333,
+        "new_mtime": 1791812924.989045,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "a5a4eeb9610c953c3f61b71228c6953a764681f5ebe08a96e7ffec3ef12e703a"
+      },
+      {
+        "name": "hk-projection-source.py",
+        "old_mtime": 1791812452.1051357,
+        "new_mtime": 1791812925.1721592,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6"
+      },
+      {
+        "name": "hk-snapshot/download.html",
+        "old_mtime": 1791812451.9699068,
+        "new_mtime": 1791812925.047347,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44"
+      },
+      {
+        "name": "hk-snapshot/downloads/android-release.json",
+        "old_mtime": 1791812451.972836,
+        "new_mtime": 1791812925.0483253,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7"
+      },
+      {
+        "name": "hk-snapshot/downloads/ios/manifest.plist",
+        "old_mtime": 1791812451.9611194,
+        "new_mtime": 1791812925.0385485,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9"
+      },
+      {
+        "name": "hk-snapshot/src/admin-home.js",
+        "old_mtime": 1791812451.95819,
+        "new_mtime": 1791812925.0356197,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27"
+      },
+      {
+        "name": "hk-snapshot/src/download-network-selector.js",
+        "old_mtime": 1791812451.9679537,
+        "new_mtime": 1791812925.0453942,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232"
+      },
+      {
+        "name": "hk-snapshot/src/download-network.js",
+        "old_mtime": 1791812451.9660034,
+        "new_mtime": 1791812925.0434415,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154"
+      },
+      {
+        "name": "hk-snapshot/src/download-redirect.js",
+        "old_mtime": 1791812451.9630728,
+        "new_mtime": 1791812925.040534,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+      },
+      {
+        "name": "prepared-2215/bucket-policy-target.json",
+        "old_mtime": 1791812452.005224,
+        "new_mtime": 1791812925.0790155,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561"
+      },
+      {
+        "name": "prepared-2215/cloudfront-target.json",
+        "old_mtime": 1791812452.0007756,
+        "new_mtime": 1791812925.074559,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "73a892c82f35d78a3d641df185c1ae46c760e51c24b54ccae6c52fdacdcaec86"
+      },
+      {
+        "name": "prepared-2215/release.json",
+        "old_mtime": 1791812451.999799,
+        "new_mtime": 1791812925.0735836,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "a4f8c598fbd4312e8c029120574c3f50d34a8db938b7ef64d3f6300229dc716b"
+      },
+      {
+        "name": "prepared-2215/staged/download.html",
+        "old_mtime": 1791812451.9973347,
+        "new_mtime": 1791812925.0716307,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "eeb75215b8bcea683202923ff27f5ce5c130e139a94d8a286c90f6dd82576dd4"
+      },
+      {
+        "name": "prepared-2215/staged/downloads/android-release.json",
+        "old_mtime": 1791812451.9978595,
+        "new_mtime": 1791812925.0716307,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "cf772f9d1a9e464bc71622ad4603d70ae96cfb14bf8d2966e24bcedde5f6ce5b"
+      },
+      {
+        "name": "release_2215.py",
+        "old_mtime": 1791812451.866135,
+        "new_mtime": 1791812924.9815376,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "1a1fa5c00246d6cd3488af713058c51d3ba091a4bcf5ee3ffa41fc8ac057240d"
+      },
+      {
+        "name": "settings-before.json",
+        "old_mtime": 1791812451.8822405,
+        "new_mtime": 1791812924.992932,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "5185c01abcc022ea5d02cac597ccef0236df5d2ce2a95210d04fbf7dba0d62c1"
+      },
+      {
+        "name": "settings_2215.py",
+        "old_mtime": 1791812451.8734694,
+        "new_mtime": 1791812924.9854448,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "8d4a20399a96ff3207863c2a9227741f948785b43fde65fc81dd69438f2d55f1"
+      },
+      {
+        "name": "sg-live-snapshot.json",
+        "old_mtime": 1791812451.8802874,
+        "new_mtime": 1791812924.9909794,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "38a316ec7e379e21afb2ae84dbc6e5b8e68f1a91fdc9e6dba29ae0315994ed3d"
+      },
+      {
+        "name": "sg-projection-source.py",
+        "old_mtime": 1791812452.1090415,
+        "new_mtime": 1791812925.1736574,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9"
+      },
+      {
+        "name": "static-baseline.json",
+        "old_mtime": 1791812451.8832183,
+        "new_mtime": 1791812924.994884,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "502514a2bb91bb951fcf9cac61a1aa562a3d00fe6cac2031776f40caf0fb99f6"
+      },
+      {
+        "name": "verify_production_2215.py",
+        "old_mtime": 1791812451.8763804,
+        "new_mtime": 1791812924.9873962,
+        "changed_metadata": [
+          "mtime",
+          "chksum",
+          "pax_headers.mtime"
+        ],
+        "payload_sha256": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14"
+      }
+    ]
+  },
+  "native_embedded_json_exactly_matches_independent_report": true,
+  "native_report_sha256": "168bae7b8bd81be9969eba62e63a91522f4fa753f3d17d75c8b77e6b094c4b27",
+  "native_static_16k_checks_pass": false,
+  "native_runtime_16k_verified": false,
+  "native_actual_inspector_exit": 1,
+  "changed_existing_final_gate_fields": [
+    "source_evidence",
+    "limitations"
+  ],
+  "all_executable_payload_source_backfill_and_release_bytes_unchanged": true,
+  "local_package_validation": "PASS",
+  "local_plan_only_validation": {
+    "status": "PLAN_ONLY",
+    "operation": "preflight",
+    "operation_id": "mediafix-20261012-2215",
+    "stages": {
+      "hk": "/opt/starchat/releases/android2215-mediafix-20261012-2215",
+      "sg": "/home/ec2-user/starchat-android2215-mediafix-20261012-2215",
+      "backup": "/opt/starchat/docs/verification/artifacts/2026-10-12/android2215-mediafix-20261012-2215"
+    },
+    "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+    "artifact_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+    "note": "No upload/cloud/service action. --execute requires exact bound release review."
+  },
+  "no_production_or_execution_receipt_created": true,
+  "audit_harness_observations": [
+    "Initial delta assertion omitted regenerated runtime archive; inspected all member payloads and metadata before accepting exact new archive SHA.",
+    "TarInfo also changes header checksum with mtime; no other parsed metadata or payload difference.",
+    "New source_evidence appends exact native report; all previous entries unchanged and all 11 raw hashes/lengths verified."
+  ]
+}

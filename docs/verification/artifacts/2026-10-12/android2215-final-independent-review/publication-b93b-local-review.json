@@ -1,0 +1,56 @@
+{
+  "checked_utc": "2026-10-12T13:45:34.105433+00:00",
+  "freeze_sha256": "b93b674b717219871374dbe94fb4c6fcd0f6810dccf598f691d544532b4511c8",
+  "frozen_file_hashes": 38,
+  "runtime_tar_regular_members": 24,
+  "byte_identical_reviewed_code_commit": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "byte_identical_reviewed_code": {
+    "execute_release.py": {
+      "sha256": "5bab52cada1e3f1aecf631807d323e6df1ba3f6e87a0105a4d70b7da01eae9f7",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/execute_release.py"
+    },
+    "package_release.py": {
+      "sha256": "5f126779f9c8765dc21ebdbfad5f518fc435d374c94e6c913e25b6cc8f6715db",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/package_release.py"
+    },
+    "release_2215.py": {
+      "sha256": "1a1fa5c00246d6cd3488af713058c51d3ba091a4bcf5ee3ffa41fc8ac057240d",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/payload/release_2215.py"
+    },
+    "delivery_2215.py": {
+      "sha256": "c3a1f09928796284c20793ec9e68c225dd8f5ff563033ec22adc9f9945314139",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/payload/delivery_2215.py"
+    },
+    "settings_2215.py": {
+      "sha256": "8d4a20399a96ff3207863c2a9227741f948785b43fde65fc81dd69438f2d55f1",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/payload/settings_2215.py"
+    },
+    "verify_production_2215.py": {
+      "sha256": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/payload/verify_production_2215.py"
+    },
+    "hk-projection-source.py": {
+      "sha256": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/baseline/hk-projection-source.py"
+    },
+    "sg-projection-source.py": {
+      "sha256": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9",
+      "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/baseline/sg-projection-source.py"
+    }
+  },
+  "local_plan_only_validation": {
+    "status": "PLAN_ONLY",
+    "operation": "preflight",
+    "operation_id": "mediafix-20261012-2215",
+    "stages": {
+      "hk": "/opt/starchat/releases/android2215-mediafix-20261012-2215",
+      "sg": "/home/ec2-user/starchat-android2215-mediafix-20261012-2215",
+      "backup": "/opt/starchat/docs/verification/artifacts/2026-10-12/android2215-mediafix-20261012-2215"
+    },
+    "freeze_sha256": "b93b674b717219871374dbe94fb4c6fcd0f6810dccf598f691d544532b4511c8",
+    "artifact_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+    "note": "No upload/cloud/service action. --execute requires exact bound release review."
+  },
+  "no_production_or_execution_receipt_created": true,
+  "final_gate_deficiency": "Native export/static report not yet bound in final_apk.json; says inspection follows. Requires precise updated gate and new package freeze, no APK change."
+}

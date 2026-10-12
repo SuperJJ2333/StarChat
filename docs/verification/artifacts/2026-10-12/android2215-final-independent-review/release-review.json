@@ -1,0 +1,38 @@
+{
+  "artifact_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+  "runtime_sha256": "2926e0b4c1ced432d97ca37e20a872f983c79f545e4b7d86babb06ebf4b27248",
+  "source_commit": "9990ca6e752271d2a37610bc3be37e68f80a14c0",
+  "schema": 1,
+  "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+  "operation_id": "mediafix-20261012-2215",
+  "authorized_operations": [
+    "preflight",
+    "runtime",
+    "upload",
+    "assemble",
+    "hk-install",
+    "cdn-install",
+    "cdn-check",
+    "hk-switch",
+    "publish",
+    "inspect",
+    "audit"
+  ],
+  "checks": {
+    "spec_domain": {
+      "status": "pass",
+      "path": "01-spec-domain.md",
+      "sha256": "b21b2c46e3640cb0799d2d9730f059eb63fec1280c1d8544efd5b0dac227bbab"
+    },
+    "quality_security": {
+      "status": "pass",
+      "path": "02-quality-security.md",
+      "sha256": "525896f7d4e3a692de714eca7da02f803b062319f5e26e0a57d7cc73f9d75c09"
+    }
+  },
+  "review_order": {
+    "spec_domain_completed_utc": "2026-10-12T13:59:14.616560+00:00",
+    "quality_security_completed_utc": "2026-10-12T13:59:14.616560+00:00"
+  },
+  "scope": "Exact Android2215 media-fix publication only; existing 16KiB P1 and device/performance limits retained."
+}

@@ -1,0 +1,1104 @@
+{
+  "source_apk_sha256": "25a6f85774dd5011fc78d675c3958e4168aeed46d3a1bddf2131f943e0387918",
+  "final_apk_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+  "entries": 274,
+  "all_source_final_raw_bytes_equal": true,
+  "files": {
+    "assets/dexopt/baseline.prof": {
+      "sha256": "2d40080449db514173cbd8cf3d2bfb34fb46d6d56d9bcdd13a9bc9c1b55d6c50",
+      "bytes": 2659
+    },
+    "assets/dexopt/baseline.profm": {
+      "sha256": "f4fc51ab44e301f438d46e3515ab87d7b7237c3fbcc2b73c84c4b19c402f9d26",
+      "bytes": 252
+    },
+    "assets/flutter_assets/AssetManifest.bin": {
+      "sha256": "1d7bff7c20befd84bf8b2ab80b51a836ea0be4ccd7b5c1d34c5abd1f39bff75c",
+      "bytes": 21360
+    },
+    "assets/flutter_assets/FontManifest.json": {
+      "sha256": "cd7e03645bc44b2dd47b7cb626f51c4ecbf55a197ab77241628b47ac165fbe21",
+      "bytes": 208
+    },
+    "assets/flutter_assets/NOTICES.Z": {
+      "sha256": "c0fdb2f0009a8a1a8dbb339d4d8d48a46a8ddc1b0867a78c241db4eeb9171bf5",
+      "bytes": 151608
+    },
+    "assets/flutter_assets/NativeAssetsManifest.json": {
+      "sha256": "9548a31e4a048135c1d94f919328bfb62ae2c7bb3cab96557c7941daa97776cb",
+      "bytes": 45
+    },
+    "assets/flutter_assets/assets/branding/liuhetong_logo.svg": {
+      "sha256": "280efb689820d3a732ae4d5b76db36b3359570a850e554e0062584421155951d",
+      "bytes": 434697
+    },
+    "assets/flutter_assets/assets/emoji/ANIMATED_SOURCE_LICENSE.txt": {
+      "sha256": "03aaf19c01575ca63371ac1ff80926f0e655138009f7d108dae593337a9824b0",
+      "bytes": 294
+    },
+    "assets/flutter_assets/assets/emoji/NOTICE.txt": {
+      "sha256": "10b96c6174f4e665c0393a9f3cfb1d36124e1da5b10b0566993d4cdb24f565a2",
+      "bytes": 1170
+    },
+    "assets/flutter_assets/assets/emoji_vector/1st-place-medal.svg": {
+      "sha256": "70c39629a3afc3885a5eec3300d886a574675176b8abc3b9886441e70673c641",
+      "bytes": 10686
+    },
+    "assets/flutter_assets/assets/emoji_vector/LICENSE.txt": {
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+      "bytes": 1141
+    },
+    "assets/flutter_assets/assets/emoji_vector/airplane.svg": {
+      "sha256": "2748b12909210ef650e3b3bb60b20adf872295779fdb1b7cc96e801de60aa7da",
+      "bytes": 16429
+    },
+    "assets/flutter_assets/assets/emoji_vector/angry-face.svg": {
+      "sha256": "62f1ccbf1566c482827732418bd3b5da8740e1cc3e2b8d6941120c99df81eb79",
+      "bytes": 7229
+    },
+    "assets/flutter_assets/assets/emoji_vector/artist-palette.svg": {
+      "sha256": "5042e46f2e5ef7ec29257f7cfae7519ccf4e955e4c95514cd3d1cb6baa6988e2",
+      "bytes": 14065
+    },
+    "assets/flutter_assets/assets/emoji_vector/astonished-face.svg": {
+      "sha256": "2c39a6afb4a2b1b978b6782829a9a9c9a1f5eb7f2e24ff9845310e83fe4366db",
+      "bytes": 7693
+    },
+    "assets/flutter_assets/assets/emoji_vector/automobile.svg": {
+      "sha256": "332515a28bf47396494c3c25c458df74b57248011fccda6b80a939304572e07c",
+      "bytes": 21443
+    },
+    "assets/flutter_assets/assets/emoji_vector/avocado.svg": {
+      "sha256": "30d5c8dcb9485c68c87ca922c8950d3b81a1e646e0e863830717575e68e50594",
+      "bytes": 4266
+    },
+    "assets/flutter_assets/assets/emoji_vector/baby-chick.svg": {
+      "sha256": "ff37f8affb8761648f235439e02eded155dbc22998edf2436daae4ac875ae6ae",
+      "bytes": 14083
+    },
+    "assets/flutter_assets/assets/emoji_vector/balloon.svg": {
+      "sha256": "cee79ac30a9e2416219df036ef632eae1fbcaf144c41f5a78455a35df4f8b3ce",
+      "bytes": 9606
+    },
+    "assets/flutter_assets/assets/emoji_vector/banana.svg": {
+      "sha256": "c4805c12390251833de65c88c33e40a33cb045c4676cf622be0ff0a41c882622",
+      "bytes": 13392
+    },
+    "assets/flutter_assets/assets/emoji_vector/basketball.svg": {
+      "sha256": "f5378fb5406a27ed6f7703f2716d1cde6060ce805215e70c93ad3a48bd098f07",
+      "bytes": 5709
+    },
+    "assets/flutter_assets/assets/emoji_vector/bear.svg": {
+      "sha256": "5fb7f79ad27a145dee6e9baa4c61204ba539350cb3157fe15bee17cb5fa0de9e",
+      "bytes": 26584
+    },
+    "assets/flutter_assets/assets/emoji_vector/beating-heart.svg": {
+      "sha256": "952fe64f3b4d5b1a36c0b4474546bfb8d23fd6899956dba981c11450f8a0f5de",
+      "bytes": 17702
+    },
+    "assets/flutter_assets/assets/emoji_vector/beer-mug.svg": {
+      "sha256": "13e97647e8336e9d62d25b10249a3b34a0ec82b1a867102752003597ef526730",
+      "bytes": 13667
+    },
+    "assets/flutter_assets/assets/emoji_vector/bell.svg": {
+      "sha256": "63cd4ddb24170323ccda654175f78759d9e7d71228fef642a86b65367b679c0e",
+      "bytes": 8389
+    },
+    "assets/flutter_assets/assets/emoji_vector/bento-box.svg": {
+      "sha256": "697c5636aaf64f149fbb8c7cd3eae47f5e202545c42b03b09118c906a953e64a",
+      "bytes": 21384
+    },
+    "assets/flutter_assets/assets/emoji_vector/bicycle.svg": {
+      "sha256": "69ff1be8edeada3d4976af3b215f8add08a73f66286f4a5cf3d0f0bf63526f24",
+      "bytes": 25049
+    },
+    "assets/flutter_assets/assets/emoji_vector/birthday-cake.svg": {
+      "sha256": "98a8fa01c40a01ea28a0e9d007fd6a50084588f73fbc873f6e20d1ac3b44818f",
+      "bytes": 38545
+    },
+    "assets/flutter_assets/assets/emoji_vector/black-heart.svg": {
+      "sha256": "a36433ad5e39fff56719ffbdd4ae7259ce0fb7fbf22d2772201ef62a4388ea9a",
+      "bytes": 6611
+    },
+    "assets/flutter_assets/assets/emoji_vector/blue-heart.svg": {
+      "sha256": "5fff67d011c77b9611bdc1cb55d64070c6a0fc4ccbc4de0a565e50b3a8d923a6",
+      "bytes": 10686
+    },
+    "assets/flutter_assets/assets/emoji_vector/bottle-with-popping-cork.svg": {
+      "sha256": "af9fc32977ac063f7ed7b4185cd110aee6617d658db2a8b2ec882cec5a63a268",
+      "bytes": 22406
+    },
+    "assets/flutter_assets/assets/emoji_vector/bouquet.svg": {
+      "sha256": "bf4fec36ccfc87d4709419942836584d28af9ac24f93901eef1d6ee217715ae2",
+      "bytes": 49251
+    },
+    "assets/flutter_assets/assets/emoji_vector/broken-heart.svg": {
+      "sha256": "4381ec51d95356afcff7e642ee7cd1378b18f694bf9509b11b52cb82bb2fc1ef",
+      "bytes": 11231
+    },
+    "assets/flutter_assets/assets/emoji_vector/brown-heart.svg": {
+      "sha256": "8e3c9b7a7c651e363c057eb0b5ae57ec9406a5b0139a64911ac0de71f79ef568",
+      "bytes": 12522
+    },
+    "assets/flutter_assets/assets/emoji_vector/bubble-tea.svg": {
+      "sha256": "e9058d401133dba67e8048923aacb2cd8f016dc6ba28c24b864bde7f5999b076",
+      "bytes": 12024
+    },
+    "assets/flutter_assets/assets/emoji_vector/butterfly.svg": {
+      "sha256": "953e6f643a2766b42f94d4b3e70f05ea56be7d1b6245b4e341ca5124b181c26c",
+      "bytes": 54446
+    },
+    "assets/flutter_assets/assets/emoji_vector/call-me-hand.svg": {
+      "sha256": "b8e24b53bdc018a542ac376d587c0f8a7e0f28bc5a2caf29067b61e7ceb6fd75",
+      "bytes": 10546
+    },
+    "assets/flutter_assets/assets/emoji_vector/camera.svg": {
+      "sha256": "048b5e1df112270a4ead0c0bf5bf5135a2ebc926a3b61fe06699c53c37c35d89",
+      "bytes": 21121
+    },
+    "assets/flutter_assets/assets/emoji_vector/candy.svg": {
+      "sha256": "8ebea36ac0361905cf1a3a0608de96885b5e3721e551fd5d7415f907b24bb310",
+      "bytes": 8321
+    },
+    "assets/flutter_assets/assets/emoji_vector/cat-face.svg": {
+      "sha256": "4857b934457bce7a8f68458293d2fd517c01af68293e4f2a511fffbe0972e5c5",
+      "bytes": 27855
+    },
+    "assets/flutter_assets/assets/emoji_vector/check-mark-button.svg": {
+      "sha256": "0cc55a959ca40c8b9244dad3118b5e3d247a956a8b1f3027cac2ce8e1f91b088",
+      "bytes": 6579
+    },
+    "assets/flutter_assets/assets/emoji_vector/cherries.svg": {
+      "sha256": "2d0056ea8236d15249870f69c2b27fb57ad63cdb772d044f16f8925caaaa78ed",
+      "bytes": 7660
+    },
+    "assets/flutter_assets/assets/emoji_vector/cherry-blossom.svg": {
+      "sha256": "ed4e107834a7ef2ce28dead3e450d5003c4da77b2555b19fb7712a059d1b2c9f",
+      "bytes": 44143
+    },
+    "assets/flutter_assets/assets/emoji_vector/chocolate-bar.svg": {
+      "sha256": "a04525fbe95bf6330dc65b0427510648f40a096612a5669a1273e04980baee8b",
+      "bytes": 56164
+    },
+    "assets/flutter_assets/assets/emoji_vector/clapping-hands.svg": {
+      "sha256": "d4e1a0303df1e00813f90fa82ab7de8a0687c6c6f0aa454de85bca14c51d6b67",
+      "bytes": 35042
+    },
+    "assets/flutter_assets/assets/emoji_vector/clinking-beer-mugs.svg": {
+      "sha256": "9347a993cf68baad44f0f4e4246508b7a819ee0ee879628cb7f2421985b59426",
+      "bytes": 28894
+    },
+    "assets/flutter_assets/assets/emoji_vector/clinking-glasses.svg": {
+      "sha256": "fb2f0a2425b948339c1812b538611ce3b77deb809ec1faab177d64f7368db641",
+      "bytes": 15386
+    },
+    "assets/flutter_assets/assets/emoji_vector/cloud.svg": {
+      "sha256": "5a133c4fff23b904b593b141fcf31acff109d02adbb80c795a503c00948a4d23",
+      "bytes": 6570
+    },
+    "assets/flutter_assets/assets/emoji_vector/cocktail-glass.svg": {
+      "sha256": "6b7fcfd08abdfb371a1fb6485454809a8b8e28df5662428a5bdaa707528fca30",
+      "bytes": 17708
+    },
+    "assets/flutter_assets/assets/emoji_vector/cold-face.svg": {
+      "sha256": "5882e3620ae34e5eafcfb67de161bc3915d8c2b3a7c98a0659714d7dcf37a922",
+      "bytes": 6972
+    },
+    "assets/flutter_assets/assets/emoji_vector/collision.svg": {
+      "sha256": "19d10fbc2da77e1a476389df1f38cc346743dd58b2c2291075c9e9b9f25e6ac2",
+      "bytes": 15299
+    },
+    "assets/flutter_assets/assets/emoji_vector/confetti-ball.svg": {
+      "sha256": "bc3609619a01c43fd213650f15a217098d874a6a7eece26a71107f225a5e9b8b",
+      "bytes": 32608
+    },
+    "assets/flutter_assets/assets/emoji_vector/confused-face.svg": {
+      "sha256": "25ab7002623fee415856851359f091e2e9482472e5ab72826e9daddd610904b8",
+      "bytes": 6438
+    },
+    "assets/flutter_assets/assets/emoji_vector/cooked-rice.svg": {
+      "sha256": "ac162641fb72908ff8a936224da766cd18f7ac6817a59f21c520e5e0d77bc0dd",
+      "bytes": 10083
+    },
+    "assets/flutter_assets/assets/emoji_vector/cookie.svg": {
+      "sha256": "7a0572380957e3d06a84fa9e15d0a1d8e5b331aae05f296a9604fc050fd8883e",
+      "bytes": 11223
+    },
+    "assets/flutter_assets/assets/emoji_vector/cow-face.svg": {
+      "sha256": "9689c6bfe2bd199ebaf3bca9d47b9478c51ad9c287b2a7723a50e6da94829c57",
+      "bytes": 20434
+    },
+    "assets/flutter_assets/assets/emoji_vector/crescent-moon.svg": {
+      "sha256": "a5948480b6f04db0f08a2a6c80bc7563ac645714b5d43bef3a8d18ac0f38b21e",
+      "bytes": 14637
+    },
+    "assets/flutter_assets/assets/emoji_vector/cross-mark.svg": {
+      "sha256": "218b3253db94d6efc04036539802abc48ac29dc5a89b473dbc038b057e003209",
+      "bytes": 5538
+    },
+    "assets/flutter_assets/assets/emoji_vector/crossed-fingers.svg": {
+      "sha256": "fdda6c12f0ad88c55be78a0a77524285ae0f2cf75c756ad2fdb7ef859485dc22",
+      "bytes": 18811
+    },
+    "assets/flutter_assets/assets/emoji_vector/crown.svg": {
+      "sha256": "767079ca47f179668b187a04d9216e75e3491de089e55bf6cc77dbef4f792978",
+      "bytes": 30738
+    },
+    "assets/flutter_assets/assets/emoji_vector/crying-face.svg": {
+      "sha256": "4585c74ce2c9ae68cbb2913bf2ddd8a641c5c8f9ad002302b06a60c867c413ff",
+      "bytes": 8123
+    },
+    "assets/flutter_assets/assets/emoji_vector/cup-with-straw.svg": {
+      "sha256": "9f3523c703271a5d1d73a60fbc418dfb8a08f82aa0a71250864d2194a77b32f8",
+      "bytes": 6119
+    },
+    "assets/flutter_assets/assets/emoji_vector/cupcake.svg": {
+      "sha256": "d9252df750460df18ace1f65a6ba7613f5a222ed39d84f7197a5dd5d6af5ebe7",
+      "bytes": 62279
+    },
+    "assets/flutter_assets/assets/emoji_vector/disappointed-face.svg": {
+      "sha256": "4020ff920fb14c4b86799e8ff0d1e8eff77635e1dd6975025e3acee4093d9678",
+      "bytes": 5521
+    },
+    "assets/flutter_assets/assets/emoji_vector/dog-face.svg": {
+      "sha256": "a0ab09b5cf43029d19f0491d5e251e2793be00b3a7eb16d47e801e04520091ec",
+      "bytes": 24007
+    },
+    "assets/flutter_assets/assets/emoji_vector/doughnut.svg": {
+      "sha256": "e6afe0df915fb97cee1f72e68c1510c808163c68669c3ee37973bfe2d18737f4",
+      "bytes": 26099
+    },
+    "assets/flutter_assets/assets/emoji_vector/downcast-face-with-sweat.svg": {
+      "sha256": "e53f49ba8e707ef75a615c0bed06b7369fdbbc52f2128e775346a8b94a975dd0",
+      "bytes": 8976
+    },
+    "assets/flutter_assets/assets/emoji_vector/droplet.svg": {
+      "sha256": "570e2c837d385694a89215a65cb1e85cdac74124a37a92580cec02ddb022301c",
+      "bytes": 3411
+    },
+    "assets/flutter_assets/assets/emoji_vector/dumpling.svg": {
+      "sha256": "87b80f2a99bc7202cac6c9e6f8a9bb42da0e9740c0015acc6ff5eb8791992005",
+      "bytes": 14395
+    },
+    "assets/flutter_assets/assets/emoji_vector/exploding-head.svg": {
+      "sha256": "49dffb15e9ead3d58b9782c2dd60e7d8182a8ac618bfc4c327a494e5382f1514",
+      "bytes": 26353
+    },
+    "assets/flutter_assets/assets/emoji_vector/expressionless-face.svg": {
+      "sha256": "9d18407d5f2a43bc385c3d8a7df2fedc0b8bcc88584df35c0e6e25b95d6173b9",
+      "bytes": 5167
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-blowing-a-kiss.svg": {
+      "sha256": "3bd59fba1bc2d1569e8c5bbc4e945ba569f086be8b26d3f8ef6af244f6be0b75",
+      "bytes": 18877
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-holding-back-tears.svg": {
+      "sha256": "270ae4fc2f45a92f138781dd6161ec42e5e4d152e42ccff0d80046bde87759ff",
+      "bytes": 15162
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-savoring-food.svg": {
+      "sha256": "9e60bf5f53136a89e7a19bd60f41414876c8e2fa069246b2c085dcbed847db93",
+      "bytes": 8792
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-screaming-in-fear.svg": {
+      "sha256": "17d2737ec6958f23438cb584d5bb6e26784e711f0ca4035d3b84a523e4c96a24",
+      "bytes": 7407
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-medical-mask.svg": {
+      "sha256": "624c136a1e042090ad73c9d8e31467ca3f08863dcac12fa52033d45a9bca1786",
+      "bytes": 10702
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-open-mouth.svg": {
+      "sha256": "7126ce3f8dc28300a081685a1f9218970f4b5d29c3c9c5df42cd728c264ec32a",
+      "bytes": 6312
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-raised-eyebrow.svg": {
+      "sha256": "0ca88770d668600bdf2dd954db57c8b00b6ea90b74f9162801b3eb1a7ea85c6b",
+      "bytes": 7068
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-rolling-eyes.svg": {
+      "sha256": "b1dbff0b06522a179b5acabed7522b7360feba3ca0753d510997ee2ffd06cfb6",
+      "bytes": 6528
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-symbols-on-mouth.svg": {
+      "sha256": "7919903003341962af248fc800cbc527a807c569da7246ffa9c265718a775f45",
+      "bytes": 8473
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-tears-of-joy.svg": {
+      "sha256": "dc509df87bec9d6eaabb156829cbd94ecee6783065d359c09a88ca53c5889f1b",
+      "bytes": 9717
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-with-thermometer.svg": {
+      "sha256": "aff48d9bab6a5d5eddb1e3c14e1c0fbdba92919b866dfafe554fa38a6d9d892b",
+      "bytes": 7555
+    },
+    "assets/flutter_assets/assets/emoji_vector/face-without-mouth.svg": {
+      "sha256": "8806ed6fdeeedc0c5ead4195cf08d8f3f7650e61840d665f54af16acaa6554d7",
+      "bytes": 6071
+    },
+    "assets/flutter_assets/assets/emoji_vector/fire.svg": {
+      "sha256": "688bfa6aebb41f0cd1c19edc910bb9a1a610d5f9ec87a7b919a6e8b927f23b7a",
+      "bytes": 11504
+    },
+    "assets/flutter_assets/assets/emoji_vector/fireworks.svg": {
+      "sha256": "433ec9496b016f24bd085a1fb1ac0891f12cf3cf18c9fea85a74327fbe9dbb10",
+      "bytes": 17273
+    },
+    "assets/flutter_assets/assets/emoji_vector/fish.svg": {
+      "sha256": "3b4760aa5efaa1482876c679399cd447b0a24b889492a9e7abea3fead8c0f58a",
+      "bytes": 15655
+    },
+    "assets/flutter_assets/assets/emoji_vector/flexed-biceps.svg": {
+      "sha256": "7262ad538f8a54e0db79c9236347e2af57ee346ee3e410cdf397fc7a035d4f33",
+      "bytes": 11068
+    },
+    "assets/flutter_assets/assets/emoji_vector/flushed-face.svg": {
+      "sha256": "4121e458c4e977ff7116a9691bbd30a0befdaf50b0580238ff5b72b9649eaf7a",
+      "bytes": 8084
+    },
+    "assets/flutter_assets/assets/emoji_vector/folded-hands.svg": {
+      "sha256": "bdcc43b72ae0070069d4124bce91c08a182cb026ba972f8c42d98c112d4ef303",
+      "bytes": 14992
+    },
+    "assets/flutter_assets/assets/emoji_vector/four-leaf-clover.svg": {
+      "sha256": "0655ea9e2857dbef5976780c046593a5772facf9a0b3f9c4dca9b616e8e7191b",
+      "bytes": 28998
+    },
+    "assets/flutter_assets/assets/emoji_vector/fox.svg": {
+      "sha256": "7ddd32aa5455437998135a2602bd4923a8383556596e19e499ee51cca12b0a5f",
+      "bytes": 35565
+    },
+    "assets/flutter_assets/assets/emoji_vector/french-fries.svg": {
+      "sha256": "7f7c7c2a4af8a3a97db4738b91f4ec37a3c94cd514c615aeffcc9f693bab8c59",
+      "bytes": 13540
+    },
+    "assets/flutter_assets/assets/emoji_vector/frog.svg": {
+      "sha256": "96911c22f9dd87441a92ff50dda1439cf3f6f0e56f98600b0dcaa174d27ef01c",
+      "bytes": 5101
+    },
+    "assets/flutter_assets/assets/emoji_vector/gem-stone.svg": {
+      "sha256": "571ae6f5e7a246f479f8fc9c6f06eb25f793f84fd981306eccc9e10fc0ab1250",
+      "bytes": 4739
+    },
+    "assets/flutter_assets/assets/emoji_vector/glasses.svg": {
+      "sha256": "e7a809cbb9378b8ab61ed37f77e81a8cbe2e6427c765f674686dc00aa63898aa",
+      "bytes": 14018
+    },
+    "assets/flutter_assets/assets/emoji_vector/glowing-star.svg": {
+      "sha256": "f8ad070875dfe323defd1470b2985a70811a20be3353e93ed6622314fca2b9d8",
+      "bytes": 12252
+    },
+    "assets/flutter_assets/assets/emoji_vector/grapes.svg": {
+      "sha256": "743de205074e5bb02e1358245c07b9d5c6d8988ac228da0f5efb5c4ca9a17c27",
+      "bytes": 17604
+    },
+    "assets/flutter_assets/assets/emoji_vector/green-apple.svg": {
+      "sha256": "622e3849b3debe97d8ac5bbaa1ed415004c5ff75feb8a9ccd41b9c979714f635",
+      "bytes": 5624
+    },
+    "assets/flutter_assets/assets/emoji_vector/green-heart.svg": {
+      "sha256": "1d7dba2922c8b0c4a5e793744a787a843b4ffaccea71d1167316992e5fa5acbd",
+      "bytes": 11138
+    },
+    "assets/flutter_assets/assets/emoji_vector/grimacing-face.svg": {
+      "sha256": "5854bc12995bc32717e961d7671516ccdbf687b92d2438c75eb53cd57f2cceb1",
+      "bytes": 7748
+    },
+    "assets/flutter_assets/assets/emoji_vector/grinning-face-with-big-eyes.svg": {
+      "sha256": "a7c5b6099edee42f67c5302aeaf440f646732cfaea2fa968cff6cf79345be342",
+      "bytes": 7528
+    },
+    "assets/flutter_assets/assets/emoji_vector/grinning-face-with-smiling-eyes.svg": {
+      "sha256": "fa2504db0b2fdf1477594e05429685869b774dce742f8584d57542913661eacb",
+      "bytes": 7431
+    },
+    "assets/flutter_assets/assets/emoji_vector/grinning-face-with-sweat.svg": {
+      "sha256": "3d407ad019a856641e249f108f04d96b7f52758a83b9354e93547810c8c10cd7",
+      "bytes": 8026
+    },
+    "assets/flutter_assets/assets/emoji_vector/grinning-face.svg": {
+      "sha256": "393e972f991119bafa1ac743d580b178530281124f0273b76a74de52dba633f1",
+      "bytes": 6764
+    },
+    "assets/flutter_assets/assets/emoji_vector/growing-heart.svg": {
+      "sha256": "bfe8201b3de09537105bf73668d674a80045ef425d282a4d5b0009956df72c44",
+      "bytes": 21538
+    },
+    "assets/flutter_assets/assets/emoji_vector/hamburger.svg": {
+      "sha256": "d88ca962f5f52218a1903fa2e352c799c0f6254ad597500b34b15370eadcd359",
+      "bytes": 19641
+    },
+    "assets/flutter_assets/assets/emoji_vector/handshake.svg": {
+      "sha256": "35dbe0f9657fb06bbfa5b6d496ee4dcf66a900535f77d89f27b1803053a98f38",
+      "bytes": 28134
+    },
+    "assets/flutter_assets/assets/emoji_vector/heart-decoration.svg": {
+      "sha256": "422b0051c834a543086a2b5be30708fd87d8f4268596e2c97609db76bdb205dd",
+      "bytes": 5297
+    },
+    "assets/flutter_assets/assets/emoji_vector/heart-with-arrow.svg": {
+      "sha256": "b8836164d67c0f09acece6f2e60afdd619e727da6955065d4b1fa8105cb0eec8",
+      "bytes": 5831
+    },
+    "assets/flutter_assets/assets/emoji_vector/heart-with-ribbon.svg": {
+      "sha256": "f6cf80d5d39472df38862953d1d9c450c0bfb6b92d1b169a9a626b4a9b21947d",
+      "bytes": 38214
+    },
+    "assets/flutter_assets/assets/emoji_vector/hibiscus.svg": {
+      "sha256": "df686ead53d6ef8ae913c68f42c0d8b483bbbb2e13b4549bc218d82c7df01c0b",
+      "bytes": 26840
+    },
+    "assets/flutter_assets/assets/emoji_vector/high-voltage.svg": {
+      "sha256": "3ad0ac24b51ea0ecc52c8c99839a36eabb686f1bfc49e516300c66aa85b1c512",
+      "bytes": 4944
+    },
+    "assets/flutter_assets/assets/emoji_vector/honeybee.svg": {
+      "sha256": "102979345dfdb616b3fd1d430cd3480572ac4b08013e14c415e3664f1d7a9167",
+      "bytes": 33833
+    },
+    "assets/flutter_assets/assets/emoji_vector/hot-beverage.svg": {
+      "sha256": "f99e191de8a1bfa18cb6f454c6e42b3ce75f96ee8f3ea7a33f88f7ec63fb8b79",
+      "bytes": 10640
+    },
+    "assets/flutter_assets/assets/emoji_vector/hot-dog.svg": {
+      "sha256": "5f49bc97d5340bd77dd271b27c69a18dd0a5f80103d5a8f3e5fac4b6793a1475",
+      "bytes": 10777
+    },
+    "assets/flutter_assets/assets/emoji_vector/hot-face.svg": {
+      "sha256": "d277ab5bcf9b4aa0c08ab1b0a6e963fde56025e8c84e272348d0d4c615b55195",
+      "bytes": 12459
+    },
+    "assets/flutter_assets/assets/emoji_vector/hugging-face.svg": {
+      "sha256": "73e96fea4b4a59a75a949081437a0649f51338f4003ce4b26c91765be0091721",
+      "bytes": 32819
+    },
+    "assets/flutter_assets/assets/emoji_vector/hundred-points.svg": {
+      "sha256": "ebe9f54212dee61560035a52ed53b1c0017d87919450d6ee6cb0cee78814156b",
+      "bytes": 20634
+    },
+    "assets/flutter_assets/assets/emoji_vector/hushed-face.svg": {
+      "sha256": "7af7d225626bbe8846c117812453d77b322b033a975799d89641c13edc778924",
+      "bytes": 7177
+    },
+    "assets/flutter_assets/assets/emoji_vector/ice-cream.svg": {
+      "sha256": "d6fea9fdccb72fee6f0b913892aacdd617bb650c5a1c9c8e70f71f37a8eac32e",
+      "bytes": 13230
+    },
+    "assets/flutter_assets/assets/emoji_vector/index-pointing-up.svg": {
+      "sha256": "19e128e48828fb47ee726c5e82ff207cf6c950a0ffe1e59d3a7b6fc208a15580",
+      "bytes": 18306
+    },
+    "assets/flutter_assets/assets/emoji_vector/kiwi-fruit.svg": {
+      "sha256": "4a1f142693301e37feb32e8d0afddaf0ac5f8469f9d6ed003c3c331c7064d1a4",
+      "bytes": 16636
+    },
+    "assets/flutter_assets/assets/emoji_vector/leaf-fluttering-in-wind.svg": {
+      "sha256": "4b92e95b51a5a41ecc6cb1b24ccc846e144dc749c01c3ecbc0f431f6115d3506",
+      "bytes": 26023
+    },
+    "assets/flutter_assets/assets/emoji_vector/lemon.svg": {
+      "sha256": "f31959c7e9abe90ba4efc457c1a68212227da92fb420fdf3ea19291e31c56c90",
+      "bytes": 4945
+    },
+    "assets/flutter_assets/assets/emoji_vector/lion.svg": {
+      "sha256": "2fc9a0def329d1c068f8c5c78cdeb96a0b38f10f7b0f9d3f26b97ff65fdda47e",
+      "bytes": 41879
+    },
+    "assets/flutter_assets/assets/emoji_vector/lollipop.svg": {
+      "sha256": "754dcd40bd11ca3b79f63e529ee0003461e48ebe3bd19e4a24c9b85fa4a344b2",
+      "bytes": 8850
+    },
+    "assets/flutter_assets/assets/emoji_vector/loudly-crying-face.svg": {
+      "sha256": "2fe7b093885648777dbde6a681a3e43dbd852afba3d686350df064af478b1159",
+      "bytes": 6204
+    },
+    "assets/flutter_assets/assets/emoji_vector/love-letter.svg": {
+      "sha256": "a440ef0d36e1a04be9fefe27cc200b21fc7876735547d932171897c439a8e5a1",
+      "bytes": 8978
+    },
+    "assets/flutter_assets/assets/emoji_vector/love-you-gesture.svg": {
+      "sha256": "305dc0401785ecee3419dd1d2163a32662d195b750e53d836f8daa50772af79b",
+      "bytes": 14486
+    },
+    "assets/flutter_assets/assets/emoji_vector/lying-face.svg": {
+      "sha256": "72f3cb879d6fa0ac3287e6e021cc6493f149810a7c112858a31380a17b92ba8c",
+      "bytes": 7639
+    },
+    "assets/flutter_assets/assets/emoji_vector/mango.svg": {
+      "sha256": "134cf830c602cbfee168073c495acd9d18e8c6d188957f9e24698d0be3b30a40",
+      "bytes": 4850
+    },
+    "assets/flutter_assets/assets/emoji_vector/melon.svg": {
+      "sha256": "056c630d83b59e40dbf2efbc07545136bf8e7c64a671f536a60c1ffea1de150b",
+      "bytes": 5425
+    },
+    "assets/flutter_assets/assets/emoji_vector/melting-face.svg": {
+      "sha256": "cb4e13580222409c36010075cfbaf2a4d4a1823b562a0273fc45241d2bdf1646",
+      "bytes": 19763
+    },
+    "assets/flutter_assets/assets/emoji_vector/monkey-face.svg": {
+      "sha256": "cc78cbd4f10f0d83fe39dc86c1af6e3e4c83c2eb9517ece59ecffc40234aa30e",
+      "bytes": 20349
+    },
+    "assets/flutter_assets/assets/emoji_vector/mouse-face.svg": {
+      "sha256": "5504ebc531b73bc2d9768052265acc750b3c5cc604e96ceb95ceb926f38c5d1d",
+      "bytes": 19968
+    },
+    "assets/flutter_assets/assets/emoji_vector/musical-note.svg": {
+      "sha256": "e5b3a821b6bbdcf5777fe0915f10e2888d80c21ab5d08694d82f2f2ac2daccde",
+      "bytes": 7775
+    },
+    "assets/flutter_assets/assets/emoji_vector/musical-notes.svg": {
+      "sha256": "b656ca3dba4d4f3ab0649f2a1e9a0f91384b47f71cd1bb5a3ff86809c06de21e",
+      "bytes": 16188
+    },
+    "assets/flutter_assets/assets/emoji_vector/nerd-face.svg": {
+      "sha256": "8c898d3d016f21ea1b02ed5bcefd926e3a965fb8323facefd78c32a3ec1d5432",
+      "bytes": 8511
+    },
+    "assets/flutter_assets/assets/emoji_vector/neutral-face.svg": {
+      "sha256": "73b6c7f0b5c7a8bb74624c63c0888d35d67d653ec81dcdce753ce4ef1ee99211",
+      "bytes": 6485
+    },
+    "assets/flutter_assets/assets/emoji_vector/ok-hand.svg": {
+      "sha256": "24e7967d493213f670ca47f851181acfe14b253822ed6a47587d420898635691",
+      "bytes": 18180
+    },
+    "assets/flutter_assets/assets/emoji_vector/oncoming-fist.svg": {
+      "sha256": "bab0d65e35414e006c24acad1ccfa19e4e161681b490845aa59b168a43059538",
+      "bytes": 14619
+    },
+    "assets/flutter_assets/assets/emoji_vector/open-hands.svg": {
+      "sha256": "52e2a9ead78457d9a20d1ecd34ebdefd375e1c94b904b0af3a77ba081de1555b",
+      "bytes": 33625
+    },
+    "assets/flutter_assets/assets/emoji_vector/orange-heart.svg": {
+      "sha256": "0da69f853d9922490e8e942807fe407c384947ca58d265c0c0ea40a8e8475ba3",
+      "bytes": 8083
+    },
+    "assets/flutter_assets/assets/emoji_vector/owl.svg": {
+      "sha256": "75901c902d52b46289b81eb887de09c352bb735791291fe57cf58c9ec263af86",
+      "bytes": 18003
+    },
+    "assets/flutter_assets/assets/emoji_vector/panda.svg": {
+      "sha256": "1adc36eb46746bc06e7a3de77c0d579f5a9a2c7522b84fae59085765860cd2df",
+      "bytes": 22170
+    },
+    "assets/flutter_assets/assets/emoji_vector/party-popper.svg": {
+      "sha256": "b4c9f963d4abb2f482df27824ac07df95452a10985820cc8a1d8f92b16a2c2ee",
+      "bytes": 29134
+    },
+    "assets/flutter_assets/assets/emoji_vector/partying-face.svg": {
+      "sha256": "155e4b88434cf766d4939e3a53492429a509548f37faad60a158caf0773f8a24",
+      "bytes": 13618
+    },
+    "assets/flutter_assets/assets/emoji_vector/peach.svg": {
+      "sha256": "0605f5f3d4d72e9d859ea89b14752629720dc1586e5ac6b9dd3c5ed4f09d4928",
+      "bytes": 10790
+    },
+    "assets/flutter_assets/assets/emoji_vector/penguin.svg": {
+      "sha256": "eb5e48397058c7a06a4d04eaf1bd083762a0e85ffb78b99de16e217d4655c1da",
+      "bytes": 22975
+    },
+    "assets/flutter_assets/assets/emoji_vector/pig-face.svg": {
+      "sha256": "aa90af790dcd3b0b4104c08b76e5c847fb1de0ff327c601206637ecda4d98f9f",
+      "bytes": 26024
+    },
+    "assets/flutter_assets/assets/emoji_vector/pinching-hand.svg": {
+      "sha256": "b49f3a2eb09d28e38818216d383c5fef3635c2450a0357897b38176c02407dd2",
+      "bytes": 15591
+    },
+    "assets/flutter_assets/assets/emoji_vector/pineapple.svg": {
+      "sha256": "09526b664a727cae88a4b66fcac3a4b86b98ef56e9f99ad1133ae05025178f53",
+      "bytes": 13355
+    },
+    "assets/flutter_assets/assets/emoji_vector/ping-pong.svg": {
+      "sha256": "6dc1a17a35d32c46f2895fb7785e88fcba10e5ab0ff5523faa549383c3d0c0bf",
+      "bytes": 155860
+    },
+    "assets/flutter_assets/assets/emoji_vector/pizza.svg": {
+      "sha256": "034229299918b2bec344b73d41bd95c62e15abe4cf3ffa8ac84c8b034c55b509",
+      "bytes": 6023
+    },
+    "assets/flutter_assets/assets/emoji_vector/pleading-face.svg": {
+      "sha256": "f331556e3432119bca581d73017675f1839bd0d8a811ca62e7a9804093ebaaef",
+      "bytes": 8117
+    },
+    "assets/flutter_assets/assets/emoji_vector/pouting-face.svg": {
+      "sha256": "0889212b84f665448a3809ef294644bbfb2db511b0571a9874ba0cb3af274597",
+      "bytes": 6179
+    },
+    "assets/flutter_assets/assets/emoji_vector/purple-heart.svg": {
+      "sha256": "0920c3f3cdf6dfc6a40869c3b8f58300d8add75483b4c292052eb7e3ab4087b3",
+      "bytes": 11272
+    },
+    "assets/flutter_assets/assets/emoji_vector/rabbit-face.svg": {
+      "sha256": "b1f4ec70262e65015c221e8757d9e9ab466340cd3c04c1ef3b643a985e7391d8",
+      "bytes": 28341
+    },
+    "assets/flutter_assets/assets/emoji_vector/rainbow.svg": {
+      "sha256": "1ccc6c7255beeda6f40bbec8930a01910520ec0db09d445b1e1796d3804020f0",
+      "bytes": 11742
+    },
+    "assets/flutter_assets/assets/emoji_vector/raised-fist.svg": {
+      "sha256": "77232acf6d1b5d9425d546e86eb20b176b776d0c7eaf65fc89253137d7d8b1e5",
+      "bytes": 14786
+    },
+    "assets/flutter_assets/assets/emoji_vector/raised-hand.svg": {
+      "sha256": "187a5dfd4ca9e996024371ee8842f8b7948fe3dfc1d381bc40d75abbdd8ef5d1",
+      "bytes": 26040
+    },
+    "assets/flutter_assets/assets/emoji_vector/red-apple.svg": {
+      "sha256": "bf19247675fb8ec2573dbaa40d79f98d4ec9c49e659c79dd1d210941a70af631",
+      "bytes": 5637
+    },
+    "assets/flutter_assets/assets/emoji_vector/red-exclamation-mark.svg": {
+      "sha256": "c5df5d812fde5b76372576bc3aa2aceb5992d249f1aeb40fe3e6df6e45bc1484",
+      "bytes": 3815
+    },
+    "assets/flutter_assets/assets/emoji_vector/red-heart.svg": {
+      "sha256": "4fdca8d6dc2291916ee840d17438ccbfb27890aa62b92bc68e54ef888c78f5b9",
+      "bytes": 9503
+    },
+    "assets/flutter_assets/assets/emoji_vector/red-question-mark.svg": {
+      "sha256": "b0491df1beedeac8d159b0e9a703123aff52bd26eac31b0272702a849c7ce32a",
+      "bytes": 4635
+    },
+    "assets/flutter_assets/assets/emoji_vector/relieved-face.svg": {
+      "sha256": "d306ba0680f0380d0544fb79af416990480116f6acfc37008c70a88b29f5cdc9",
+      "bytes": 6546
+    },
+    "assets/flutter_assets/assets/emoji_vector/revolving-hearts.svg": {
+      "sha256": "3d3337b3bb5e65ca0aa0e4c4a00c05069dc2db8013eebeb93d8ace57ad8d1587",
+      "bytes": 21366
+    },
+    "assets/flutter_assets/assets/emoji_vector/rocket.svg": {
+      "sha256": "d0d2c84d798cb0d73986ebb6f332c6db2844a4e4225d9aba4afb7c492a3c1342",
+      "bytes": 19382
+    },
+    "assets/flutter_assets/assets/emoji_vector/rolling-on-the-floor-laughing.svg": {
+      "sha256": "c3b613e6f712a108746f432937228309259ab4017fabddf434cb10ab5174e8b4",
+      "bytes": 13763
+    },
+    "assets/flutter_assets/assets/emoji_vector/rose.svg": {
+      "sha256": "7eba4bfc1fa46c049932d1b83d7d270e902cebaa1fba9f99c4735ae13c078c9e",
+      "bytes": 24474
+    },
+    "assets/flutter_assets/assets/emoji_vector/saluting-face.svg": {
+      "sha256": "7c84fcaf73de6281a8df3bc30a79c76832fe5216aaa9d8887c3fe980caf29c9a",
+      "bytes": 27616
+    },
+    "assets/flutter_assets/assets/emoji_vector/sandwich.svg": {
+      "sha256": "7301919287827605c83b5e989931bd84b13d6670d675deada94f7917560c5590",
+      "bytes": 19798
+    },
+    "assets/flutter_assets/assets/emoji_vector/shark.svg": {
+      "sha256": "cae9dc804d15fb3ec496858c26ffdb02e8d82a0be9a72a99989de8da3f5cf745",
+      "bytes": 31452
+    },
+    "assets/flutter_assets/assets/emoji_vector/ship.svg": {
+      "sha256": "24882954452ee3d6aecebe62c6832b566dbbf6fbdfec3f857b966da8ea90ceb1",
+      "bytes": 13049
+    },
+    "assets/flutter_assets/assets/emoji_vector/shooting-star.svg": {
+      "sha256": "96d5c14248a7fbcfb33dd7414c412e1b1db92009464ba70edbcca354808f85e4",
+      "bytes": 9446
+    },
+    "assets/flutter_assets/assets/emoji_vector/shortcake.svg": {
+      "sha256": "35b8a4190d3f3cb02b5db6490796197a20d3488ec4306c705c129a5d1b01b311",
+      "bytes": 15604
+    },
+    "assets/flutter_assets/assets/emoji_vector/shushing-face.svg": {
+      "sha256": "469a93c316d111dc5f4e7a243170feedea9d72ea36cf47b2c6259218fde209e4",
+      "bytes": 8196
+    },
+    "assets/flutter_assets/assets/emoji_vector/sign-of-the-horns.svg": {
+      "sha256": "0f93780c6cd22dad777d62de7d4ee3b27c9e530cd3ac2c0eb9f4454e5ed18f77",
+      "bytes": 13494
+    },
+    "assets/flutter_assets/assets/emoji_vector/sleeping-face.svg": {
+      "sha256": "a0dc8edd94873bbf04ea03f50a18eb422f568dd7dd7e3d8bf70f99c828f5fb7c",
+      "bytes": 8779
+    },
+    "assets/flutter_assets/assets/emoji_vector/sleepy-face.svg": {
+      "sha256": "b6c3ce6c837844fbfe8925a83092d2caf8fe409c8c44386f33845fd8ced808a2",
+      "bytes": 6691
+    },
+    "assets/flutter_assets/assets/emoji_vector/slightly-frowning-face.svg": {
+      "sha256": "7e1cf95bdfc0982a22b10cc765957101592c4b9f984bafb833cb7d73955656c4",
+      "bytes": 6760
+    },
+    "assets/flutter_assets/assets/emoji_vector/slightly-smiling-face.svg": {
+      "sha256": "00149b3e405a5194b98991a64ca75470a1b5bdb401c23a735a68579b28168a23",
+      "bytes": 6954
+    },
+    "assets/flutter_assets/assets/emoji_vector/smiling-face-with-halo.svg": {
+      "sha256": "e39ecf04e765edaf74afe9f68664affd26511f9983a6ec7379bdce7492a1a722",
+      "bytes": 12220
+    },
+    "assets/flutter_assets/assets/emoji_vector/smiling-face-with-heart-eyes.svg": {
+      "sha256": "51337d33d76cd50cb538218c424d2d7eaaec2703a5d8a21c6f083fed0857f07b",
+      "bytes": 8512
+    },
+    "assets/flutter_assets/assets/emoji_vector/smiling-face-with-hearts.svg": {
+      "sha256": "eb1f6eeb286837eaee8aa47015ea07932f2dcee3401f56cbe93994d63c3a4055",
+      "bytes": 12703
+    },
+    "assets/flutter_assets/assets/emoji_vector/smiling-face-with-smiling-eyes.svg": {
+      "sha256": "8db436d1042c1a7757c990f2202f03e4d1377b3d53b8ed816811d00e82c2c87d",
+      "bytes": 8392
+    },
+    "assets/flutter_assets/assets/emoji_vector/smiling-face-with-sunglasses.svg": {
+      "sha256": "2e755d735a6051e2a243c5efac548f65e8f13501c4f7aec2c958a09a51c373b0",
+      "bytes": 24628
+    },
+    "assets/flutter_assets/assets/emoji_vector/smirking-face.svg": {
+      "sha256": "802c595eea5429998e36f5e654158a01f743190697c35901e1fe2e128e2f0c2a",
+      "bytes": 6479
+    },
+    "assets/flutter_assets/assets/emoji_vector/snake.svg": {
+      "sha256": "1b2b9f51106dda090dc2c86e2e39489c1f83dbdf625c0e3745632e63b37708cd",
+      "bytes": 27347
+    },
+    "assets/flutter_assets/assets/emoji_vector/sneezing-face.svg": {
+      "sha256": "8e91bd096be505c41915d44a102fc79c017a8ee972ac8f2fc16117e89949ae9f",
+      "bytes": 17521
+    },
+    "assets/flutter_assets/assets/emoji_vector/snowflake.svg": {
+      "sha256": "e7b439e3839de7facd184254904521fce99b5f4a45813452b74c08611f78dff4",
+      "bytes": 39792
+    },
+    "assets/flutter_assets/assets/emoji_vector/soccer-ball.svg": {
+      "sha256": "37f894ef43d5527d1886233c335db0617e94f2d5d767725c16d84a42f8b6d85f",
+      "bytes": 33993
+    },
+    "assets/flutter_assets/assets/emoji_vector/soft-ice-cream.svg": {
+      "sha256": "fe0d4afc5b98b3968fe8ac5ed5d0112c6d3ef17ed0afb710ae7d8a98e27cdff2",
+      "bytes": 17671
+    },
+    "assets/flutter_assets/assets/emoji_vector/sparkler.svg": {
+      "sha256": "0d0b0b35a3a0f5c2f01465ca8d60dba5cbba8736d439461648d13d88398de5c4",
+      "bytes": 18041
+    },
+    "assets/flutter_assets/assets/emoji_vector/sparkles.svg": {
+      "sha256": "3d99bf25218fdd6dc295976f5c7a1edc75bb2711629d6694e02ef45a1833007b",
+      "bytes": 9126
+    },
+    "assets/flutter_assets/assets/emoji_vector/sparkling-heart.svg": {
+      "sha256": "72c1d72728c6b1bb8b664d73f973ad5d5f67260d4b40ee195f0f41247224c915",
+      "bytes": 25389
+    },
+    "assets/flutter_assets/assets/emoji_vector/spouting-whale.svg": {
+      "sha256": "581282fe9d5232a2ce886c24f5f4658d5be834f84c8d8ce7b95e19ce39b78fb5",
+      "bytes": 42377
+    },
+    "assets/flutter_assets/assets/emoji_vector/star-struck.svg": {
+      "sha256": "1e76e50cd7680ef5a50de980971aebab691f4026812723e612f616100589e85c",
+      "bytes": 10261
+    },
+    "assets/flutter_assets/assets/emoji_vector/star.svg": {
+      "sha256": "34c9d8622d9d7aef5d7b9e96e61b22d94f335e9eb32236acfa7c05333dd917be",
+      "bytes": 7742
+    },
+    "assets/flutter_assets/assets/emoji_vector/steaming-bowl.svg": {
+      "sha256": "d610afb383544e9200ef81954ebf28d46575236fbfbd8e7faa39aef4ef2cf908",
+      "bytes": 15368
+    },
+    "assets/flutter_assets/assets/emoji_vector/strawberry.svg": {
+      "sha256": "8a16b27a977fd00df2e9a7a44e742ab0ed57694244d96a808a499b7f0e93086c",
+      "bytes": 28070
+    },
+    "assets/flutter_assets/assets/emoji_vector/sun.svg": {
+      "sha256": "067c5fd5bf5b07444f6d2caf637596e418efea6d6a2b9cecd8a14d62ded077e4",
+      "bytes": 18424
+    },
+    "assets/flutter_assets/assets/emoji_vector/sunflower.svg": {
+      "sha256": "1241950db8e3062a16981a5fdb6a15f266a115a7a3ae4335f538412d2720313d",
+      "bytes": 23132
+    },
+    "assets/flutter_assets/assets/emoji_vector/sushi.svg": {
+      "sha256": "27076014a3a9d577a1d61f6d8c7116c49ac9798d72fa0c5b95b056751e13c28b",
+      "bytes": 11746
+    },
+    "assets/flutter_assets/assets/emoji_vector/t-shirt.svg": {
+      "sha256": "b20862909c7c90f1a42b3343a080f9ea0cb5554f5701239cda67cdbd1724ace0",
+      "bytes": 13593
+    },
+    "assets/flutter_assets/assets/emoji_vector/taco.svg": {
+      "sha256": "5a1d32124c3ed2245a6514e2942660b243b4e4737001b34cbde8ec59bc96dadc",
+      "bytes": 6504
+    },
+    "assets/flutter_assets/assets/emoji_vector/tangerine.svg": {
+      "sha256": "a6768b38b23258c3f06de4265acd2995459e697a206ebdd571e1bf9520e2ab92",
+      "bytes": 6559
+    },
+    "assets/flutter_assets/assets/emoji_vector/taxi.svg": {
+      "sha256": "4d99e9bae99d046bfaf67ba2440550b8c9933497345149387a7e874fe8ea7aae",
+      "bytes": 32494
+    },
+    "assets/flutter_assets/assets/emoji_vector/thinking-face.svg": {
+      "sha256": "576525b089bfc1584b3d3f2410cab10389195edbf57557fc9a98ab6b6e826d8e",
+      "bytes": 11800
+    },
+    "assets/flutter_assets/assets/emoji_vector/thumbs-down.svg": {
+      "sha256": "6405c065f6f92e295d25e8ea8eb05cf4bd3aec9992bca7b0cd9511af41be17f6",
+      "bytes": 15249
+    },
+    "assets/flutter_assets/assets/emoji_vector/thumbs-up.svg": {
+      "sha256": "de96c03713c85002207d7cefc7e07828f5ba5c2cff28f117c2ff2e08033dc289",
+      "bytes": 22181
+    },
+    "assets/flutter_assets/assets/emoji_vector/tiger-face.svg": {
+      "sha256": "992f9a3d86451ca17ef1a8ee834a6540609cc52984b76520404410fb7574c633",
+      "bytes": 28640
+    },
+    "assets/flutter_assets/assets/emoji_vector/tired-face.svg": {
+      "sha256": "54cfb73878f68e10f49a9711ed5a403a84e64798f061de20be327514a56179ec",
+      "bytes": 17549
+    },
+    "assets/flutter_assets/assets/emoji_vector/tomato.svg": {
+      "sha256": "a4cc6a298587d4e66bc1954e2b9bd640dd1695bba11ecfc08aedbb49043815a0",
+      "bytes": 14338
+    },
+    "assets/flutter_assets/assets/emoji_vector/trophy.svg": {
+      "sha256": "347b6db7650fa3eff37edf5aa53381a3a99b2af42f55d32d42d3a3c7f3179aea",
+      "bytes": 14420
+    },
+    "assets/flutter_assets/assets/emoji_vector/tropical-fish.svg": {
+      "sha256": "fde2cf7e643823f40d6c20a2b24139c9586d40d52d84890a3319ba26dbef910f",
+      "bytes": 11262
+    },
+    "assets/flutter_assets/assets/emoji_vector/tulip.svg": {
+      "sha256": "ae1a8691d5aad46ce8c6cd73db910758cd087bb0baa355c418218b60f0bac7dd",
+      "bytes": 19101
+    },
+    "assets/flutter_assets/assets/emoji_vector/turtle.svg": {
+      "sha256": "1e44ebd9faf8717c7662ea969ca93b344ce3330a036f1271737daf72b6ba0794",
+      "bytes": 26810
+    },
+    "assets/flutter_assets/assets/emoji_vector/two-hearts.svg": {
+      "sha256": "81e8e1b7e19efa8841dbdec1e6783b4fd1cdd5c3a2196812d1e00ee44043591c",
+      "bytes": 15212
+    },
+    "assets/flutter_assets/assets/emoji_vector/umbrella-with-rain-drops.svg": {
+      "sha256": "522f2947533553b57ceec900cb0a98debf60d91d4f6f5e38aed882056191946b",
+      "bytes": 24829
+    },
+    "assets/flutter_assets/assets/emoji_vector/unamused-face.svg": {
+      "sha256": "b74cb2aa5f4d3e0dbab8df928166a333a95484d356cfd8ec75867a5a05416b6a",
+      "bytes": 6362
+    },
+    "assets/flutter_assets/assets/emoji_vector/upside-down-face.svg": {
+      "sha256": "2d8115581ddbbc81e5e32a67ff2658b4040d41b40c7f84a49cb3716adf1021c6",
+      "bytes": 7009
+    },
+    "assets/flutter_assets/assets/emoji_vector/victory-hand.svg": {
+      "sha256": "4c8051f32237b90be10a4de8158cec9e97a74d62e695d488ffe431686636bf81",
+      "bytes": 18330
+    },
+    "assets/flutter_assets/assets/emoji_vector/warning.svg": {
+      "sha256": "58144ae50d0fe385659ffea6bd153160d3dd09f8d5b20b8d6b40a438ccaa54d4",
+      "bytes": 3566
+    },
+    "assets/flutter_assets/assets/emoji_vector/watermelon.svg": {
+      "sha256": "b1712f12848b18e2fbf1e8c9158cdb91aec3a4a3e534cd4d31ddab6a03c139a2",
+      "bytes": 4829
+    },
+    "assets/flutter_assets/assets/emoji_vector/waving-hand.svg": {
+      "sha256": "00e3efc85fbe904ba16364a0d1ba58110ea63ddd210deaf9f4ed3fa88a1af50d",
+      "bytes": 31523
+    },
+    "assets/flutter_assets/assets/emoji_vector/weary-face.svg": {
+      "sha256": "4a3d2034fe7db57fd81b6d9371ef8ba70fd42313c96461f684d90ebe93efb77f",
+      "bytes": 7250
+    },
+    "assets/flutter_assets/assets/emoji_vector/white-heart.svg": {
+      "sha256": "c084830c92294f70d723c2ae723c0e9f35e259a1c42374bf98b0ced6de7ce910",
+      "bytes": 12101
+    },
+    "assets/flutter_assets/assets/emoji_vector/wine-glass.svg": {
+      "sha256": "8e49c635f445740fd0251f494b0f92eea5e920193768a3af54fe815fc542c5a2",
+      "bytes": 11774
+    },
+    "assets/flutter_assets/assets/emoji_vector/winking-face.svg": {
+      "sha256": "97874e393daa883bc34760feba172c319ff6372bfa2e2cd5cf63e1215a802f64",
+      "bytes": 7757
+    },
+    "assets/flutter_assets/assets/emoji_vector/worried-face.svg": {
+      "sha256": "0f5c2ca2dac4833f42f59eaaf31d9311427e7892195d42414d72c17ca8f71dee",
+      "bytes": 7794
+    },
+    "assets/flutter_assets/assets/emoji_vector/wrapped-gift.svg": {
+      "sha256": "6be7308eac89826a88fa35a4eb8e2b3fd06f2380c6d00c73a0182f216ecab4b8",
+      "bytes": 12279
+    },
+    "assets/flutter_assets/assets/emoji_vector/yawning-face.svg": {
+      "sha256": "0fcb80ca94c3fba60f5ba26ed7dd79ff08f7c587cd06e08649292122639c0cb2",
+      "bytes": 21493
+    },
+    "assets/flutter_assets/assets/emoji_vector/yellow-heart.svg": {
+      "sha256": "70c58f08a05c5ea5cf4550f8380c529bafd8d805a01d8d8263353dedc25d7efe",
+      "bytes": 12806
+    },
+    "assets/flutter_assets/assets/emoji_vector/zany-face.svg": {
+      "sha256": "c0d9b9d73f90e6f36bb52fab55b9eb2cb251942cd1d242b44b2d82560262e3cf",
+      "bytes": 9044
+    },
+    "assets/flutter_assets/assets/html/statistics_tools_combined_v2.html": {
+      "sha256": "89eab23270dc87ce6fd07715d9abb2606455d94ce1fc16cd56d2deeaeeafb9d5",
+      "bytes": 71375
+    },
+    "assets/flutter_assets/assets/landing.png": {
+      "sha256": "bfb0f0c7f17a36f404fe975022e9579c63f5f929c946e5b18abfcdad8c7c41e2",
+      "bytes": 1018473
+    },
+    "assets/flutter_assets/assets/sounds/call_connected.mp3": {
+      "sha256": "527621d83c5f54532918fada535067e4978fb8ece04a3800ca93642033e998a1",
+      "bytes": 15120
+    },
+    "assets/flutter_assets/assets/sounds/call_ended.mp3": {
+      "sha256": "b1140ccf95f02795903b31b580b0e2075c61d5f1154809005b2e0c63db3bb528",
+      "bytes": 25640
+    },
+    "assets/flutter_assets/assets/sounds/call_outgoing.mp3": {
+      "sha256": "e96600616091cc7623001d7507174032be52bd4e2054cd2a9ca7d98841a5e15c",
+      "bytes": 35939
+    },
+    "assets/flutter_assets/assets/sounds/call_video_incoming.mp3": {
+      "sha256": "c9361ee2b50ad046b9f1c795b17e0b7c107f63671082e6d2ff4b0f886bc69b3d",
+      "bytes": 104534
+    },
+    "assets/flutter_assets/assets/sounds/call_voice_incoming.mp3": {
+      "sha256": "c9361ee2b50ad046b9f1c795b17e0b7c107f63671082e6d2ff4b0f886bc69b3d",
+      "bytes": 104534
+    },
+    "assets/flutter_assets/assets/sounds/diamond_received.mp3": {
+      "sha256": "2e9dbe5fb32675e4a305d00768ac2b30e77f2bbfa393207e99ccceccd96412e0",
+      "bytes": 10042
+    },
+    "assets/flutter_assets/assets/sounds/mention.mp3": {
+      "sha256": "5c8ff1b4524b862ffac9baddbea23f01fcd126e59a6b641fa7f8a2cf8760af5a",
+      "bytes": 12164
+    },
+    "assets/flutter_assets/assets/sounds/message_attention.mp3": {
+      "sha256": "5c8ff1b4524b862ffac9baddbea23f01fcd126e59a6b641fa7f8a2cf8760af5a",
+      "bytes": 12164
+    },
+    "assets/flutter_assets/assets/sounds/message_received.mp3": {
+      "sha256": "5c8ff1b4524b862ffac9baddbea23f01fcd126e59a6b641fa7f8a2cf8760af5a",
+      "bytes": 12164
+    },
+    "assets/flutter_assets/assets/sounds/message_sent.mp3": {
+      "sha256": "75c8fd99c8110e90d2f868014413c30014efbc3aa058d27d59e964d3ea71d7a6",
+      "bytes": 36593
+    },
+    "assets/flutter_assets/assets/sounds/notification.mp3": {
+      "sha256": "5c8ff1b4524b862ffac9baddbea23f01fcd126e59a6b641fa7f8a2cf8760af5a",
+      "bytes": 12164
+    },
+    "assets/flutter_assets/assets/sounds/redpacket_open.mp3": {
+      "sha256": "2e9dbe5fb32675e4a305d00768ac2b30e77f2bbfa393207e99ccceccd96412e0",
+      "bytes": 10042
+    },
+    "assets/flutter_assets/assets/sounds/redpacket_received.mp3": {
+      "sha256": "2e9dbe5fb32675e4a305d00768ac2b30e77f2bbfa393207e99ccceccd96412e0",
+      "bytes": 10042
+    },
+    "assets/flutter_assets/assets/sounds/scan.mp3": {
+      "sha256": "554c61ebe62f3c5f5432f99b55c6f0f9cb1f9d7b4965154a9b5d03b7ff80b132",
+      "bytes": 15609
+    },
+    "assets/flutter_assets/assets/sounds/transfer_received.mp3": {
+      "sha256": "2e9dbe5fb32675e4a305d00768ac2b30e77f2bbfa393207e99ccceccd96412e0",
+      "bytes": 10042
+    },
+    "assets/flutter_assets/fonts/MaterialIcons-Regular.otf": {
+      "sha256": "d9865b671a09d683d13a863089d8825e0f61a37696ce5d7d448bc8023aa62453",
+      "bytes": 1645184
+    },
+    "assets/flutter_assets/packages/cupertino_icons/assets/CupertinoIcons.ttf": {
+      "sha256": "67c44fe9183b002e79dde7f6977e2988661c9a3e4a3c5fce968787efdbed823c",
+      "bytes": 257628
+    },
+    "assets/flutter_assets/packages/wakelock_plus/assets/no_sleep.js": {
+      "sha256": "dce4eef0b197b640ad6aaab2228ee1ee7dccf8bd6d6b5de5484dd1bd16430a78",
+      "bytes": 13344
+    },
+    "assets/flutter_assets/shaders/ink_sparkle.frag": {
+      "sha256": "1fe8436a743884cb65078fe8c7b38e18f5365f2a2961270916f426fd13c604af",
+      "bytes": 21856
+    },
+    "assets/flutter_assets/shaders/stretch_effect.frag": {
+      "sha256": "62a899ff4e168ac6ca888ce7c2f40e5d3fbf8ca20a1c3ded781a116a6d7907e2",
+      "bytes": 17624
+    },
+    "assets/mlkit_barcode_models/barcode_ssd_mobilenet_v1_dmp25_quant.tflite": {
+      "sha256": "6c7b209f4256ca4521d86f83d00904ada1a6a443010698463b750d757fae15a4",
+      "bytes": 390456
+    },
+    "assets/mlkit_barcode_models/oned_auto_regressor_mobile.tflite": {
+      "sha256": "8e07cd3b38da1ded3c07d6c81d06990cbdfa284c214557b94e106372e0497442",
+      "bytes": 213880
+    },
+    "assets/mlkit_barcode_models/oned_feature_extractor_mobile.tflite": {
+      "sha256": "981c89dcca6aac10c7ff7304933747f6936292b6395d02ee944e6fbc73b3c92b",
+      "bytes": 276552
+    },
+    "lib/arm64-v8a/libapp.so": {
+      "sha256": "4c2fa9c271d36f36cbadfc1f07f24df94c8eeda37a709be2f49365089cd6dfc0",
+      "bytes": 19268496
+    },
+    "lib/arm64-v8a/libbarhopper_v3.so": {
+      "sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+      "bytes": 4946720
+    },
+    "lib/arm64-v8a/libc++_shared.so": {
+      "sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+      "bytes": 1253544
+    },
+    "lib/arm64-v8a/libcrypto.so": {
+      "sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+      "bytes": 2594184
+    },
+    "lib/arm64-v8a/libdartjni.so": {
+      "sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+      "bytes": 131400
+    },
+    "lib/arm64-v8a/libdatastore_shared_counter.so": {
+      "sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "bytes": 7112
+    },
+    "lib/arm64-v8a/libflutter.so": {
+      "sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+      "bytes": 11581856
+    },
+    "lib/arm64-v8a/libflutter_openssl_crypto.so": {
+      "sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+      "bytes": 3928
+    },
+    "lib/arm64-v8a/libimage_processing_util_jni.so": {
+      "sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+      "bytes": 32544
+    },
+    "lib/arm64-v8a/libjingle_peerconnection_so.so": {
+      "sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+      "bytes": 11377944
+    },
+    "lib/arm64-v8a/libolm.so": {
+      "sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+      "bytes": 154392
+    },
+    "lib/arm64-v8a/libsqlcipher.so": {
+      "sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+      "bytes": 5187544
+    },
+    "lib/arm64-v8a/libsurface_util_jni.so": {
+      "sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+      "bytes": 4896
+    },
+    "lib/arm64-v8a/libzxprotect.so": {
+      "sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+      "bytes": 538680
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "checked_utc": "2026-10-12T13:34:25.119948+00:00",
+  "run_directory": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000",
+  "artifact_metadata": {
+    "version": "0.4.46",
+    "build": 2215,
+    "mode": "standard-arm64-release",
+    "icon_tree_shaking": false,
+    "dart_obfuscation": false,
+    "r8_minification": false,
+    "source_commit": "9990ca6e752271d2a37610bc3be37e68f80a14c0",
+    "mobile_manifest_sha256": "fb3e8fd4996747f4f81ebf9b6f39d93dcf430be9829fe3ee2751c1a7d2a4e42d",
+    "mobile_file_count": 2102,
+    "isolated_build_cache": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\apps\\mobile_flutter\\build",
+    "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+    "source_apk_sha256": "25a6f85774dd5011fc78d675c3958e4168aeed46d3a1bddf2131f943e0387918",
+    "final_apk_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+    "final_apk_bytes": 73262170,
+    "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+    "dart_defines": [
+      "--dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com",
+      "--dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com",
+      "--dart-define=LIUHETONG_GETUI_URL=https://liuhetong888.com",
+      "--dart-define=CHATFLOW_PERFORMANCE_METRICS=true"
+    ],
+    "production_android_build_at_preflight": 2214,
+    "production_ios_build_at_preflight": 2213,
+    "production_checked_at_utc": "2026-10-12T13:14:18.4475380+00:00",
+    "build_driver_sha256": "7e16778d40ec7d6e661df33ce3cef6e87adb85990bec34e51f954fb289c09fb0",
+    "freeze_helper_sha256": "7faea867fb744dedeab984c76dcb231e4c3fad58babc0d757a6d37d64ded8a68",
+    "complete_bundle_verifier_sha256": "58076c8d541391f0f0842a12e79fbe7126304c2c7e068ccc462d6139dab124a6",
+    "dev_registrant_helper_sha256": "5b44e5e5ae2ca4693c6f55b64980f5433bab5c4d27dc7c0c8cd99d50b46edaf4",
+    "dev_registrant_after_sha256": "0f58c721dbd866cffe64a02aa445c7c74a271e21d4a54ff76443f3f57356c9bf",
+    "lock_closure_baseline_sha256": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f",
+    "lock_closure_verifier_sha256": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3",
+    "signer_script_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+    "apktool_sha256": "66cf4524a4a45a7f56567d08b2c9b6ec237bcdd78cee69fd4a59c8a0243aeafa",
+    "semantic_verifier_sha256": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7",
+    "finished_at": "2026-10-12T21:25:17.7153237+08:00"
+  },
+  "artifact_json_sha256": "0331b00c0a116ff73a9837e9c123ebf5bce008c20764979bafc30ef991515b27",
+  "steps_sha256": "c52fc55f22eed741cfc9b11e2e5dec90f6aa9c96f73516ce42f370eef2407663",
+  "steps_all_28_exit0": true,
+  "logs": {
+    "apktool-version.log": {
+      "sha256": "ab247e5c31dc3699f691c30f54b93350649c3ff29cd03951d28c3c3631f39433",
+      "bytes": 8
+    },
+    "flutter-version.log": {
+      "sha256": "7484ffbe03d8057aa709dafddf7d4992fc314c09a2c08d81e986e79d29f88522",
+      "bytes": 325
+    },
+    "java-version.log": {
+      "sha256": "75c463f0f666fad1b78d7235b1a697dd8cd66b3dde7cee82f53d9322805f785c",
+      "bytes": 200
+    },
+    "version-contract.log": {
+      "sha256": "5ecba242b02ec850da76ffde88104df086be1f7ca54f1fa149c07ad3ca1373e6",
+      "bytes": 100
+    },
+    "dev-registration.json": {
+      "sha256": "37f68b4cc00eb0b0dd057b556dc1820867fc49f84df8d216f6405919ac5d3c9e",
+      "bytes": 596
+    },
+    "source-build.log": {
+      "sha256": "5ae1d9e56bc68017498ce7328671fb204ec256731d8c2577cf3120e29e346291",
+      "bytes": 1398
+    },
+    "dev-registration-readback.json": {
+      "sha256": "1c14231d5d2890ad52978bb90a524fa61a23b47b51ea2928b1d6b48afbbbe221",
+      "bytes": 597
+    },
+    "frozen-after-build.json": {
+      "sha256": "11ab15dec91f09cd87a616506c9371bed4028d8852f6c618fd25a7115d0ffe16",
+      "bytes": 206
+    },
+    "source-gate.json": {
+      "sha256": "f1deb24834bb0b41a6a5aaca3d496dcf52c914eba2174b3c7fafbe50f06621c4",
+      "bytes": 149
+    },
+    "source-flutter-assets.json": {
+      "sha256": "3c1a7aa922ea3f017a7d8cb46a756ec2e78f19f0d62fca6cf9cc7a2f06e35571",
+      "bytes": 243
+    },
+    "source-identity.log": {
+      "sha256": "71c9f8ec39d90b7b6f6d20d30385ef5e814d712d56087e1041e8d7894abfd867",
+      "bytes": 8790
+    },
+    "source-resources.log": {
+      "sha256": "5e558ccfd41acb29fa760374dcb4d0db4356a14c35f393511da9472550742ac5",
+      "bytes": 1189742
+    },
+    "original-manifest.txt": {
+      "sha256": "49b471ec70ca194d2b9cbb88b9b9d5c0322cedeb84a21cc3c34ad3d1045325ce",
+      "bytes": 35871
+    },
+    "decode.log": {
+      "sha256": "9fc3410ad4eccd86f8ce5c0e1140d763a830c548186dc7f12fbe74802420efce",
+      "bytes": 560
+    },
+    "rebuild.log": {
+      "sha256": "7173de24006c3a37e5801813ee0d314309d86e17d8cfe612a40146f8ba1ef0d7",
+      "bytes": 885
+    },
+    "zipalign.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "signature.log": {
+      "sha256": "776c9486e1be4ddf9c5d0918f1bc56343d69a70760dfbda12ea3812212fb5c62",
+      "bytes": 614
+    },
+    "apksigner-verify.log": {
+      "sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415",
+      "bytes": 1002
+    },
+    "zipalign-check.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "final-gate.json": {
+      "sha256": "484f32bb3fa1893045fae39e442c9c8b124de6ece494f1c70a83821b2cead755",
+      "bytes": 149
+    },
+    "final-flutter-assets.json": {
+      "sha256": "8dbd85535ad5d68ce50f4d771faf49e0df8fb1d96594558a9739919e961cb3bc",
+      "bytes": 243
+    },
+    "identity.log": {
+      "sha256": "1f0bdd9bc5b23a1cde93e5fcca1788df5eeac8913ba2954b8d36ce10fcc7d6bb",
+      "bytes": 9006
+    },
+    "final-resources.log": {
+      "sha256": "f15c33c1d6ec3903979d5c71cb32b9dba94037227dabc6c1e4b49a93db2a555a",
+      "bytes": 1263506
+    },
+    "rebuilt-manifest.txt": {
+      "sha256": "a38b7610b31ebfe66a0d124d3bdf733f52cdc8baacb0a7558cff06d148501295",
+      "bytes": 35823
+    },
+    "verify-decode.log": {
+      "sha256": "303686f629690e60cb7cd9148a732e8a50dbb8c62411f249be35d844d3506835",
+      "bytes": 566
+    },
+    "lock-boundary.json": {
+      "sha256": "cef8531aec23da9e12c742e376d3b9dea01ddeca5d65e542fb5a61785034c946",
+      "bytes": 508
+    },
+    "rebuild-verification.json": {
+      "sha256": "6807974d8596732425c13f1431e026da5b00ad8b2e92ca1872d5d3e79e3fbeb3",
+      "bytes": 1368
+    },
+    "frozen-after-verification.json": {
+      "sha256": "11ab15dec91f09cd87a616506c9371bed4028d8852f6c618fd25a7115d0ffe16",
+      "bytes": 206
+    }
+  },
+  "independent_source_final_file_hashes_verified": true,
+  "identity": {
+    "package": "com.liuhetong.mobile",
+    "version": "0.4.46",
+    "build": 2215,
+    "abi": "arm64-v8a",
+    "min_sdk": 24,
+    "target_sdk": 36,
+    "debuggable": false
+  },
+  "final_approval": false
+}

@@ -1,0 +1,9 @@
+{
+  "final_apk_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+  "decoded_classes": 57,
+  "all_57_class_bytes_equal_to_frozen_historical_baseline": true,
+  "whole_manifest_matches_after_only_version_and_element_line": true,
+  "candidate_manifest_sha256": "a38b7610b31ebfe66a0d124d3bdf733f52cdc8baacb0a7558cff06d148501295",
+  "verifier_sha256": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3",
+  "scope": "Compiled static historical lock boundary only, no runtime acceptance"
+}

@@ -1,0 +1,61 @@
+{
+  "scope": "Read-only NDK LOAD/RELRO and function-export comparison; no runtime acceptance",
+  "started_utc": "2026-10-12T13:38:06.4401688+00:00",
+  "ended_utc": "2026-10-12T13:38:07.8054655+00:00",
+  "wall_seconds": 1.3652967,
+  "executable": "py",
+  "argv": [
+    "-3.12",
+    "-B",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\crosscheck_readelf.py",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json",
+    "C:/Users/Administrator/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-readelf.exe",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\readelf"
+  ],
+  "exit_code": 0,
+  "inputs_before": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\crosscheck_readelf.py",
+      "bytes": 4066,
+      "sha256": "52c34632da05f0cd50b49c939cc6abe13cee02fba61b0373db38b36b6c9a5eb0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+      "bytes": 15978,
+      "sha256": "b76732fe02cc6cbcd3bec8ad502946e2aefda5b6899bbade169d2916e1bbf7e0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json",
+      "bytes": 975895,
+      "sha256": "168bae7b8bd81be9969eba62e63a91522f4fa753f3d17d75c8b77e6b094c4b27"
+    },
+    {
+      "path": "C:/Users/Administrator/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-readelf.exe",
+      "bytes": 8428128,
+      "sha256": "2646e382d8b2559b5c4ae91e9a98e187ed9bd59f23936054d424049ef795ba5e"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\crosscheck_readelf.py",
+      "bytes": 4066,
+      "sha256": "52c34632da05f0cd50b49c939cc6abe13cee02fba61b0373db38b36b6c9a5eb0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+      "bytes": 15978,
+      "sha256": "b76732fe02cc6cbcd3bec8ad502946e2aefda5b6899bbade169d2916e1bbf7e0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json",
+      "bytes": 975895,
+      "sha256": "168bae7b8bd81be9969eba62e63a91522f4fa753f3d17d75c8b77e6b094c4b27"
+    },
+    {
+      "path": "C:/Users/Administrator/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-readelf.exe",
+      "bytes": 8428128,
+      "sha256": "2646e382d8b2559b5c4ae91e9a98e187ed9bd59f23936054d424049ef795ba5e"
+    }
+  ],
+  "inputs_unchanged": true
+}

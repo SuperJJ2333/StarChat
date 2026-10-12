@@ -1,0 +1,1870 @@
+{
+  "started_utc": "2026-10-12T13:39:28.087753+00:00",
+  "ended_utc": "2026-10-12T13:39:28.460073+00:00",
+  "scope": "Read-only native delta and existing report closure; no build/signing/device acceptance",
+  "inputs_before": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\compare_2214_native.py",
+      "bytes": 6121,
+      "sha256": "10be0c95a08af0d08c1f0e59bc1df936073c085604465e05c8324ca5b8f0d142"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+      "bytes": 15978,
+      "sha256": "b76732fe02cc6cbcd3bec8ad502946e2aefda5b6899bbade169d2916e1bbf7e0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\android-arm64\\run-20261011-175600-r3\\final.apk",
+      "bytes": 73336097,
+      "sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json",
+      "bytes": 975895,
+      "sha256": "168bae7b8bd81be9969eba62e63a91522f4fa753f3d17d75c8b77e6b094c4b27"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\native-static-final.json",
+      "bytes": 947169,
+      "sha256": "f47eba0c44c27130a4ab80c5ae7b86c939e519b231807c5ba37f3856c72b8c9f"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\readelf-final\\result.json",
+      "bytes": 11112,
+      "sha256": "cab3097ec50069cb6b6f7ea06dd55ba3ee0721593647d4fb69696184375736c6"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\readelf\\result.json",
+      "bytes": 11640,
+      "sha256": "b568e48bf18cb04d22988598df571bee0053701421e6481bd1050d4f292d1c28"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\source.apk",
+      "bytes": 72977996,
+      "sha256": "25a6f85774dd5011fc78d675c3958e4168aeed46d3a1bddf2131f943e0387918"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\final.apk",
+      "bytes": 73262170,
+      "sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\compare_2214_native.py",
+      "bytes": 6121,
+      "sha256": "10be0c95a08af0d08c1f0e59bc1df936073c085604465e05c8324ca5b8f0d142"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+      "bytes": 15978,
+      "sha256": "b76732fe02cc6cbcd3bec8ad502946e2aefda5b6899bbade169d2916e1bbf7e0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\im-reliability-release\\android-arm64\\run-20261011-175600-r3\\final.apk",
+      "bytes": 73336097,
+      "sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json",
+      "bytes": 975895,
+      "sha256": "168bae7b8bd81be9969eba62e63a91522f4fa753f3d17d75c8b77e6b094c4b27"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\native-static-final.json",
+      "bytes": 947169,
+      "sha256": "f47eba0c44c27130a4ab80c5ae7b86c939e519b231807c5ba37f3856c72b8c9f"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\readelf-final\\result.json",
+      "bytes": 11112,
+      "sha256": "cab3097ec50069cb6b6f7ea06dd55ba3ee0721593647d4fb69696184375736c6"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\readelf\\result.json",
+      "bytes": 11640,
+      "sha256": "b568e48bf18cb04d22988598df571bee0053701421e6481bd1050d4f292d1c28"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\source.apk",
+      "bytes": 72977996,
+      "sha256": "25a6f85774dd5011fc78d675c3958e4168aeed46d3a1bddf2131f943e0387918"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\final.apk",
+      "bytes": 73262170,
+      "sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6"
+    }
+  ],
+  "inputs_unchanged": true,
+  "old_static_report_matches_actual_2214_all_native_fields": true,
+  "old_and_new_readelf_geometry_matches": true,
+  "matrix_symbol_contract_identical_to_2214": true,
+  "native_library_count": 14,
+  "changed_native_libraries": [
+    "lib/arm64-v8a/libapp.so"
+  ],
+  "unchanged_native_library_count": 13,
+  "new_static_16k_checks_pass": false,
+  "runtime_16k_verified": false,
+  "libraries": [
+    {
+      "path": "lib/arm64-v8a/libapp.so",
+      "old_sha256": "a30a2a0d7a201b57b609fff0939ff64b7eaf72519c638460057a9c3926ac5070",
+      "new_sha256": "4c2fa9c271d36f36cbadfc1f07f24df94c8eeda37a709be2f49365089cd6dfc0",
+      "old_bytes": 19268496,
+      "new_bytes": 19268496,
+      "byte_identical_to_2214": false,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 15941632,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 15941632,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 7494786,
+          "memsz": 7494786,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 7536640,
+          "vaddr": 7536640,
+          "paddr": 7536640,
+          "filesz": 11700992,
+          "memsz": 11700992,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 19267584,
+          "vaddr": 19267584,
+          "paddr": 19267584,
+          "filesz": 112,
+          "memsz": 112,
+          "align": 65536,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 7494786,
+          "memsz": 7494786,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 7536640,
+          "vaddr": 7536640,
+          "paddr": 7536640,
+          "filesz": 11700992,
+          "memsz": 11700992,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 19267584,
+          "vaddr": 19267584,
+          "paddr": 19267584,
+          "filesz": 112,
+          "memsz": 112,
+          "align": 65536,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [],
+      "new_relro": []
+    },
+    {
+      "path": "lib/arm64-v8a/libbarhopper_v3.so",
+      "old_sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+      "new_sha256": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+      "old_bytes": 4946720,
+      "new_bytes": 4946720,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 35225600,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 35225600,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 4859168,
+          "memsz": 4859168,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "paddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4911488,
+          "vaddr": 4927872,
+          "paddr": 4927872,
+          "filesz": 33000,
+          "memsz": 294192,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 4859168,
+          "memsz": 4859168,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "paddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4911488,
+          "vaddr": 4927872,
+          "paddr": 4927872,
+          "filesz": 33000,
+          "memsz": 294192,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "paddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 1,
+          "end": 4915200,
+          "end_mod_16k": 0,
+          "end_aligned_16k": true,
+          "page_end_16k": 4915200,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 4866048,
+          "vaddr": 4866048,
+          "paddr": 4866048,
+          "filesz": 45432,
+          "memsz": 49152,
+          "align": 1,
+          "end": 4915200,
+          "end_mod_16k": 0,
+          "end_aligned_16k": true,
+          "page_end_16k": 4915200,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libc++_shared.so",
+      "old_sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+      "new_sha256": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+      "old_bytes": 1253544,
+      "new_bytes": 1253544,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 40173568,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 40173568,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 624800,
+          "memsz": 624800,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 624800,
+          "vaddr": 641184,
+          "paddr": 641184,
+          "filesz": 585720,
+          "memsz": 585720,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "paddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 1250352,
+          "vaddr": 1299504,
+          "paddr": 1299504,
+          "filesz": 568,
+          "memsz": 32032,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 624800,
+          "memsz": 624800,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 624800,
+          "vaddr": 641184,
+          "paddr": 641184,
+          "filesz": 585720,
+          "memsz": 585720,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "paddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 1250352,
+          "vaddr": 1299504,
+          "paddr": 1299504,
+          "filesz": 568,
+          "memsz": 32032,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "paddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 1,
+          "end": 1286144,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 1294336,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 1210520,
+          "vaddr": 1243288,
+          "paddr": 1243288,
+          "filesz": 39832,
+          "memsz": 42856,
+          "align": 1,
+          "end": 1286144,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 1294336,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libcrypto.so",
+      "old_sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+      "new_sha256": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+      "old_bytes": 2594184,
+      "new_bytes": 2594184,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 41435136,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 41435136,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 1036532,
+          "memsz": 1036532,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 1040384,
+          "vaddr": 1044480,
+          "paddr": 1044480,
+          "filesz": 1379680,
+          "memsz": 1379680,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "paddr": 2428256,
+          "filesz": 166112,
+          "memsz": 166112,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 2586176,
+          "vaddr": 2598464,
+          "paddr": 2598464,
+          "filesz": 5928,
+          "memsz": 19569,
+          "align": 4096,
+          "aligned_16k": false
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 4,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 1036532,
+          "memsz": 1036532,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 1040384,
+          "vaddr": 1044480,
+          "paddr": 1044480,
+          "filesz": 1379680,
+          "memsz": 1379680,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "paddr": 2428256,
+          "filesz": 166112,
+          "memsz": 166112,
+          "align": 4096,
+          "aligned_16k": false
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 2586176,
+          "vaddr": 2598464,
+          "paddr": 2598464,
+          "filesz": 5928,
+          "memsz": 19569,
+          "align": 4096,
+          "aligned_16k": false
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "paddr": 2428256,
+          "filesz": 166112,
+          "memsz": 168608,
+          "align": 1,
+          "end": 2596864,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 2605056,
+          "writable_load_intersections_after_end": [
+            {
+              "start": 2598464,
+              "end": 2605056,
+              "load_index": 3
+            }
+          ]
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 2420064,
+          "vaddr": 2428256,
+          "paddr": 2428256,
+          "filesz": 166112,
+          "memsz": 168608,
+          "align": 1,
+          "end": 2596864,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 2605056,
+          "writable_load_intersections_after_end": [
+            {
+              "start": 2598464,
+              "end": 2605056,
+              "load_index": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libdartjni.so",
+      "old_sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+      "new_sha256": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+      "old_bytes": 131400,
+      "new_bytes": 131400,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 44040192,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 44040192,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 125968,
+          "memsz": 125968,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 125968,
+          "vaddr": 142352,
+          "paddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 127344,
+          "vaddr": 160112,
+          "paddr": 160112,
+          "filesz": 1784,
+          "memsz": 2424,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 125968,
+          "memsz": 125968,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 125968,
+          "vaddr": 142352,
+          "paddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 127344,
+          "vaddr": 160112,
+          "paddr": 160112,
+          "filesz": 1784,
+          "memsz": 2424,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 125968,
+          "vaddr": 142352,
+          "paddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 1,
+          "end": 147456,
+          "end_mod_16k": 0,
+          "end_aligned_16k": true,
+          "page_end_16k": 147456,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 125968,
+          "vaddr": 142352,
+          "paddr": 142352,
+          "filesz": 1376,
+          "memsz": 5104,
+          "align": 1,
+          "end": 147456,
+          "end_mod_16k": 0,
+          "end_aligned_16k": true,
+          "page_end_16k": 147456,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libdatastore_shared_counter.so",
+      "old_sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "new_sha256": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+      "old_bytes": 7112,
+      "new_bytes": 7112,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 44187648,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 44187648,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 4544,
+          "memsz": 4544,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4544,
+          "vaddr": 20928,
+          "paddr": 20928,
+          "filesz": 616,
+          "memsz": 616,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 5160,
+          "vaddr": 37928,
+          "paddr": 37928,
+          "filesz": 0,
+          "memsz": 1,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 4544,
+          "memsz": 4544,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4544,
+          "vaddr": 20928,
+          "paddr": 20928,
+          "filesz": 616,
+          "memsz": 616,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 5160,
+          "vaddr": 37928,
+          "paddr": 37928,
+          "filesz": 0,
+          "memsz": 1,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 4544,
+          "vaddr": 20928,
+          "paddr": 20928,
+          "filesz": 616,
+          "memsz": 3648,
+          "align": 1,
+          "end": 24576,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 32768,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 4544,
+          "vaddr": 20928,
+          "paddr": 20928,
+          "filesz": 616,
+          "memsz": 3648,
+          "align": 1,
+          "end": 24576,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 32768,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libflutter.so",
+      "old_sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+      "new_sha256": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+      "old_bytes": 11581856,
+      "new_bytes": 11581856,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 44204032,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 44204032,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 11186288,
+          "memsz": 11186288,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "paddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11554224,
+          "vaddr": 11685296,
+          "paddr": 11685296,
+          "filesz": 25256,
+          "memsz": 102232,
+          "align": 65536,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 11186288,
+          "memsz": 11186288,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "paddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 65536,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11554224,
+          "vaddr": 11685296,
+          "paddr": 11685296,
+          "filesz": 25256,
+          "memsz": 102232,
+          "align": 65536,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "paddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 1,
+          "end": 11620352,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 11632640,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 11186288,
+          "vaddr": 11251824,
+          "paddr": 11251824,
+          "filesz": 367928,
+          "memsz": 368528,
+          "align": 1,
+          "end": 11620352,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 11632640,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libflutter_openssl_crypto.so",
+      "old_sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+      "new_sha256": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+      "old_bytes": 3928,
+      "new_bytes": 3928,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 55787520,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 55787520,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 1440,
+          "memsz": 1440,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 1440,
+          "vaddr": 17824,
+          "paddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 1440,
+          "memsz": 1440,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 1440,
+          "vaddr": 17824,
+          "paddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 1440,
+          "vaddr": 17824,
+          "paddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 1,
+          "end": 20480,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 32768,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 1440,
+          "vaddr": 17824,
+          "paddr": 17824,
+          "filesz": 496,
+          "memsz": 2656,
+          "align": 1,
+          "end": 20480,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 32768,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libimage_processing_util_jni.so",
+      "old_sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+      "new_sha256": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+      "old_bytes": 32544,
+      "new_bytes": 32544,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 55803904,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 55803904,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 29488,
+          "memsz": 29488,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 29488,
+          "vaddr": 45872,
+          "paddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 30480,
+          "vaddr": 63248,
+          "paddr": 63248,
+          "filesz": 0,
+          "memsz": 4,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 29488,
+          "memsz": 29488,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 29488,
+          "vaddr": 45872,
+          "paddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 30480,
+          "vaddr": 63248,
+          "paddr": 63248,
+          "filesz": 0,
+          "memsz": 4,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 29488,
+          "vaddr": 45872,
+          "paddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 1,
+          "end": 49152,
+          "end_mod_16k": 0,
+          "end_aligned_16k": true,
+          "page_end_16k": 49152,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 29488,
+          "vaddr": 45872,
+          "paddr": 45872,
+          "filesz": 992,
+          "memsz": 3280,
+          "align": 1,
+          "end": 49152,
+          "end_mod_16k": 0,
+          "end_aligned_16k": true,
+          "page_end_16k": 49152,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libjingle_peerconnection_so.so",
+      "old_sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+      "new_sha256": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+      "old_bytes": 11377944,
+      "new_bytes": 11377944,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 55836672,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 55836672,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 11199600,
+          "memsz": 11199600,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "paddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11372528,
+          "vaddr": 11405296,
+          "paddr": 11405296,
+          "filesz": 3256,
+          "memsz": 568944,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 11199600,
+          "memsz": 11199600,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "paddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 11372528,
+          "vaddr": 11405296,
+          "paddr": 11405296,
+          "filesz": 3256,
+          "memsz": 568944,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "paddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 1,
+          "end": 11390976,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 11403264,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 11199600,
+          "vaddr": 11215984,
+          "paddr": 11215984,
+          "filesz": 172928,
+          "memsz": 174992,
+          "align": 1,
+          "end": 11390976,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 11403264,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libolm.so",
+      "old_sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+      "new_sha256": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+      "old_bytes": 154392,
+      "new_bytes": 154392,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 67223552,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 67223552,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 119280,
+          "memsz": 119280,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 119280,
+          "vaddr": 135664,
+          "paddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 120456,
+          "vaddr": 153224,
+          "paddr": 153224,
+          "filesz": 31732,
+          "memsz": 31732,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 119280,
+          "memsz": 119280,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 119280,
+          "vaddr": 135664,
+          "paddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 120456,
+          "vaddr": 153224,
+          "paddr": 153224,
+          "filesz": 31732,
+          "memsz": 31732,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 119280,
+          "vaddr": 135664,
+          "paddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 1,
+          "end": 139264,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 147456,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 119280,
+          "vaddr": 135664,
+          "paddr": 135664,
+          "filesz": 1176,
+          "memsz": 3600,
+          "align": 1,
+          "end": 139264,
+          "end_mod_16k": 8192,
+          "end_aligned_16k": false,
+          "page_end_16k": 147456,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libsqlcipher.so",
+      "old_sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+      "new_sha256": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+      "old_bytes": 5187544,
+      "new_bytes": 5187544,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 67387392,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 67387392,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 4816064,
+          "memsz": 4816064,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "paddr": 4832448,
+          "filesz": 347904,
+          "memsz": 347904,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 5163968,
+          "vaddr": 5196736,
+          "paddr": 5196736,
+          "filesz": 21248,
+          "memsz": 34865,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 4816064,
+          "memsz": 4816064,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "paddr": 4832448,
+          "filesz": 347904,
+          "memsz": 347904,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 5163968,
+          "vaddr": 5196736,
+          "paddr": 5196736,
+          "filesz": 21248,
+          "memsz": 34865,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "paddr": 4832448,
+          "filesz": 347904,
+          "memsz": 348992,
+          "align": 1,
+          "end": 5181440,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 5193728,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 4816064,
+          "vaddr": 4832448,
+          "paddr": 4832448,
+          "filesz": 347904,
+          "memsz": 348992,
+          "align": 1,
+          "end": 5181440,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 5193728,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libsurface_util_jni.so",
+      "old_sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+      "new_sha256": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+      "old_bytes": 4896,
+      "new_bytes": 4896,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 72581120,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 72581120,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 2480,
+          "memsz": 2480,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 2480,
+          "vaddr": 18864,
+          "paddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 2480,
+          "memsz": 2480,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 2480,
+          "vaddr": 18864,
+          "paddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 2480,
+          "vaddr": 18864,
+          "paddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 1,
+          "end": 20480,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 32768,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 2480,
+          "vaddr": 18864,
+          "paddr": 18864,
+          "filesz": 568,
+          "memsz": 1616,
+          "align": 1,
+          "end": 20480,
+          "end_mod_16k": 4096,
+          "end_aligned_16k": false,
+          "page_end_16k": 32768,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    },
+    {
+      "path": "lib/arm64-v8a/libzxprotect.so",
+      "old_sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+      "new_sha256": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772",
+      "old_bytes": 538680,
+      "new_bytes": 538680,
+      "byte_identical_to_2214": true,
+      "source_final_bytes_identical": true,
+      "old_zip": {
+        "compression": 0,
+        "data_offset": 72597504,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "new_zip": {
+        "compression": 0,
+        "data_offset": 72597504,
+        "aligned_16k": true,
+        "direct_mmap_stored": true
+      },
+      "load_geometry_identical_to_2214": true,
+      "relro_geometry_identical_to_2214": true,
+      "old_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 522176,
+          "memsz": 522176,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 522176,
+          "vaddr": 538560,
+          "paddr": 538560,
+          "filesz": 14144,
+          "memsz": 14144,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 536320,
+          "vaddr": 569088,
+          "paddr": 569088,
+          "filesz": 88,
+          "memsz": 3120,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "new_loads": [
+        {
+          "type": 1,
+          "flags": 5,
+          "offset": 0,
+          "vaddr": 0,
+          "paddr": 0,
+          "filesz": 522176,
+          "memsz": 522176,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 522176,
+          "vaddr": 538560,
+          "paddr": 538560,
+          "filesz": 14144,
+          "memsz": 14144,
+          "align": 16384,
+          "aligned_16k": true
+        },
+        {
+          "type": 1,
+          "flags": 6,
+          "offset": 536320,
+          "vaddr": 569088,
+          "paddr": 569088,
+          "filesz": 88,
+          "memsz": 3120,
+          "align": 16384,
+          "aligned_16k": true
+        }
+      ],
+      "old_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 522176,
+          "vaddr": 538560,
+          "paddr": 538560,
+          "filesz": 14144,
+          "memsz": 14400,
+          "align": 1,
+          "end": 552960,
+          "end_mod_16k": 12288,
+          "end_aligned_16k": false,
+          "page_end_16k": 557056,
+          "writable_load_intersections_after_end": []
+        }
+      ],
+      "new_relro": [
+        {
+          "type": 1685382482,
+          "flags": 4,
+          "offset": 522176,
+          "vaddr": 538560,
+          "paddr": 538560,
+          "filesz": 14144,
+          "memsz": 14400,
+          "align": 1,
+          "end": 552960,
+          "end_mod_16k": 12288,
+          "end_aligned_16k": false,
+          "page_end_16k": 557056,
+          "writable_load_intersections_after_end": []
+        }
+      ]
+    }
+  ]
+}

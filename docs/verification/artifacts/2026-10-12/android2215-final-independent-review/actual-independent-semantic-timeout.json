@@ -1,0 +1,22 @@
+{
+  "recorded_utc": "2026-10-12T13:40:22.925792+00:00",
+  "started_after_utc": "2026-10-12T13:34:25.119948+00:00",
+  "exact_start_utc": null,
+  "status": "UNFINISHED_TIMEOUT",
+  "timeout_seconds": 180,
+  "exception": "subprocess.TimeoutExpired",
+  "wrapper_session_id": 83223,
+  "wrapper_completion_exit": 1,
+  "semantic_process_exit_code": null,
+  "command": [
+    "py",
+    "-3.12",
+    "-B",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\tools\\verify_rebuild.py",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000"
+  ],
+  "product_difference_observed": false,
+  "stdout_or_semantic_result_received": false,
+  "action": "No repeat attempted; use bound original builder successful semantic report and separate independent payload/signature/closure checks",
+  "scope": "Supplementary read-only replay; not a new product test failure or PASS"
+}

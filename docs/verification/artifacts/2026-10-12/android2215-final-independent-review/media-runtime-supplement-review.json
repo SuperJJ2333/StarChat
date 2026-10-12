@@ -1,0 +1,17 @@
+{
+  "reviewed_utc": "2026-10-12T13:36:56.653539+00:00",
+  "root_receipt_sha256": "8b89e2cccce69e5dcabbfa57e9a54053ea337c1ddccf1201ad2a1a12367d4064",
+  "bound_evidence_count": 9,
+  "all_bound_evidence_hashes_verified": true,
+  "supersedes": "media-preliminary.json process-restart pending flag only",
+  "process_restart_receipt_bound": true,
+  "known_limits_retained": [
+    "One API28 x86_64 emulator, not all models/ROMs/ARM64 release or Android16KiB runtime",
+    "Self-only encrypted room validates real encryption/upload/server event sync/local rendering, not independent second-user receipt",
+    "No latency/P95 inference from manually timed screenshots; no weak-network or process-death recovery stress claim",
+    "Initial helper attempts had compilation-service unavailable/VM log URI expired, fixed by Flutter attach and fresh startup; those diagnostics are not product success evidence",
+    "A later screenshot request observed another app in the foreground; unrelated screenshot was discarded and no further device interaction performed. Earlier own-room screenshots/ACK remain the actual media evidence."
+  ],
+  "device_actions_by_reviewer": false,
+  "candidate_final_arm64_runtime_verified": false
+}

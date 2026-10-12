@@ -1,0 +1,73 @@
+{
+  "checked_utc": "2026-10-12T13:49:10.229350+00:00",
+  "freeze_sha256": "b93b674b717219871374dbe94fb4c6fcd0f6810dccf598f691d544532b4511c8",
+  "source_backfill_plan_sha256": "744b738baec9c8a56f8a90460bf7228294e2124d164779d6d31fa8f3fbcf433e",
+  "two_files": {
+    "frontend/download.html": {
+      "before": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44",
+      "after": "eeb75215b8bcea683202923ff27f5ce5c130e139a94d8a286c90f6dd82576dd4",
+      "raw_equals_HEAD_and_source_and_production_snapshot": true,
+      "staged_exact": true
+    },
+    "frontend/downloads/android-release.json": {
+      "before": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "after": "cf772f9d1a9e464bc71622ad4603d70ae96cfb14bf8d2966e24bcedde5f6ce5b",
+      "raw_equals_HEAD_and_source_and_production_snapshot": true,
+      "staged_exact": true
+    }
+  },
+  "five_preserved_separate_identity_domains": {
+    "frontend/downloads/ios/manifest.plist": {
+      "production_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "local_raw_sha256": "059fd04cc113d88e86d91c123715526234d8624342adf94c61d2acfdbea43bf4",
+      "source_git_blob_sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+      "HEAD_git_matches_frozen_source": true,
+      "local_raw_equals_production": false,
+      "local_equals_production_after_exact_CRLF_to_LF": true,
+      "required_action": "Do not write; verify frozen Git identity and unchanged local raw before/after two-file backfill. Production guard remains its separate captured hash."
+    },
+    "frontend/src/admin-home.js": {
+      "production_sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+      "local_raw_sha256": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+      "source_git_blob_sha256": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+      "HEAD_git_matches_frozen_source": true,
+      "local_raw_equals_production": false,
+      "local_equals_production_after_exact_CRLF_to_LF": false,
+      "required_action": "Do not write; verify frozen Git identity and unchanged local raw before/after two-file backfill. Production guard remains its separate captured hash."
+    },
+    "frontend/src/download-network-selector.js": {
+      "production_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "local_raw_sha256": "b5acc7be7a25ec620e8848d40ffea627e582b1d39271b4d7282e86fa59515181",
+      "source_git_blob_sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "HEAD_git_matches_frozen_source": true,
+      "local_raw_equals_production": false,
+      "local_equals_production_after_exact_CRLF_to_LF": true,
+      "required_action": "Do not write; verify frozen Git identity and unchanged local raw before/after two-file backfill. Production guard remains its separate captured hash."
+    },
+    "frontend/src/download-network.js": {
+      "production_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "local_raw_sha256": "6c1e12c6e7098a4f0b77e4f63748ae9c931e88179c2db48ddbe352722eae9786",
+      "source_git_blob_sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "HEAD_git_matches_frozen_source": true,
+      "local_raw_equals_production": false,
+      "local_equals_production_after_exact_CRLF_to_LF": true,
+      "required_action": "Do not write; verify frozen Git identity and unchanged local raw before/after two-file backfill. Production guard remains its separate captured hash."
+    },
+    "frontend/src/download-redirect.js": {
+      "production_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "local_raw_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "source_git_blob_sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+      "HEAD_git_matches_frozen_source": true,
+      "local_raw_equals_production": true,
+      "local_equals_production_after_exact_CRLF_to_LF": true,
+      "required_action": "Do not write; verify frozen Git identity and unchanged local raw before/after two-file backfill. Production guard remains its separate captured hash."
+    }
+  },
+  "notes": [
+    "No EOL exception needed for the two write targets",
+    "admin-home local/source contains existing cacheEpoch arguments absent in production; preserve both identity domains",
+    "No full-repository local-versus-production equality claim",
+    "After successful publication audit, raw before CAS and HEAD/source proof precede writing exact staged after bytes; any drift stops"
+  ],
+  "reviewer_source_writes": false
+}

@@ -1,0 +1,91 @@
+{
+  "scope": "Read-only native ELF/ZIP inspection, no device/runtime/signature acceptance",
+  "started_utc": "2026-10-12T13:37:27.2733212+00:00",
+  "ended_utc": "2026-10-12T13:37:28.1318448+00:00",
+  "wall_seconds": 0.8585236,
+  "executable": "py",
+  "argv": [
+    "-3.12",
+    "-B",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+    "--source",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\source.apk",
+    "--final",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\final.apk",
+    "--baseline",
+    "D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-10-09/android2213-release/delivery/ChatFlow-0.4.44-build2213-arm64.apk",
+    "--aar",
+    "C:/Users/Administrator/.gradle/caches/modules-2/files-2.1/com.android.ndk.thirdparty/openssl/1.1.1q-beta-1/658128e1c37d6b12a55fb4e8717bb00313177b69/openssl-1.1.1q-beta-1.aar",
+    "--ffi",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\apps\\mobile_flutter\\third_party\\matrix\\lib\\src\\utils\\crypto\\ffi.dart",
+    "--output",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json"
+  ],
+  "exit_code": 1,
+  "inputs_before": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+      "bytes": 15978,
+      "sha256": "b76732fe02cc6cbcd3bec8ad502946e2aefda5b6899bbade169d2916e1bbf7e0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\source.apk",
+      "bytes": 72977996,
+      "sha256": "25a6f85774dd5011fc78d675c3958e4168aeed46d3a1bddf2131f943e0387918"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\final.apk",
+      "bytes": 73262170,
+      "sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6"
+    },
+    {
+      "path": "D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-10-09/android2213-release/delivery/ChatFlow-0.4.44-build2213-arm64.apk",
+      "bytes": 73139489,
+      "sha256": "08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271"
+    },
+    {
+      "path": "C:/Users/Administrator/.gradle/caches/modules-2/files-2.1/com.android.ndk.thirdparty/openssl/1.1.1q-beta-1/658128e1c37d6b12a55fb4e8717bb00313177b69/openssl-1.1.1q-beta-1.aar",
+      "bytes": 6778965,
+      "sha256": "a5b05c4b362d35c022238ef9b2e4e2196248adea3bac9dd683845ee75a3a8d66"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\apps\\mobile_flutter\\third_party\\matrix\\lib\\src\\utils\\crypto\\ffi.dart",
+      "bytes": 5124,
+      "sha256": "fb357590ab33b9b26c9a0660615be62b5500042f0b6f4d332eee43b38c1fe1eb"
+    }
+  ],
+  "inputs_after": [
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android2214-native-static\\inspect_native.py",
+      "bytes": 15978,
+      "sha256": "b76732fe02cc6cbcd3bec8ad502946e2aefda5b6899bbade169d2916e1bbf7e0"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\source.apk",
+      "bytes": 72977996,
+      "sha256": "25a6f85774dd5011fc78d675c3958e4168aeed46d3a1bddf2131f943e0387918"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-release-candidate\\run-20261012-132000\\final.apk",
+      "bytes": 73262170,
+      "sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6"
+    },
+    {
+      "path": "D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-10-09/android2213-release/delivery/ChatFlow-0.4.44-build2213-arm64.apk",
+      "bytes": 73139489,
+      "sha256": "08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271"
+    },
+    {
+      "path": "C:/Users/Administrator/.gradle/caches/modules-2/files-2.1/com.android.ndk.thirdparty/openssl/1.1.1q-beta-1/658128e1c37d6b12a55fb4e8717bb00313177b69/openssl-1.1.1q-beta-1.aar",
+      "bytes": 6778965,
+      "sha256": "a5b05c4b362d35c022238ef9b2e4e2196248adea3bac9dd683845ee75a3a8d66"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\apps\\mobile_flutter\\third_party\\matrix\\lib\\src\\utils\\crypto\\ffi.dart",
+      "bytes": 5124,
+      "sha256": "fb357590ab33b9b26c9a0660615be62b5500042f0b6f4d332eee43b38c1fe1eb"
+    }
+  ],
+  "inputs_unchanged": true,
+  "expected_known_static_16k_nonzero": 1
+}

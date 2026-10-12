@@ -1,0 +1,9 @@
+{
+  "native_library_count": 14,
+  "changed": [
+    "lib/arm64-v8a/libapp.so"
+  ],
+  "old_static_report_matches_actual": true,
+  "old_and_new_readelf_geometry_matches": true,
+  "inputs_unchanged": true
+}

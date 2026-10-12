@@ -1,0 +1,17 @@
+{
+  "scope": "Read-only per-library 2214 to 2215 comparison",
+  "started_utc": "2026-10-12T13:39:27.7967380+00:00",
+  "ended_utc": "2026-10-12T13:39:28.4760234+00:00",
+  "wall_seconds": 0.6792854,
+  "executable": "py",
+  "argv": [
+    "-3.12",
+    "-B",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\compare_2214_native.py",
+    "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-11/android2214-native-static",
+    "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/run-20261011-175600-r3/final.apk",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\native-static-2215.json",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2215-final-independent-review\\native\\delta-2214-to-2215.json"
+  ],
+  "exit_code": 0
+}

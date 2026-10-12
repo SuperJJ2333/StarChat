@@ -1,0 +1,244 @@
+{
+  "created_utc": "2026-10-12T14:00:03.145188+00:00",
+  "scope": "Raw bytes of independent review evidence; excludes this manifest itself",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 167,
+      "sha256": "5778d04fe75239c612143b71d0dafe14493669c235195212ed5e82e071e39d4a"
+    },
+    {
+      "path": "01-spec-domain.md",
+      "bytes": 8341,
+      "sha256": "b21b2c46e3640cb0799d2d9730f059eb63fec1280c1d8544efd5b0dac227bbab"
+    },
+    {
+      "path": "02-quality-security.md",
+      "bytes": 9079,
+      "sha256": "525896f7d4e3a692de714eca7da02f803b062319f5e26e0a57d7cc73f9d75c09"
+    },
+    {
+      "path": "actual-artifact-inputs.json",
+      "bytes": 7105,
+      "sha256": "f5ef83c0e59ead3e742c6d0e0d3aba3a13b18033ad5e3a4d68a8915ee94a29e8"
+    },
+    {
+      "path": "actual-independent-alignment-receipt.json",
+      "bytes": 428,
+      "sha256": "ad6bd2315a891ff7ab265da9357de4bb8d1762640a4407147f2f93a8e1f40c00"
+    },
+    {
+      "path": "actual-independent-alignment.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "actual-independent-semantic-timeout.json",
+      "bytes": 1069,
+      "sha256": "511150b4a13f2806a52565eb3312c46ac60629d77eb6e8945756d4cd568fb4fc"
+    },
+    {
+      "path": "actual-independent-signature-receipt.json",
+      "bytes": 476,
+      "sha256": "4890588bf91bc981571c940655684d273dcb4e48a9a0f924081d3220513bb874"
+    },
+    {
+      "path": "actual-independent-signature.log",
+      "bytes": 1002,
+      "sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415"
+    },
+    {
+      "path": "independent-final-lock-closure.json",
+      "bytes": 525,
+      "sha256": "fea54b5d651d69248d422a9a2c488ed0f8bf8e2564fc9fe39bc67aba005bc5e1"
+    },
+    {
+      "path": "independent-native-assets-byte-equality.json",
+      "bytes": 48914,
+      "sha256": "43bf02f6dd16e051a0b2a215d92ef810f721bb6bb1cfc46af914137f8794d872"
+    },
+    {
+      "path": "media-preliminary.json",
+      "bytes": 3617,
+      "sha256": "774cef92a075df7287d6b593898daa476fb280c8bb27277ae579c51e0a2cf241"
+    },
+    {
+      "path": "media-runtime-supplement-review.json",
+      "bytes": 1215,
+      "sha256": "cb42c75a6997f740b505f8fea02cf0e866d522e1ac184489549d4b78d27f6b6b"
+    },
+    {
+      "path": "native/compare_2214_native.py",
+      "bytes": 6121,
+      "sha256": "10be0c95a08af0d08c1f0e59bc1df936073c085604465e05c8324ca5b8f0d142"
+    },
+    {
+      "path": "native/delta-2214-to-2215.json",
+      "bytes": 52634,
+      "sha256": "420477f02e9a506b6aafff1bee13db6b8cd95a7b54056896764c747447ff0d2d"
+    },
+    {
+      "path": "native/delta-comparison-receipt.json",
+      "bytes": 1203,
+      "sha256": "725f82371a179b17349e273459346067b1a3a30c2514615ec37f1a837a9db6b8"
+    },
+    {
+      "path": "native/delta-comparison.log",
+      "bytes": 212,
+      "sha256": "94e3febaf16113a1626a5a6b76fdcc7c8321ff8ec61e9019b0b953fdbe7fee1e"
+    },
+    {
+      "path": "native/evidence-manifest.json",
+      "bytes": 8385,
+      "sha256": "5a3ce7238403794f6ccc7145c957d2878bc5dfbd25337f4c05a850926aaa8a88"
+    },
+    {
+      "path": "native/inspection-receipt.json",
+      "bytes": 5410,
+      "sha256": "ce6131c6a31e2c51097ee951b26a2b6568f30f79f54f581b3913d5e4ba8101ff"
+    },
+    {
+      "path": "native/inspection.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "native/native-static-2215.json",
+      "bytes": 975895,
+      "sha256": "168bae7b8bd81be9969eba62e63a91522f4fa753f3d17d75c8b77e6b094c4b27"
+    },
+    {
+      "path": "native/readelf/libapp.so.readelf.txt",
+      "bytes": 1146,
+      "sha256": "dd43a1d2ab364b7cfe2a98f1bc3b13be6b96dc7e1b3742a75e4b69227b0ac8fb"
+    },
+    {
+      "path": "native/readelf/libbarhopper_v3.so.readelf.txt",
+      "bytes": 1682,
+      "sha256": "1efaae39f04981de6678f860c4c9faea31f4b19261f3a9a276d8b7554b7bd1dd"
+    },
+    {
+      "path": "native/readelf/libc++_shared.so.readelf.txt",
+      "bytes": 2038,
+      "sha256": "56ca091e23e491e7abc211bfeb24569a8426e2855847ce53e76f24dd6f74d5d6"
+    },
+    {
+      "path": "native/readelf/libcrypto.dynamic.txt",
+      "bytes": 1466,
+      "sha256": "aa29a556f734a0923b272eb41fb203a042ec2a252ca8bc303fc77359fb8e5157"
+    },
+    {
+      "path": "native/readelf/libcrypto.required-symbols.txt",
+      "bytes": 1188,
+      "sha256": "54f43b08db22d7f24023605eec65f1dc8f0e6faf0e3c838b41ed58047268d050"
+    },
+    {
+      "path": "native/readelf/libcrypto.so.readelf.txt",
+      "bytes": 1688,
+      "sha256": "3b1ca368a18d64bede2de3249fbe922efd46d57a3791122cfb7ee71f24d62e48"
+    },
+    {
+      "path": "native/readelf/libdartjni.so.readelf.txt",
+      "bytes": 1610,
+      "sha256": "53d50ec094bff4713c0af630d4021a8983ca28530a71353fa7ed89f279ea28c8"
+    },
+    {
+      "path": "native/readelf/libdatastore_shared_counter.so.readelf.txt",
+      "bytes": 1588,
+      "sha256": "c6e97406995088c0ebda60fdf74263722ba0e35b6c3f21b9cf90098ba18d43e5"
+    },
+    {
+      "path": "native/readelf/libflutter.so.readelf.txt",
+      "bytes": 1659,
+      "sha256": "6ee6a1a5954d07aebeff28bd00c342fc98cb6fbe06fa39c9f7e00865acf69ac9"
+    },
+    {
+      "path": "native/readelf/libflutter_openssl_crypto.so.readelf.txt",
+      "bytes": 1475,
+      "sha256": "7d299e424a2d2942a53e1b65254550573df274dd1dcc9c832ed2f68ece5ac079"
+    },
+    {
+      "path": "native/readelf/libimage_processing_util_jni.so.readelf.txt",
+      "bytes": 1613,
+      "sha256": "003420016607e17c538e17a00cc38b04f3773a3c8aa5e9ad9eb0c6c5647a2be8"
+    },
+    {
+      "path": "native/readelf/libjingle_peerconnection_so.so.readelf.txt",
+      "bytes": 1923,
+      "sha256": "6fcdfef42d8764a8274ee31ccc76aefbf2a47248919eb0add79ada12d51f5415"
+    },
+    {
+      "path": "native/readelf/libolm.so.readelf.txt",
+      "bytes": 1605,
+      "sha256": "5b0bb795bc8b29f36580c8997d6c188bbda2a105583ddffca0d7d230351284a6"
+    },
+    {
+      "path": "native/readelf/libsqlcipher.so.readelf.txt",
+      "bytes": 1622,
+      "sha256": "347d2c6ab14d662dc354205e0e092909a2a245a97d2849d9f0c9a1a25a5e950a"
+    },
+    {
+      "path": "native/readelf/libsurface_util_jni.so.readelf.txt",
+      "bytes": 1484,
+      "sha256": "67e112fd1ad8a3d1fafa2e0a3564b71108c115c614039ce660fb7d8a792823d6"
+    },
+    {
+      "path": "native/readelf/libzxprotect.so.readelf.txt",
+      "bytes": 1626,
+      "sha256": "716ebda3c52230de7e76a6183a49de1f43fce08d1ed8fc4f51ae1ea3521baac8"
+    },
+    {
+      "path": "native/readelf/result.json",
+      "bytes": 11640,
+      "sha256": "b568e48bf18cb04d22988598df571bee0053701421e6481bd1050d4f292d1c28"
+    },
+    {
+      "path": "native/readelf-crosscheck-receipt.json",
+      "bytes": 3499,
+      "sha256": "efc6f8fc5d10c4a6f8eeb268fc527213ade729d837a0b7805f211ec8cb85322c"
+    },
+    {
+      "path": "native/readelf-crosscheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "native/README.md",
+      "bytes": 6469,
+      "sha256": "c2e007275146e47d3809c6917568f81c7d805f9d8bea268209c56daabb926e2e"
+    },
+    {
+      "path": "publication-b93b-local-review.json",
+      "bytes": 3117,
+      "sha256": "2d248ea24e34de938511adf5beae924bcc6c8b2113c2e10dcf682ae177f4fb1e"
+    },
+    {
+      "path": "publication-r2-delta-review.json",
+      "bytes": 11584,
+      "sha256": "d4a10bd276a86f9c8685e9a2b54a94f3f43e0b20eabdb69a6a769a2548e75907"
+    },
+    {
+      "path": "release-review.json",
+      "bytes": 1251,
+      "sha256": "6656a274d618237980e99777d7dd32c14f1da573c47b5c3aca0d00b7365b9630"
+    },
+    {
+      "path": "review-validation.json",
+      "bytes": 605,
+      "sha256": "875274d6095bc9b557e3d91f74482d3445de1c7da1c78e1b53a9419065f46aa8"
+    },
+    {
+      "path": "shared-input-reuse-and-restart.json",
+      "bytes": 7709,
+      "sha256": "74affaea84f80beb2fde32d0cec5b2e394c75099fa230c47e5585d359ba4c117"
+    },
+    {
+      "path": "source-backfill-review.json",
+      "bytes": 4711,
+      "sha256": "dc57504b5fb3b7d6fedd8fc4bc171ea39479a0b9f184a06e0640da8c934ec97c"
+    }
+  ],
+  "file_count": 47,
+  "local_report_links": "PASS",
+  "review_code_changes": false
+}

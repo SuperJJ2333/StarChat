@@ -1,0 +1,9 @@
+{
+  "started_utc": "2026-10-12T13:39:38.5037825+00:00",
+  "ended_utc": "2026-10-12T13:39:40.2222126+00:00",
+  "command": "apksigner.bat verify --verbose --print-certs final.apk",
+  "exit_code": 0,
+  "artifact_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+  "log_sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415",
+  "scope": "Read-only existing final signature verification; no signing identity/password used"
+}

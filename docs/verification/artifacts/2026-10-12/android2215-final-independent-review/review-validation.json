@@ -1,0 +1,22 @@
+{
+  "checked_utc": "2026-10-12T13:59:14.742131+00:00",
+  "status": "PASS_LOCAL_REVIEW_BINDING",
+  "review_sha256": "6656a274d618237980e99777d7dd32c14f1da573c47b5c3aca0d00b7365b9630",
+  "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+  "validated_operations": [
+    "preflight",
+    "runtime",
+    "upload",
+    "assemble",
+    "hk-install",
+    "cdn-install",
+    "cdn-check",
+    "hk-switch",
+    "publish",
+    "inspect",
+    "audit"
+  ],
+  "all_11_validate_review_calls_passed": true,
+  "executed_production_operations": 0,
+  "execution_directory_created": false
+}

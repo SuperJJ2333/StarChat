@@ -1,0 +1,9 @@
+{
+  "started_utc": "2026-10-12T13:39:40.2448495+00:00",
+  "ended_utc": "2026-10-12T13:39:40.2755148+00:00",
+  "command": "zipalign.exe -c -P 16 4 final.apk",
+  "exit_code": 0,
+  "artifact_sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scope": "Read-only ZIP alignment; no ELF compatibility inference"
+}

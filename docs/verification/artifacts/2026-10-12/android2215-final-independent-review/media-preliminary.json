@@ -1,0 +1,87 @@
+{
+  "checked_utc": "2026-10-12T13:22:20.658372+00:00",
+  "media_evidence_base": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2214-media-regression",
+  "files": {
+    "baseline-runtime-receipt.json": {
+      "bytes": 2658,
+      "sha256": "c570b2e8704b347dbda153ada52b672af64879d5ee8385148da901dcd2102ef2"
+    },
+    "fixed-image-ack.json": {
+      "bytes": 533,
+      "sha256": "9c4e72c9db2830a38edbdc02a1bd8c2068f304489f65d7c36bc1a5b1f9c67974"
+    },
+    "fixed-relaunch-ack.json": {
+      "bytes": 532,
+      "sha256": "e9ba07eb50cefd11c250aa0d1a4adcb0c610e3c5714eacedb602d3938c24989f"
+    },
+    "fixed-image-viewer.png": {
+      "bytes": 80276,
+      "sha256": "35fe79a53fe9d2bb8865e2a59758b0de3dfb51b4dcf3a02cfa745036991b37bc"
+    },
+    "fixed-video-player.png": {
+      "bytes": 100652,
+      "sha256": "00386cd668293156c3615f9b8a83e197f8e4d87b50dc110d9b66d9f0e29248fe"
+    },
+    "fixed-video-player-completed.png": {
+      "bytes": 101491,
+      "sha256": "313f3cd547060d9a7e93688e6304f79b840e4fd9190561c442dbf4c53539ad95"
+    },
+    "baseline-video-failed.png": {
+      "bytes": 122847,
+      "sha256": "b0266533c5df3b6f7f64f1df77e153379b9ade86b8bda8cfd0820d62fbda6b14"
+    },
+    "vm_self_room.py": {
+      "bytes": 6703,
+      "sha256": "230eaa7d76b63483881e0f329f6192f1ff07073a0dd2eef908da3a8170976fbc"
+    },
+    "fixed-main-debug-2215/receipt.json": {
+      "bytes": 639,
+      "sha256": "cdffcfab4770d2928a246df2df05907a6f59061c09510bcf9d30fb029afaa219"
+    },
+    "fixed-main-debug-2215/install-receipt.json": {
+      "bytes": 926,
+      "sha256": "a40f3e4efa3c3c03f02b19993e05cdb9cb6a243321cfb8f07c66e1d6ee58cc3b"
+    },
+    "fixed-main-debug-2215/rebuild-verification.log": {
+      "bytes": 2745,
+      "sha256": "ffec5bc5d072ee23c07670e629b010cdce05824442fe249ae19723145a5aa50f"
+    },
+    "fixed-main-debug-2215/steps.tsv": {
+      "bytes": 172,
+      "sha256": "90dad586291db9de132b0136958d49558513244db032b395db6035124a4f29c8"
+    },
+    "fixed-main-debug-2215/signature.log": {
+      "bytes": 1002,
+      "sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415"
+    },
+    "fixed-main-debug-2215/identity.log": {
+      "bytes": 8781,
+      "sha256": "a574ef2f51fcd3b6a5ea53da4c946dab8738245ab33db65d7fd6090649f121c3"
+    }
+  },
+  "actual_debug_apk_sha256": "e3bd89359c3822e54dc6c6daa28d12c0117ff6f25f7c7a968eb03416d507ac2a",
+  "actual_debug_apk_bytes": 125901146,
+  "package": "com.liuhetong.mobile.debug",
+  "abi": "x86_64",
+  "device": "emulator-5556",
+  "android_api": 28,
+  "source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "debug_steps_13_all_exit0": true,
+  "install_preserves_uid10090": true,
+  "image_ack_synced_and_server_id": true,
+  "video_ack_synced_and_server_id": true,
+  "visual_inspection": {
+    "image": "Synthetic image visible in original-image viewer; UI says original 13K",
+    "video": "Synthetic frame counter 0 then 2; progress and elapsed display advances 0:00 to 0:02 of 0:03",
+    "does_not_independently_prove_playback_completed": true
+  },
+  "process_restart_independently_bound": false,
+  "restart_limit": "Current open-mode ACK does not include process/timestamp lifecycle; root requested to retain existing actual restart output if available",
+  "scope_limits": [
+    "Own encrypted room, one joined/invited member, no other recipients",
+    "No multi-device receive or delivery-rate/SLO claim",
+    "Debug x86_64/API28; final ARM64 release not reviewed yet"
+  ],
+  "reviewer_device_remote_build_sign_actions": false,
+  "final_apk_approval": false
+}
