@@ -1,0 +1,78 @@
+{
+  "candidate": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "decision": "PASS_PREPARATION_ONLY",
+  "ordered_reviews": [
+    "01-spec-domain.md",
+    "02-quality-security.md"
+  ],
+  "blocking_findings": [],
+  "independent_test_count": 32,
+  "independent_test_exit_code": 0,
+  "new_postgres_execution": false,
+  "real_apk_identity": null,
+  "final_package_review": false,
+  "executable_release_authorization_generated": false,
+  "created_utc": "2026-10-12T12:32:05.926019+00:00",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 96,
+      "sha256": "70b0d3f7f42bdacf91c6e69b0bcde886459f74ddc574e2627e49496d23f7ae6e"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 19,
+      "sha256": "ec93b581f4a00a5989b8d4a006089b79fa1f49ea5675abbe98338c5562ddde7c"
+    },
+    {
+      "path": "01-spec-domain.md",
+      "bytes": 3181,
+      "sha256": "92d3d39df4075cdf74a1624378a6a5bdcf20e38342bfef9f0e80fafa4430fc90"
+    },
+    {
+      "path": "02-quality-security.md",
+      "bytes": 5088,
+      "sha256": "2695316367e4a6e11d32094592210ca072e48e8d78510dc3c1a915e9f37248db"
+    },
+    {
+      "path": "export-identities.json",
+      "bytes": 10534,
+      "sha256": "1da18f4d0c5c9e164f12ebff52f3b71ff32a27d7b94ed00565c5988ff1d7b414"
+    },
+    {
+      "path": "independent-32-receipt.json",
+      "bytes": 417,
+      "sha256": "b6a5b3abdc8ea83a4276bcb67e1326ab06f1ba1e27719218e239cea7f5ceb456"
+    },
+    {
+      "path": "independent-32.log",
+      "bytes": 5342,
+      "sha256": "bc4a3370dd5836593e1e4ebc1b930711f8295e9ca832ddfd7e94d16459f524fc"
+    },
+    {
+      "path": "independent-source-closure.json",
+      "bytes": 1847,
+      "sha256": "d758bd2e894cfe898e90fe3c11530f71efb3d041cd2938488453a9969e16613e"
+    },
+    {
+      "path": "orchestrator-delta.json",
+      "bytes": 1555,
+      "sha256": "dcabe536ff00c34b2495260c77a61ccd916260004f7f10c941b99ba3604a8ae8"
+    },
+    {
+      "path": "preparation-audit-receipt.json",
+      "bytes": 142,
+      "sha256": "f0c91429f54a40ca052fa62e9418474ea7fafba12e58ebea31166f5c87a42509"
+    },
+    {
+      "path": "preparation-audit.log",
+      "bytes": 236,
+      "sha256": "c4c09ca650def2bd1b8619d89f43f72ca1eef2d6009d8d827378646d53be4c0e"
+    },
+    {
+      "path": "review-environment.json",
+      "bytes": 456,
+      "sha256": "227f59721ab836e0786fe686821e0bdbcb3e6aeaf7c8c5057edafdfddee7ebb3"
+    }
+  ]
+}

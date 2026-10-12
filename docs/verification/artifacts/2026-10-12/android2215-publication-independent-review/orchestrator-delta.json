@@ -1,0 +1,14 @@
+{
+  "reference": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+  "candidate": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "normalization": [
+    "2214 to 2215",
+    "0.4.45 to 0.4.46",
+    "20261011 to 20261012",
+    "2026-10-11 to 2026-10-12"
+  ],
+  "remaining_diff": {
+    "package_release.py": "",
+    "execute_release.py": "--- reference version/date adapted execute_release.py\n+++ candidate execute_release.py\n@@ -105,7 +105,7 @@\n     runtime=Path(root)/'runtime'\n     before=read_json(runtime/(host+'-live-snapshot.json'))\n     if host=='hk':\n-        for key in ('registry','aliases','old_artifact','target_exists','settings','schema'):\n+        for key in ('registry','aliases','old_artifact','target_exists','settings','schema','permanent_guards'):\n             fail(current.get(key)==before[key], 'live HK baseline drift: '+key)\n         fail(sorted(current.get('runtime',[]),key=lambda x:x['name'])==sorted(before['runtime'],key=lambda x:x['name']), 'running container identity drift')\n         static=read_json(runtime/'static-baseline.json')['files']\n@@ -121,7 +121,7 @@\n     for host in ('hk','sg'):\n         code=member(Path(root)/'runtime',host+'-projection-source.py').read_text(encoding='utf-8')\n         compare_baseline(host,runner(host,code,timeout=180),root)\n-    return {'status':'BASELINE_EXACT','platforms':'android2213-ios2213','containers':35}\n+    return {'status':'BASELINE_EXACT','platforms':'android2214-ios2213','containers':35}\n \n \n def guarded_command(stage, frozen, arguments):\n"
+  }
+}

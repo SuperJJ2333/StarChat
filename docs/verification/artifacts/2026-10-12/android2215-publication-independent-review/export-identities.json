@@ -1,0 +1,313 @@
+{
+  "candidate": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "export_utc": "2026-10-12T12:24:44.189539+00:00",
+  "method": "git show raw blob bytes; no author checkout conversion",
+  "manifest_inputs_checked": 60,
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 200,
+      "sha256": "586d6a6bf351cf7031af68ab59ed8048d6e81521230ddb7f37efe0be259f5338"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 39,
+      "sha256": "b1c956a6d6012038788865b20410f6a3d55cbcb820056d4cd76a8f2922385784"
+    },
+    {
+      "path": "PLAN.md",
+      "bytes": 3047,
+      "sha256": "c173b5194cca7fd260294aa5e6176b57e9a07c144cb7fa7e7c98362608bb6290"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5343,
+      "sha256": "fd7dc505e4a78ea00255ace04eaa504ae51eab7ece9cd21d9de51dd1ba2e4a94"
+    },
+    {
+      "path": "adaptation.diff",
+      "bytes": 60902,
+      "sha256": "0af7513dba4c34a098923089dd4e6521543d962ff6ab75012f1946d90fcf79a4"
+    },
+    {
+      "path": "all-boundaries-green.log",
+      "bytes": 5320,
+      "sha256": "add41a7c7e4cda3b5cf40a916413bd134c6f39a8a9428b4533401d2a028e62cc"
+    },
+    {
+      "path": "baseline/bucket-policy-before.json",
+      "bytes": 1230,
+      "sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561"
+    },
+    {
+      "path": "baseline/cloudfront-before.json",
+      "bytes": 22830,
+      "sha256": "49609a753f12ed762b2bb8a8ce22d7c1be1eacd0e562195e642548f5075e9323"
+    },
+    {
+      "path": "baseline/freeze_current.py",
+      "bytes": 2821,
+      "sha256": "526e1669963f7fb9045f0604fde07c44530e53d1ecb4ae71709fbc874b19494d"
+    },
+    {
+      "path": "baseline/hk-live-snapshot.json",
+      "bytes": 12694,
+      "sha256": "a5a4eeb9610c953c3f61b71228c6953a764681f5ebe08a96e7ffec3ef12e703a"
+    },
+    {
+      "path": "baseline/hk-projection-metadata.json",
+      "bytes": 668,
+      "sha256": "15e3d188a93b6399dd43751034e6b6d629985bd8cd74aa4e07b5e171e15584ca"
+    },
+    {
+      "path": "baseline/hk-projection-source.py",
+      "bytes": 2881,
+      "sha256": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6"
+    },
+    {
+      "path": "baseline/hk-snapshot/download.html",
+      "bytes": 9245,
+      "sha256": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44"
+    },
+    {
+      "path": "baseline/hk-snapshot/downloads/android-release.json",
+      "bytes": 372,
+      "sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7"
+    },
+    {
+      "path": "baseline/hk-snapshot/downloads/ios/manifest.plist",
+      "bytes": 793,
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/admin-home.js",
+      "bytes": 25709,
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-network-selector.js",
+      "bytes": 7433,
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-network.js",
+      "bytes": 5507,
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154"
+    },
+    {
+      "path": "baseline/hk-snapshot/src/download-redirect.js",
+      "bytes": 1998,
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+    },
+    {
+      "path": "baseline/settings-before.json",
+      "bytes": 814,
+      "sha256": "5185c01abcc022ea5d02cac597ccef0236df5d2ce2a95210d04fbf7dba0d62c1"
+    },
+    {
+      "path": "baseline/sg-live-snapshot.json",
+      "bytes": 26096,
+      "sha256": "38a316ec7e379e21afb2ae84dbc6e5b8e68f1a91fdc9e6dba29ae0315994ed3d"
+    },
+    {
+      "path": "baseline/sg-projection-metadata.json",
+      "bytes": 379,
+      "sha256": "a4da410771b6f055c9d4386b46fe64b967776af770ae75fc535606a7d92a2ac2"
+    },
+    {
+      "path": "baseline/sg-projection-source.py",
+      "bytes": 872,
+      "sha256": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9"
+    },
+    {
+      "path": "baseline/static-baseline.json",
+      "bytes": 1493,
+      "sha256": "502514a2bb91bb951fcf9cac61a1aa562a3d00fe6cac2031776f40caf0fb99f6"
+    },
+    {
+      "path": "execute-cli-help.log",
+      "bytes": 764,
+      "sha256": "8d024aa6a4d3d4f736b55dd58db3cb663b74f98c7905f91581d300d10718a2fc"
+    },
+    {
+      "path": "execute_release.py",
+      "bytes": 18887,
+      "sha256": "5bab52cada1e3f1aecf631807d323e6df1ba3f6e87a0105a4d70b7da01eae9f7"
+    },
+    {
+      "path": "final-local-validation.json",
+      "bytes": 2025,
+      "sha256": "84f47c431cd42410064a9ac26c2c2c129442d6f034bf4a58decf0e69bc319d07"
+    },
+    {
+      "path": "git-export-green.log",
+      "bytes": 5320,
+      "sha256": "f03514ac3a7a324d3a6c6f04e5f0919a00ec62927e211f261e3009f73fd198e4"
+    },
+    {
+      "path": "guards-red.log",
+      "bytes": 5288,
+      "sha256": "3b1299bbfdf53ceb0dcd3d3710149f72bcafcdbd45c7ee0750a76b8283528abe"
+    },
+    {
+      "path": "package-cli-help.log",
+      "bytes": 621,
+      "sha256": "1a9c19fe6b5135d6e044181f2632ec4bed08789db16e61692c3794b4ed2d0944"
+    },
+    {
+      "path": "package_release.py",
+      "bytes": 13263,
+      "sha256": "5f126779f9c8765dc21ebdbfad5f518fc435d374c94e6c913e25b6cc8f6715db"
+    },
+    {
+      "path": "payload/bucket-policy-before.json",
+      "bytes": 1230,
+      "sha256": "95639cf201f05f2d23989598e03c974669f908721ced2281152c3fa07cc6c561"
+    },
+    {
+      "path": "payload/cloudfront-before.json",
+      "bytes": 22830,
+      "sha256": "49609a753f12ed762b2bb8a8ce22d7c1be1eacd0e562195e642548f5075e9323"
+    },
+    {
+      "path": "payload/delivery_2215.py",
+      "bytes": 10505,
+      "sha256": "c3a1f09928796284c20793ec9e68c225dd8f5ff563033ec22adc9f9945314139"
+    },
+    {
+      "path": "payload/hk-live-snapshot.json",
+      "bytes": 12694,
+      "sha256": "a5a4eeb9610c953c3f61b71228c6953a764681f5ebe08a96e7ffec3ef12e703a"
+    },
+    {
+      "path": "payload/hk-snapshot/download.html",
+      "bytes": 9245,
+      "sha256": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44"
+    },
+    {
+      "path": "payload/hk-snapshot/downloads/android-release.json",
+      "bytes": 372,
+      "sha256": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7"
+    },
+    {
+      "path": "payload/hk-snapshot/downloads/ios/manifest.plist",
+      "bytes": 793,
+      "sha256": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9"
+    },
+    {
+      "path": "payload/hk-snapshot/src/admin-home.js",
+      "bytes": 25709,
+      "sha256": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27"
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-network-selector.js",
+      "bytes": 7433,
+      "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232"
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-network.js",
+      "bytes": 5507,
+      "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154"
+    },
+    {
+      "path": "payload/hk-snapshot/src/download-redirect.js",
+      "bytes": 1998,
+      "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+    },
+    {
+      "path": "payload/release_2215.py",
+      "bytes": 25451,
+      "sha256": "1a1fa5c00246d6cd3488af713058c51d3ba091a4bcf5ee3ffa41fc8ac057240d"
+    },
+    {
+      "path": "payload/settings-before.json",
+      "bytes": 814,
+      "sha256": "5185c01abcc022ea5d02cac597ccef0236df5d2ce2a95210d04fbf7dba0d62c1"
+    },
+    {
+      "path": "payload/settings_2215.py",
+      "bytes": 4348,
+      "sha256": "8d4a20399a96ff3207863c2a9227741f948785b43fde65fc81dd69438f2d55f1"
+    },
+    {
+      "path": "payload/sg-live-snapshot.json",
+      "bytes": 26096,
+      "sha256": "38a316ec7e379e21afb2ae84dbc6e5b8e68f1a91fdc9e6dba29ae0315994ed3d"
+    },
+    {
+      "path": "payload/static-baseline.json",
+      "bytes": 1493,
+      "sha256": "502514a2bb91bb951fcf9cac61a1aa562a3d00fe6cac2031776f40caf0fb99f6"
+    },
+    {
+      "path": "payload/test_settings_postgres_2215.py",
+      "bytes": 4903,
+      "sha256": "d694a01cb432e125f1e29912efb6e5efc8eabd8860f9ae438bd058061ba8ab46"
+    },
+    {
+      "path": "payload/verify_production_2215.py",
+      "bytes": 3167,
+      "sha256": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14"
+    },
+    {
+      "path": "postgres-closure.json",
+      "bytes": 2589,
+      "sha256": "9983e911112f7976ed2b415e0f5eae8dae222c7dc4899d3a0ad3fce1ff89052b"
+    },
+    {
+      "path": "preparation-input-identities.json",
+      "bytes": 6614,
+      "sha256": "5415bc0985a07252106b265d549ae9f5935a38491b61e66d7efbd2e8f2fbeb66"
+    },
+    {
+      "path": "reused-postgres-2214.log",
+      "bytes": 98,
+      "sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966"
+    },
+    {
+      "path": "test_execution_gate.py",
+      "bytes": 12019,
+      "sha256": "d13745f21619d408f504387853fc545b7961a44178203fca72ff3cbffd8cc7ca"
+    },
+    {
+      "path": "test_package_gate.py",
+      "bytes": 5459,
+      "sha256": "ca63d6eb9f8c2bbe9918b6c5b85ea43759a0be990ab9d482a1d8bd89cdc9b8a6"
+    },
+    {
+      "path": "test_permanent_guards.py",
+      "bytes": 2735,
+      "sha256": "22f268cca1e32e1c99f8569efd349b542f2f6b1eea8413253be24d6c5a36aa78"
+    },
+    {
+      "path": "test_release_contract.py",
+      "bytes": 9628,
+      "sha256": "9b0628aba404ddfb56c6289b633fec16ab40f954ecedd1b1b2aa01b11cf005f8"
+    },
+    {
+      "path": "test_static_rollback.py",
+      "bytes": 3408,
+      "sha256": "3a5128898c78e47476eb602e0fc4767f559217ee224b5a3af1a9679b8c36ba9f"
+    },
+    {
+      "path": "usage.md",
+      "bytes": 7676,
+      "sha256": "4ff3badd1647b428c18dbc2d8b0c6124136c500cdaead5f1ded6181fad45f6a3"
+    },
+    {
+      "path": "verify_preparation.py",
+      "bytes": 2773,
+      "sha256": "2b66a756afd10ebbd65029b347de0b46f071fa45c408aa667d99199a62806845"
+    },
+    {
+      "path": "version-green.log",
+      "bytes": 4954,
+      "sha256": "ec9eb8f806eb2eff4c3c2dff7e1b8a0849c8639af4c1f5c6b0157167acb88344"
+    },
+    {
+      "path": "version-red.log",
+      "bytes": 29129,
+      "sha256": "7f5642199a21c0bec6d2b401881512f62be6d31bd896451154f6cb5085baa7e9"
+    }
+  ]
+}

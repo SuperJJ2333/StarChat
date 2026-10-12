@@ -1,0 +1,9 @@
+{
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "os": "Windows-10-10.0.19045-SP0",
+  "shell": "pwsh.exe with UTF-8 console/pipeline and PYTHONUTF8/PYTHONIOENCODING",
+  "candidate": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "reviewer": "/root/release_final_review",
+  "secondary_static_review": "/root/release_final_review/restore_sign_wrapper",
+  "no_remote_or_production_actions": true
+}

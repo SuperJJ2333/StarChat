@@ -1,0 +1,35 @@
+{
+  "checked_utc": "2026-10-12T12:26:44.566482+00:00",
+  "candidate": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+  "transaction_source_sha256": "2a58136b46b4330f4695dd1f65506d8e4216b0fc06d3a3a0b0dacaa29e400742",
+  "transaction_utf8_exact": true,
+  "normalized_full_settings_module_exact": true,
+  "normalization_scope": [
+    "NOTES literal",
+    "Android before version/build literal",
+    "baseline error label",
+    "Android after version/build literal"
+  ],
+  "pg_test_only_2214_to_2215_labels": true,
+  "historical_log_sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966",
+  "historical_log_exact": true,
+  "historical_result": "6 passed in 8.16s",
+  "new_pg_execution": false,
+  "dependencies_exact": {
+    "services/business-api/app/modules/settings/service.py": "f658cba280c4f6356836876f69546962d186f0ee1b4870f6a9d4f4c26fd54332",
+    "services/business-api/app/modules/settings/models.py": "4787c3d98dacce976517206ae77eefe1f3ecd036141eb556a268dd852a1ca027",
+    "services/business-api/app/modules/audit/models.py": "1a8893c2651ae714feac31fd359e93364054537e68873e8b2cbf385659223e4f",
+    "services/business-api/app/core/database.py": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5"
+  },
+  "api_image_exact": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+  "schema_exact": [
+    "0095_wallet_source_alerts"
+  ],
+  "unchanged_release_functions": {
+    "apply_static": "fa5ee732e8b1ea36c5878d46a6d5e1b29f852150bd0648910f77d55c968a8b67",
+    "rollback_static": "2588764864cfb26832b45e9fe711c33b42769cd35d4b8195218b48741ab15a44",
+    "publish": "1ecd9ec2469d9716fb7124f815796adb935e2179c4aeea0dbe412d3a9b22849d"
+  },
+  "all_61_export_hashes_unchanged_after_tests": true
+}

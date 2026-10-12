@@ -1,0 +1,8 @@
+{
+  "started_utc": "2026-10-12T12:24:44.2169611Z",
+  "ended_utc": "2026-10-12T12:24:51.3442759Z",
+  "scope": "Synthetic local files and transport doubles; no PG/remote/ADB/sign/build",
+  "candidate": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "command": "py -3.12 -B -m unittest -v test_execution_gate test_package_gate test_permanent_guards test_release_contract test_static_rollback",
+  "exit_code": 0
+}
