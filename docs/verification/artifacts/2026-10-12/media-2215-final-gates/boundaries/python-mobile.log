@@ -1,0 +1,220 @@
+........................................................................ [ 17%]
+...........................................................F.s.......... [ 35%]
+........................................................................ [ 53%]
+........................................................................ [ 71%]
+........................................................................ [ 89%]
+......................................FFFF                               [100%]
+================================== FAILURES ===================================
+_ test_unsigned_pipeline_uses_current_source_version_at_every_handoff_boundary _
+
+    def test_unsigned_pipeline_uses_current_source_version_at_every_handoff_boundary():
+        version, build = re.search(r"^version: ([0-9.]+)\+([0-9]+)$",
+            (ROOT / "apps/mobile_flutter/pubspec.yaml").read_text(encoding="utf8"), re.M).groups()
+        workflow = (ROOT / ".github/workflows/ios-enterprise-package.yml").read_text(encoding="utf8")
+>       assert f"--build-name={version} --build-number={build}" in workflow
+E       assert '--build-name=0.4.46 --build-number=2215' in "name: Unsigned iOS enterprise signing handoff\n\non:\n  push:\n    branches: ['codex/ios-history-ipa-*']\n  workflow_...      path: ${{ runner.temp }}/simulator-evidence/\n          if-no-files-found: error\n          retention-days: 14\n"
+
+tests\mobile\test_ios_handoff_release_version.py:11: AssertionError
+_ AndroidDeltaTest.test_copy_overflow_output_limit_unknown_op_and_trailing_data _
+
+self = <test_android_delta.AndroidDeltaTest testMethod=test_copy_overflow_output_limit_unknown_op_and_trailing_data>
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('android_delta', MODULE)
+        self.delta = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.delta)
+>       self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_android_delta.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:886: in __init__
+    self.name = mkdtemp(suffix, prefix, dir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+suffix = '', prefix = 'tmp'
+dir = WindowsPath('C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+
+    def mkdtemp(suffix=None, prefix=None, dir=None):
+        """User-callable function to create and return a unique temporary
+        directory.  The return value is the pathname of the directory.
+    
+        Arguments are as for mkstemp, except that the 'text' argument is
+        not accepted.
+    
+        The directory is readable, writable, and searchable only by the
+        creating user.
+    
+        Caller is responsible for deleting the directory when done with it.
+        """
+    
+        prefix, suffix, dir, output_type = _sanitize_params(prefix, suffix, dir)
+    
+        names = _get_candidate_names()
+        if output_type is bytes:
+            names = map(_os.fsencode, names)
+    
+        for seq in range(TMP_MAX):
+            name = next(names)
+            file = _os.path.join(dir, prefix + name + suffix)
+            _sys.audit("tempfile.mkdtemp", file)
+            try:
+>               _os.mkdir(file, 0o700)
+E               FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\mobile-responsive-maintenance\\delta\\tmp0sdtbrfg'
+
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:384: FileNotFoundError
+____ AndroidDeltaTest.test_corrupt_literal_target_hash_and_operation_count ____
+
+self = <test_android_delta.AndroidDeltaTest testMethod=test_corrupt_literal_target_hash_and_operation_count>
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('android_delta', MODULE)
+        self.delta = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.delta)
+>       self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_android_delta.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:886: in __init__
+    self.name = mkdtemp(suffix, prefix, dir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+suffix = '', prefix = 'tmp'
+dir = WindowsPath('C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+
+    def mkdtemp(suffix=None, prefix=None, dir=None):
+        """User-callable function to create and return a unique temporary
+        directory.  The return value is the pathname of the directory.
+    
+        Arguments are as for mkstemp, except that the 'text' argument is
+        not accepted.
+    
+        The directory is readable, writable, and searchable only by the
+        creating user.
+    
+        Caller is responsible for deleting the directory when done with it.
+        """
+    
+        prefix, suffix, dir, output_type = _sanitize_params(prefix, suffix, dir)
+    
+        names = _get_candidate_names()
+        if output_type is bytes:
+            names = map(_os.fsencode, names)
+    
+        for seq in range(TMP_MAX):
+            name = next(names)
+            file = _os.path.join(dir, prefix + name + suffix)
+            _sys.audit("tempfile.mkdtemp", file)
+            try:
+>               _os.mkdir(file, 0o700)
+E               FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\mobile-responsive-maintenance\\delta\\tmpgw6d0p5n'
+
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:384: FileNotFoundError
+____________ AndroidDeltaTest.test_exact_streaming_reconstruction _____________
+
+self = <test_android_delta.AndroidDeltaTest testMethod=test_exact_streaming_reconstruction>
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('android_delta', MODULE)
+        self.delta = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.delta)
+>       self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_android_delta.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:886: in __init__
+    self.name = mkdtemp(suffix, prefix, dir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+suffix = '', prefix = 'tmp'
+dir = WindowsPath('C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+
+    def mkdtemp(suffix=None, prefix=None, dir=None):
+        """User-callable function to create and return a unique temporary
+        directory.  The return value is the pathname of the directory.
+    
+        Arguments are as for mkstemp, except that the 'text' argument is
+        not accepted.
+    
+        The directory is readable, writable, and searchable only by the
+        creating user.
+    
+        Caller is responsible for deleting the directory when done with it.
+        """
+    
+        prefix, suffix, dir, output_type = _sanitize_params(prefix, suffix, dir)
+    
+        names = _get_candidate_names()
+        if output_type is bytes:
+            names = map(_os.fsencode, names)
+    
+        for seq in range(TMP_MAX):
+            name = next(names)
+            file = _os.path.join(dir, prefix + name + suffix)
+            _sys.audit("tempfile.mkdtemp", file)
+            try:
+>               _os.mkdir(file, 0o700)
+E               FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\mobile-responsive-maintenance\\delta\\tmpmjxfyxxd'
+
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:384: FileNotFoundError
+____ AndroidDeltaTest.test_wrong_base_and_truncation_never_publish_output _____
+
+self = <test_android_delta.AndroidDeltaTest testMethod=test_wrong_base_and_truncation_never_publish_output>
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('android_delta', MODULE)
+        self.delta = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.delta)
+>       self.tmp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_android_delta.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:886: in __init__
+    self.name = mkdtemp(suffix, prefix, dir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+suffix = '', prefix = 'tmp'
+dir = WindowsPath('C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/docs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta')
+
+    def mkdtemp(suffix=None, prefix=None, dir=None):
+        """User-callable function to create and return a unique temporary
+        directory.  The return value is the pathname of the directory.
+    
+        Arguments are as for mkstemp, except that the 'text' argument is
+        not accepted.
+    
+        The directory is readable, writable, and searchable only by the
+        creating user.
+    
+        Caller is responsible for deleting the directory when done with it.
+        """
+    
+        prefix, suffix, dir, output_type = _sanitize_params(prefix, suffix, dir)
+    
+        names = _get_candidate_names()
+        if output_type is bytes:
+            names = map(_os.fsencode, names)
+    
+        for seq in range(TMP_MAX):
+            name = next(names)
+            file = _os.path.join(dir, prefix + name + suffix)
+            _sys.audit("tempfile.mkdtemp", file)
+            try:
+>               _os.mkdir(file, 0o700)
+E               FileNotFoundError: [WinError 3] 系统找不到指定的路径。: 'C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\mobile-responsive-maintenance\\delta\\tmpof54ngnd'
+
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\tempfile.py:384: FileNotFoundError
+=========================== short test summary info ===========================
+FAILED tests/mobile/test_ios_handoff_release_version.py::test_unsigned_pipeline_uses_current_source_version_at_every_handoff_boundary
+FAILED tests/test_android_delta.py::AndroidDeltaTest::test_copy_overflow_output_limit_unknown_op_and_trailing_data
+FAILED tests/test_android_delta.py::AndroidDeltaTest::test_corrupt_literal_target_hash_and_operation_count
+FAILED tests/test_android_delta.py::AndroidDeltaTest::test_exact_streaming_reconstruction
+FAILED tests/test_android_delta.py::AndroidDeltaTest::test_wrong_base_and_truncation_never_publish_output
+5 failed, 396 passed, 1 skipped in 87.09s (0:01:27)

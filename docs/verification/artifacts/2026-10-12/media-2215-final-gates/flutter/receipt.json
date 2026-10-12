@@ -1,0 +1,15 @@
+{
+  "failure": null,
+  "ended_utc": "2026-10-12T12:49:22.1371438+00:00",
+  "mapping_cleanup": "removed_owned_V",
+  "exit_code": 0,
+  "gate": "Flutter",
+  "source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "log": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-2215-final-gates\\flutter\\gate.log",
+  "started_utc": "2026-10-12T12:41:12.7100609+00:00",
+  "manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050",
+  "native_dll_sha256": {
+    "C:\\Users\\Administrator\\.codex\\worktrees\\search-camera-history-20261003\\StarChat\\docs\\verification\\artifacts\\2026-10-03\\search-camera-history\\task-3a-windows-olm\\libolm.dll": "3a6106dd77a1df25d4a4aeda742dc878612f70709e5229b5c5d7b16562f46c73",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\search-camera-history-20261003\\StarChat\\docs\\verification\\artifacts\\2026-10-03\\search-camera-history\\task-3b-sqlcipher-build\\libsqlcipher.dll": "7a1c979c4c64437280a3c50d6b906388beafd0f3c0772494e72de9a7a0bef1da"
+  }
+}

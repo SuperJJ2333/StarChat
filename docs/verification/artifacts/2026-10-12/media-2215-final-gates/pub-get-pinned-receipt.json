@@ -1,0 +1,9 @@
+{
+  "source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "started_utc": "2026-10-12T12:39:42.1101230+00:00",
+  "lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "exit_code": 0,
+  "PUB_HOSTED_URL": "https://pub.dev",
+  "ended_utc": "2026-10-12T12:40:02.7879242+00:00",
+  "command": "flutter pub get --offline --enforce-lockfile"
+}

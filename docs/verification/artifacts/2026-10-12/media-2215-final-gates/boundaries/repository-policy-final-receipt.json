@@ -1,0 +1,21 @@
+{
+  "gate": "repository-policy-final",
+  "command": "pwsh.exe -NoProfile -File tests/repository/Test-RepositoryPolicy.ps1",
+  "actual_exit_code": 0,
+  "started_utc": "2026-10-12T12:53:44.3038840Z",
+  "ended_utc": "2026-10-12T12:53:44.7101943Z",
+  "duration_seconds": 0.404839,
+  "candidate_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "candidate_after": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "tree": "dd8f6068d952626e481328047819cb34950a648a",
+  "tracked_status_after": [],
+  "cwd": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat",
+  "shell": "pwsh.exe",
+  "powershell_version": "7.6.5",
+  "python_utf8": "1",
+  "python_io_encoding": "utf-8",
+  "log_file": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-2215-final-gates\\boundaries\\repository-policy-final.log",
+  "log_sha256": "6a46550af8b27b0d1e3a834383c86d38457649d5e7ba07e556f9a938942b8e4d",
+  "input_manifest_sha256": "557ded9369b08e4c6851bcf3989c6186faca0eadabb9c10c084111bdba9decb5",
+  "mobile_manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050"
+}

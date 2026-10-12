@@ -1,0 +1,14 @@
+{
+  "started_utc": "2026-10-12T12:47:08.3472416Z",
+  "ended_utc": "2026-10-12T12:47:08.4805266Z",
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "path": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-09\\mobile-responsive-maintenance\\delta",
+  "existed_before": false,
+  "exists_after": true,
+  "ignored_rule": [
+    ".gitignore:101:/docs/verification/artifacts/\tdocs/verification/artifacts/2026-10-09/mobile-responsive-maintenance/delta"
+  ],
+  "git_check_ignore_exit": 0,
+  "authorization": "Parent approved original test-required ignored historical artifact parent creation; source and tests unchanged.",
+  "unused_adapter": "A fixture adapter was drafted but never executed and removed using apply_patch. Original test command is used."
+}

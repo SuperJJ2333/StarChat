@@ -1,0 +1,161 @@
+{
+  "utc": "2026-10-12T12:56:33.7325672Z",
+  "candidate_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "files": [
+    {
+      "file": "artifact-hashes-initial-ec9.json",
+      "size": 3177,
+      "sha256": "d1afd52da4c020529227ccadd771e5e99038efdcc4a7510a99017ce4bbe95157"
+    },
+    {
+      "file": "boundary-inputs-after.json",
+      "size": 132333,
+      "sha256": "8d466a966ccd8906bff121b26c37fdd591a94c3639f8b7cf53b7c0c1283df2c7"
+    },
+    {
+      "file": "boundary-inputs-before.json",
+      "size": 132247,
+      "sha256": "975138b34adba2834063c01924085e3184b78c0a8201881122d0b50202045983"
+    },
+    {
+      "file": "boundary-inputs-final-after.json",
+      "size": 132711,
+      "sha256": "f3060124d7cd086b54459bf6a5376c213ed69cdb5b0119bc6b833658c706ad81"
+    },
+    {
+      "file": "boundary-inputs-final-before.json",
+      "size": 132934,
+      "sha256": "557ded9369b08e4c6851bcf3989c6186faca0eadabb9c10c084111bdba9decb5"
+    },
+    {
+      "file": "delta-environment-prepare.json",
+      "size": 853,
+      "sha256": "68408554ee1cf38e120411874e70e1d96fbf6d631e4b9f1e187540cd5c80bf9f"
+    },
+    {
+      "file": "delta-fixture-recheck-receipt.json",
+      "size": 914,
+      "sha256": "8237f0cb31637d43f3c08730092911e98eea6ba440961d94fe2c8dc9f9f609c9"
+    },
+    {
+      "file": "delta-fixture-recheck.log",
+      "size": 100,
+      "sha256": "3dde14a39b8017851e7c0e6cb62733c976232ccb627a8731f1725cb0fd70fc56"
+    },
+    {
+      "file": "delta-inputs-before.json",
+      "size": 469,
+      "sha256": "8718bec349f15e6c922bc32d11645c1c8bf8d917791d648ddeb69d56068d68f3"
+    },
+    {
+      "file": "failure-inputs.json",
+      "size": 1219,
+      "sha256": "d690174a3d81f794036b7a3ccb42c7207f7664623737cd7601bd69da75d1fe18"
+    },
+    {
+      "file": "final-candidate-metadata.diff",
+      "size": 2756,
+      "sha256": "ee7dc63a716eb09517c39d7f75cc0b9030a7213b4755a4f2a8006c9d0cededb2"
+    },
+    {
+      "file": "final-gate-reuse.json",
+      "size": 3397,
+      "sha256": "c73b5268fff10c40c0942c4105500f28b4969f52492dd16139f9b171361fe089"
+    },
+    {
+      "file": "preflight.json",
+      "size": 1655,
+      "sha256": "7c65e6c2b7209ad850f6c2a699d7bc93b2402884e26e0c06763b6adbe9d78708"
+    },
+    {
+      "file": "python-import-paths.json",
+      "size": 1403,
+      "sha256": "83a29397866b45c0c1066ba05fbaf0207e7ee94fe19c5273c6a0c795c9a784b6"
+    },
+    {
+      "file": "python-mobile-final-receipt.json",
+      "size": 1202,
+      "sha256": "45571d6bc9e9e3939fb1082212e89a86634e79c2d85ea5a294d8e5020aae051f"
+    },
+    {
+      "file": "python-mobile-final.log",
+      "size": 519,
+      "sha256": "879b40f1a7b00a31f4c86337d8b25ccd991313ab5e3fe6d0213da4e230a7985e"
+    },
+    {
+      "file": "python-mobile-receipt.json",
+      "size": 1189,
+      "sha256": "4b0e4e1982f5676a6cac9442122ddb3b8fa67e976ff75ce611368dfa47b3e715"
+    },
+    {
+      "file": "python-mobile.log",
+      "size": 12675,
+      "sha256": "c8b55007dc36eb043ee3ac16de719d6b78c018fc3b43889e81b50ed6e27a1feb"
+    },
+    {
+      "file": "README-initial-ec9.md",
+      "size": 5372,
+      "sha256": "831b4318311f0a034ef4bb5cb3fe07914789e337cffa4be9f7d58c3c32d16e4a"
+    },
+    {
+      "file": "README.md",
+      "size": 6086,
+      "sha256": "e2e2394cfb8776c484dce418aa0a8b2e4385c04a2bc88cef57c067b603d2825e"
+    },
+    {
+      "file": "repository-policy-final-receipt.json",
+      "size": 1195,
+      "sha256": "5901ebd774cf586007fae2cfc2ca0b2043f11cd1a330b4cbe1ef6dd73cd12d12"
+    },
+    {
+      "file": "repository-policy-final.log",
+      "size": 25,
+      "sha256": "6a46550af8b27b0d1e3a834383c86d38457649d5e7ba07e556f9a938942b8e4d"
+    },
+    {
+      "file": "run-boundary-gate.ps1",
+      "size": 2932,
+      "sha256": "5e8755a10b5856212839ae07eaaac86e362af5fd89799dad59c29f9a862464b1"
+    },
+    {
+      "file": "run-delta-fixture-recheck.ps1",
+      "size": 1864,
+      "sha256": "91ee02e38b52e485f77e5c4e92e670d06f24997d740ca70ddcb13163dc8346b2"
+    },
+    {
+      "file": "run-final-boundary-gate.ps1",
+      "size": 2949,
+      "sha256": "e9ce277be38d82f14dad2d3fc1a791094e03d5358b58ea953f113247b46a0dfd"
+    },
+    {
+      "file": "summary-initial-ec9.json",
+      "size": 3067,
+      "sha256": "aa10ba57223d4635b88c10898cd686266baf44c52b563ea2b290dd7fcd169eb7"
+    },
+    {
+      "file": "summary.json",
+      "size": 3979,
+      "sha256": "39942bc49df5cd18b96078d21106cc9b18d58bb08e09455f33b79fa6a40a7ed4"
+    },
+    {
+      "file": "ui-contract-receipt.json",
+      "size": 1141,
+      "sha256": "d46883d03b0e1768e3c6ba670b39acc4340a70deb92589d3c2813d376766a36a"
+    },
+    {
+      "file": "ui-contract.log",
+      "size": 54,
+      "sha256": "7e15d4981f52cc3daf48f51a5aef1f332dc491001d808a2ba5c73d4e3a33a80d"
+    },
+    {
+      "file": "verify-receipt.json",
+      "size": 1137,
+      "sha256": "1eaefc78f29a3cdadfe08c9e46ca838513012530ca259d83874f8774533837f2"
+    },
+    {
+      "file": "verify.log",
+      "size": 872,
+      "sha256": "8afd139937fa15cb628750b50b12a7971f620eb32e8b2d603dbcdbebd5d84ba9"
+    }
+  ]
+}

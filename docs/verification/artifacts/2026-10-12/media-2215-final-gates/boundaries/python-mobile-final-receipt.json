@@ -1,0 +1,21 @@
+{
+  "gate": "python-mobile-final",
+  "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/mobile tests/test_android_delta.py",
+  "actual_exit_code": 0,
+  "started_utc": "2026-10-12T12:53:44.3038885Z",
+  "ended_utc": "2026-10-12T12:54:21.4610854Z",
+  "duration_seconds": 37.155727,
+  "candidate_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "candidate_after": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "tree": "dd8f6068d952626e481328047819cb34950a648a",
+  "tracked_status_after": [],
+  "cwd": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat",
+  "shell": "pwsh.exe",
+  "powershell_version": "7.6.5",
+  "python_utf8": "1",
+  "python_io_encoding": "utf-8",
+  "log_file": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-2215-final-gates\\boundaries\\python-mobile-final.log",
+  "log_sha256": "879b40f1a7b00a31f4c86337d8b25ccd991313ab5e3fe6d0213da4e230a7985e",
+  "input_manifest_sha256": "557ded9369b08e4c6851bcf3989c6186faca0eadabb9c10c084111bdba9decb5",
+  "mobile_manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050"
+}

@@ -1,0 +1,34 @@
+{
+  "recorded_utc": "2026-10-12T20:41:52.1179048+08:00",
+  "adb": "not_accessed",
+  "native_runtime": {
+    "source": "existing read-only verified runtime from prior root gate",
+    "olm_path": "C:/Users/Administrator/.codex/worktrees/search-camera-history-20261003/StarChat/docs/verification/artifacts/2026-10-03/search-camera-history/task-3a-windows-olm/libolm.dll",
+    "sqlcipher_path": "C:/Users/Administrator/.codex/worktrees/search-camera-history-20261003/StarChat/docs/verification/artifacts/2026-10-03/search-camera-history/task-3b-sqlcipher-build/libsqlcipher.dll"
+  },
+  "source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "hosted_packages_checked": 216,
+  "apk_build": "not_executed",
+  "os": "Microsoft Windows 10.0.19045",
+  "version_mismatch_count": 0,
+  "lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "generated_inputs_only": "pub get refreshed .dart_tool and plugin dependencies, original dependency lock unchanged",
+  "device_evidence": "root-owned; not inferred from desktop gates",
+  "package_config_sha256": "bb7ffa0d3540dd3d2a974fe1506fc541f80f81a49a5a38c74e8fd911b1bafc47",
+  "flutter": {
+    "frameworkVersion": "3.44.9",
+    "channel": "stable",
+    "repositoryUrl": "https://github.com/flutter/flutter.git",
+    "frameworkRevision": "6b182d2c7585eba26d4edce0f97630effd256c33",
+    "frameworkCommitDate": "2026-08-05 10:04:07 -0700",
+    "engineRevision": "5a2a6a42cce67f965cf540fcecf616faca624aa1",
+    "engineCommitDate": "2026-07-31 18:31:59.000Z",
+    "engineContentHash": "b9499e4c25212536ba3a4eec4f5c1905fb3214fe",
+    "engineBuildDate": "2026-08-01 04:30:03.301",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.9",
+    "flutterRoot": "C:\\src\\flutter"
+  },
+  "python": "Python 3.12.10"
+}

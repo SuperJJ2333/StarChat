@@ -1,0 +1,16 @@
+{
+  "utc": "2026-10-12T12:47:08.6132598Z",
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "files": [
+    {
+      "path": "tests/test_android_delta.py",
+      "sha256": "77fe5d46255e7ac16a0fbc24eb2a6cd1921a307f703872d589ae90cd712fe7f3",
+      "size": 3775
+    },
+    {
+      "path": "scripts/build_android_delta.py",
+      "sha256": "cfdd9f0e4602cc9bf02041e91287ef0b0d42cb4add9ef3930d508233d5ddb975",
+      "size": 11467
+    }
+  ]
+}

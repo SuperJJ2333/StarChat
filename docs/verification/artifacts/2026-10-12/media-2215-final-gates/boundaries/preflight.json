@@ -1,0 +1,28 @@
+{
+  "utc": "2026-10-12T12:42:31.6117682Z",
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "candidate_tree": "6b977c6f0332494354ab317ebfb0139e9fef210e",
+  "branch": "codex/media-2215-final-gates",
+  "worktree": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat",
+  "tracked_status": [],
+  "env_exists": false,
+  "env_example_exists": true,
+  "codegraph_present": false,
+  "powershell_version": "7.6.5",
+  "powershell_executable": "C:\\Users\\Administrator\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe",
+  "python_launcher": "C:\\Windows\\py.exe",
+  "node_executable": "C:\\Users\\Administrator\\AppData\\Local\\fnm_multishells\\16516_1791642809378\\node.exe",
+  "docker_executable": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+  "python": [
+    "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+    "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+    "8.4.2",
+    "Windows-10-10.0.19045-SP0",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat"
+  ],
+  "node_version": "v22.22.2",
+  "docker_version": "Docker version 29.8.2, build 7fc2dff",
+  "docker_compose_version": "Docker Compose version v5.5.1",
+  "mobile_manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050",
+  "env_policy": "No .env is created/imported; no production credentials are used. verify.ps1 will execute its policy/template stages, then terminate before configuration writes at the missing .env check."
+}

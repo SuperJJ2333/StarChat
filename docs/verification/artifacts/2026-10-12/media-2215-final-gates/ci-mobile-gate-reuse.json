@@ -1,0 +1,45 @@
+{
+  "changed_paths": [
+    ".github/workflows/ios-enterprise-package.yml"
+  ],
+  "ended_utc": "2026-10-12T12:53:31.515687+00:00",
+  "final_manifest": {
+    "build": 2215,
+    "file_count": 2102,
+    "manifest_sha256": "f08ce77be8b503f691beebb605f5423ef883146a76f3a341df8001cfe00e2ae1",
+    "source_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+    "version": "0.4.46"
+  },
+  "final_source_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "gates": {
+    "analyze": {
+      "accepted_for_source_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+      "actual_exit_code": 0,
+      "log_sha256": "9aba01cb564a7e7c9abf2fda65e79dd0caea49f641e64138208ccc683518109a",
+      "reason": "Complete mobile file list and all SHA256s, generated inputs, pinned lock, and native runtime unchanged; successor only changes CI version literals.",
+      "receipt_sha256": "b9c3d5f6505bf40e36bc821aa39c9ee66396ad47b5ad8dc0761b7a2d283c479d",
+      "reused_from_source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641"
+    },
+    "flutter": {
+      "accepted_for_source_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+      "actual_exit_code": 0,
+      "failed": 0,
+      "log_sha256": "dae12fb7c102e5b9957db8fa16577f18f83d544f42ac17b26936a15e3ecae2a8",
+      "passed": 5965,
+      "reason": "Complete mobile file list and all SHA256s, generated inputs, pinned lock, and native runtime unchanged; successor only changes CI version literals.",
+      "receipt_sha256": "f986fd47e1432311d3f89d067c6fdd2c971eff55bbaebbed1eda0b95192c99b9",
+      "reused_from_source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+      "skipped": 9
+    }
+  },
+  "generated_inputs_equal": true,
+  "ios_publication": "not_executed",
+  "ios_workflow_execution": "not_triggered",
+  "mobile_file_count": 2102,
+  "mobile_file_list_and_sha256_equal": true,
+  "original_manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050",
+  "original_source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "python_boundaries": "Successor changes workflow contract input; original failing suite is not reused as passing. A fresh whole Python/mobile suite is required and separately recorded.",
+  "schema": 1,
+  "started_utc": "2026-10-12T12:53:29.402163+00:00"
+}

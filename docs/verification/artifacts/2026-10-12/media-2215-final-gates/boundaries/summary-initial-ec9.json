@@ -1,0 +1,58 @@
+{
+  "utc": "2026-10-12T12:49:49.2168521Z",
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "candidate_tree": "6b977c6f0332494354ab317ebfb0139e9fef210e",
+  "scope": "Read-only Python/mobile boundaries, repository/deployment/template policy stages, verify.ps1 environment preflight and executable applicable UI contract gate. No product/dependency/build/ADB/server changes.",
+  "python_initial": {
+    "actual_exit_code": 1,
+    "passed": 396,
+    "failed": 5,
+    "skipped": 1,
+    "pytest_duration_seconds": 87.09,
+    "receipt": "python-mobile-receipt.json",
+    "remaining_contract_failure": "tests/mobile/test_ios_handoff_release_version.py::test_unsigned_pipeline_uses_current_source_version_at_every_handoff_boundary",
+    "environment_setup_failures": 4
+  },
+  "delta_supplementary": {
+    "actual_exit_code": 0,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "receipt": "delta-fixture-recheck-receipt.json",
+    "test_and_implementation_unchanged": true,
+    "preparation": "Original test-required ignored historical parent created in this candidate worktree only."
+  },
+  "verify": {
+    "actual_exit_code": 1,
+    "receipt": "verify-receipt.json",
+    "stopped_at": "Render-only configuration smoke test: scripts/init_matrix.ps1:19 missing .env",
+    "repository_policy": "PASS",
+    "deployment_policy": "PASS",
+    "template_tools": "PASS",
+    "policy_exit_code_evidence": "Each child native exit code is checked by Assert-LastExitCode before the next stage. The preserved log shows all three stages advanced to render. No separate duplicate executions were needed.",
+    "render_gate": "BLOCKED_ENVIRONMENT",
+    "whole_script_pass": false
+  },
+  "ui_contract": {
+    "actual_exit_code": 0,
+    "components": 34,
+    "screens": 535,
+    "receipt": "ui-contract-receipt.json"
+  },
+  "input_comparison": {
+    "file_count": 670,
+    "changed_input_paths": [],
+    "tracked_status_after": [],
+    "before": "boundary-inputs-before.json",
+    "after": "boundary-inputs-after.json",
+    "additional_failure_inputs": "failure-inputs.json",
+    "delta_inputs": "delta-inputs-before.json"
+  },
+  "skipped_detail": "Initial -q output records one skip without a reason. No skip reason is invented.",
+  "not_executed": [
+    "Remaining verify.ps1 infrastructure, Getui, Matrix Bot, Business API/Worker full suites, Python AST, Alembic, OpenAPI stages: original script stopped before them and this client-media boundary task does not broaden to unrelated business services.",
+    "Flutter/analyze final gates: parallel parent owner; no duplicate execution here.",
+    "Native compilation, APK rebuild/signing, emulator/device installation, actual message send/receive, server deployment: parent/root scope, not executed by this subtask."
+  ],
+  "remaining_action": "Parent/root must fix or explicitly disposition the iOS unsigned handoff version mismatch, then bind any focused rerun to the final candidate. This report does not claim final shared/full-repository acceptance."
+}

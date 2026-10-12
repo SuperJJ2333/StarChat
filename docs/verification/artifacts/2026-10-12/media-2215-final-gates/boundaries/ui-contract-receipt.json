@@ -1,0 +1,21 @@
+{
+  "gate": "ui-contract",
+  "command": "py -3.12 scripts/verify_ui_contract.py",
+  "actual_exit_code": 0,
+  "started_utc": "2026-10-12T12:42:54.0498822Z",
+  "ended_utc": "2026-10-12T12:42:54.8504500Z",
+  "duration_seconds": 0.798572,
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "candidate_after": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "tree": "6b977c6f0332494354ab317ebfb0139e9fef210e",
+  "tracked_status_after": [],
+  "cwd": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat",
+  "shell": "pwsh.exe",
+  "powershell_version": "7.6.5",
+  "python_utf8": "1",
+  "python_io_encoding": "utf-8",
+  "log_file": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-2215-final-gates\\boundaries\\ui-contract.log",
+  "log_sha256": "7e15d4981f52cc3daf48f51a5aef1f332dc491001d808a2ba5c73d4e3a33a80d",
+  "input_manifest_sha256": "975138b34adba2834063c01924085e3184b78c0a8201881122d0b50202045983",
+  "mobile_manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050"
+}

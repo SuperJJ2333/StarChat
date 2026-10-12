@@ -1,0 +1,13 @@
+{
+  "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/test_android_delta.py",
+  "actual_exit_code": 0,
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "started_utc": "2026-10-12T12:47:29.0836163Z",
+  "ended_utc": "2026-10-12T12:47:30.5491583Z",
+  "duration_seconds": 1.39008,
+  "log_file": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-2215-final-gates\\boundaries\\delta-fixture-recheck.log",
+  "log_sha256": "3dde14a39b8017851e7c0e6cb62733c976232ccb627a8731f1725cb0fd70fc56",
+  "input_manifest_sha256": "8718bec349f15e6c922bc32d11645c1c8bf8d917791d648ddeb69d56068d68f3",
+  "tracked_status_after": [],
+  "environment_preparation": "Created only the ignored parent already required by the unchanged test. No monkeypatch, assertion change, alternate implementation, or test exclusion."
+}

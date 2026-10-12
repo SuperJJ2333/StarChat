@@ -1,0 +1,74 @@
+{
+  "utc": "2026-10-12T12:54:32.3444228Z",
+  "from_candidate": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "to_candidate": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "diff_paths": [
+    ".github/workflows/ios-enterprise-package.yml"
+  ],
+  "env_exists": false,
+  "policy": "Reuse is scoped to unchanged gate inputs and prior actual results, not a fabricated final full-script exit.",
+  "reused": [
+    {
+      "gate": "deployment-policy",
+      "previous_receipt": "verify-receipt.json",
+      "previous_receipt_sha256": "1eaefc78f29a3cdadfe08c9e46ca838513012530ca259d83874f8774533837f2",
+      "previous_result": "PASS in actual verify prefix",
+      "inputs": [
+        "tests/repository/Test-DeploymentPolicy.ps1",
+        ".env.example",
+        "docker-compose.yml",
+        "docker-compose.production.yml",
+        "services/matrix-bot/Dockerfile",
+        "services/business-api/Dockerfile",
+        "services/business-worker/Dockerfile",
+        "infra/nginx/nginx.conf.template",
+        "docs/runbooks/mobile-release.md"
+      ],
+      "unchanged_source_basis": "Git commit diff is only .github/workflows/ios-enterprise-package.yml; no listed closure input changed. .env is still absent, as before. Compose command and tools same local environment."
+    },
+    {
+      "gate": "template-tools",
+      "previous_receipt": "verify-receipt.json",
+      "previous_receipt_sha256": "1eaefc78f29a3cdadfe08c9e46ca838513012530ca259d83874f8774533837f2",
+      "previous_result": "PASS in actual verify prefix",
+      "inputs": [
+        "tests/powershell/Test-TemplateTools.ps1",
+        "scripts/lib/TemplateTools.psm1"
+      ],
+      "unchanged_source_basis": "Neither test nor module changed; same PowerShell7 runtime."
+    },
+    {
+      "gate": "ui-contract",
+      "previous_receipt": "ui-contract-receipt.json",
+      "previous_receipt_sha256": "d46883d03b0e1768e3c6ba670b39acc4340a70deb92589d3c2813d376766a36a",
+      "previous_result": "exit 0; 34 components / 535 screens",
+      "inputs": [
+        "scripts/verify_ui_contract.py",
+        "packages/ui-contracts/changliao-component-registry.json",
+        "frontend/src/catalog/contracts.js",
+        "frontend/src/catalog/screens.js",
+        "frontend/src/styles/tokens.css",
+        "apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart",
+        "apps/mobile_flutter/lib",
+        "frontend/src",
+        "services/business-worker/app/integrations/email_sender.py",
+        "services/business-api/app/api/identity.py",
+        "services/business-api/app/modules/support/service.py",
+        "UI_DESIGN.md"
+      ],
+      "unchanged_source_basis": "Git commit diff is only iOS CI metadata; all tracked UI drift closure sources unchanged, same Python/Node environment."
+    },
+    {
+      "gate": "verify.ps1-blocked-environment",
+      "previous_receipt": "verify-receipt.json",
+      "previous_receipt_sha256": "1eaefc78f29a3cdadfe08c9e46ca838513012530ca259d83874f8774533837f2",
+      "previous_result": "actual exit 1; missing .env at init_matrix.ps1:19",
+      "inputs": [
+        "scripts/verify.ps1",
+        "scripts/init_matrix.ps1",
+        "scripts/lib/TemplateTools.psm1"
+      ],
+      "unchanged_source_basis": "Scripts unchanged and .env remains absent; original failure retained. No claim that final whole verify passed."
+    }
+  ]
+}

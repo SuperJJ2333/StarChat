@@ -1,0 +1,21 @@
+{
+  "gate": "verify",
+  "command": "pwsh.exe -NoProfile -File scripts/verify.ps1",
+  "actual_exit_code": 1,
+  "started_utc": "2026-10-12T12:42:53.9947933Z",
+  "ended_utc": "2026-10-12T12:42:58.7103148Z",
+  "duration_seconds": 4.712863,
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "candidate_after": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "tree": "6b977c6f0332494354ab317ebfb0139e9fef210e",
+  "tracked_status_after": [],
+  "cwd": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat",
+  "shell": "pwsh.exe",
+  "powershell_version": "7.6.5",
+  "python_utf8": "1",
+  "python_io_encoding": "utf-8",
+  "log_file": "C:\\Users\\Administrator\\.codex\\worktrees\\media-send-startup-2214\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-2215-final-gates\\boundaries\\verify.log",
+  "log_sha256": "8afd139937fa15cb628750b50b12a7971f620eb32e8b2d603dbcdbebd5d84ba9",
+  "input_manifest_sha256": "975138b34adba2834063c01924085e3184b78c0a8201881122d0b50202045983",
+  "mobile_manifest_sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050"
+}

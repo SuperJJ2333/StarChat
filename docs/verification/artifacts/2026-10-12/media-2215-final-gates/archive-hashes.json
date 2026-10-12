@@ -1,0 +1,273 @@
+{
+  "source_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "schema": 1,
+  "file_count": 53,
+  "recorded_utc": "2026-10-12T13:01:37.8003031+00:00",
+  "files": [
+    {
+      "sha256": "c171f101687a2ef4aa2e70b0e7e03dd08bfb82ed980d875c69b24d4f80a5baec",
+      "bytes": 85,
+      "file": ".gitattributes"
+    },
+    {
+      "sha256": "187870e3663596f9ed17e8286a44af39a41eee765299e84de8f2fe7a2c04a589",
+      "bytes": 2261,
+      "file": "ci-mobile-gate-reuse.json"
+    },
+    {
+      "sha256": "57222846bf6e82285b2c31e63beb4568f7839d008245b1ec05fb4851d7336cca",
+      "bytes": 1850,
+      "file": "environment.json"
+    },
+    {
+      "sha256": "f08ce77be8b503f691beebb605f5423ef883146a76f3a341df8001cfe00e2ae1",
+      "bytes": 389011,
+      "file": "final-mobile-input-manifest.json"
+    },
+    {
+      "sha256": "7faea867fb744dedeab984c76dcb231e4c3fad58babc0d757a6d37d64ded8a68",
+      "bytes": 6360,
+      "file": "freeze_mobile_input.py"
+    },
+    {
+      "sha256": "11785b677a4ff6a4d9e16a61c113fe153c06b84ff7f043878997b593284c9139",
+      "bytes": 206,
+      "file": "freeze-create.json"
+    },
+    {
+      "sha256": "bf8524c0da20b4a1700fb43c07bd3a5344c08e9c2f2a5e33a3bbf1f8cdee9050",
+      "bytes": 389011,
+      "file": "mobile-input-manifest.json"
+    },
+    {
+      "sha256": "4143ccbc7da25d0cdf526d6b5a3df7bc017e6b5ed3988fa430ead73a78870d18",
+      "bytes": 384,
+      "file": "pub-get-pinned-receipt.json"
+    },
+    {
+      "sha256": "6f34a1ee9e3b33abf8d8a511982375f8aa0ccbac4994649f5eb4ecbf9de780b8",
+      "bytes": 1337,
+      "file": "pub-get-pinned.log"
+    },
+    {
+      "sha256": "b71eb22bea31604c57086b1c062712aaa4fa5e9aeddfa60b28c2a7a7094f95df",
+      "bytes": 5765,
+      "file": "README.md"
+    },
+    {
+      "sha256": "1866d590b0b967eff78818cb13a15f7dbfbd101ebee5d6ad8d57956582869029",
+      "bytes": 3958,
+      "file": "run_flutter_gate.ps1"
+    },
+    {
+      "sha256": "206cbcf08166d0dbf8554c28105daeffa4ce8f797e15048d0bf4a288afa8c704",
+      "bytes": 2656,
+      "file": "summary.json"
+    },
+    {
+      "sha256": "59408414da93710633175308aacb2dab90b4b4e5cf6058418e83545263ad50b9",
+      "bytes": 4318,
+      "file": "verify_ci_mobile_reuse.py"
+    },
+    {
+      "sha256": "9aba01cb564a7e7c9abf2fda65e79dd0caea49f641e64138208ccc683518109a",
+      "bytes": 204,
+      "file": "analyze/gate.log"
+    },
+    {
+      "sha256": "11785b677a4ff6a4d9e16a61c113fe153c06b84ff7f043878997b593284c9139",
+      "bytes": 206,
+      "file": "analyze/input-after.json"
+    },
+    {
+      "sha256": "11785b677a4ff6a4d9e16a61c113fe153c06b84ff7f043878997b593284c9139",
+      "bytes": 206,
+      "file": "analyze/input-before.json"
+    },
+    {
+      "sha256": "b9c3d5f6505bf40e36bc821aa39c9ee66396ad47b5ad8dc0761b7a2d283c479d",
+      "bytes": 1105,
+      "file": "analyze/receipt.json"
+    },
+    {
+      "sha256": "d1afd52da4c020529227ccadd771e5e99038efdcc4a7510a99017ce4bbe95157",
+      "bytes": 3177,
+      "file": "boundaries/artifact-hashes-initial-ec9.json"
+    },
+    {
+      "sha256": "86179c582ce8e6976b9dc1add8d936728b8eca59d8d60313ce6c3ed6cc3a07c7",
+      "bytes": 5183,
+      "file": "boundaries/artifact-hashes.json"
+    },
+    {
+      "sha256": "8d466a966ccd8906bff121b26c37fdd591a94c3639f8b7cf53b7c0c1283df2c7",
+      "bytes": 132333,
+      "file": "boundaries/boundary-inputs-after.json"
+    },
+    {
+      "sha256": "975138b34adba2834063c01924085e3184b78c0a8201881122d0b50202045983",
+      "bytes": 132247,
+      "file": "boundaries/boundary-inputs-before.json"
+    },
+    {
+      "sha256": "f3060124d7cd086b54459bf6a5376c213ed69cdb5b0119bc6b833658c706ad81",
+      "bytes": 132711,
+      "file": "boundaries/boundary-inputs-final-after.json"
+    },
+    {
+      "sha256": "557ded9369b08e4c6851bcf3989c6186faca0eadabb9c10c084111bdba9decb5",
+      "bytes": 132934,
+      "file": "boundaries/boundary-inputs-final-before.json"
+    },
+    {
+      "sha256": "68408554ee1cf38e120411874e70e1d96fbf6d631e4b9f1e187540cd5c80bf9f",
+      "bytes": 853,
+      "file": "boundaries/delta-environment-prepare.json"
+    },
+    {
+      "sha256": "8237f0cb31637d43f3c08730092911e98eea6ba440961d94fe2c8dc9f9f609c9",
+      "bytes": 914,
+      "file": "boundaries/delta-fixture-recheck-receipt.json"
+    },
+    {
+      "sha256": "3dde14a39b8017851e7c0e6cb62733c976232ccb627a8731f1725cb0fd70fc56",
+      "bytes": 100,
+      "file": "boundaries/delta-fixture-recheck.log"
+    },
+    {
+      "sha256": "8718bec349f15e6c922bc32d11645c1c8bf8d917791d648ddeb69d56068d68f3",
+      "bytes": 469,
+      "file": "boundaries/delta-inputs-before.json"
+    },
+    {
+      "sha256": "d690174a3d81f794036b7a3ccb42c7207f7664623737cd7601bd69da75d1fe18",
+      "bytes": 1219,
+      "file": "boundaries/failure-inputs.json"
+    },
+    {
+      "sha256": "ee7dc63a716eb09517c39d7f75cc0b9030a7213b4755a4f2a8006c9d0cededb2",
+      "bytes": 2756,
+      "file": "boundaries/final-candidate-metadata.diff"
+    },
+    {
+      "sha256": "c73b5268fff10c40c0942c4105500f28b4969f52492dd16139f9b171361fe089",
+      "bytes": 3397,
+      "file": "boundaries/final-gate-reuse.json"
+    },
+    {
+      "sha256": "7c65e6c2b7209ad850f6c2a699d7bc93b2402884e26e0c06763b6adbe9d78708",
+      "bytes": 1655,
+      "file": "boundaries/preflight.json"
+    },
+    {
+      "sha256": "83a29397866b45c0c1066ba05fbaf0207e7ee94fe19c5273c6a0c795c9a784b6",
+      "bytes": 1403,
+      "file": "boundaries/python-import-paths.json"
+    },
+    {
+      "sha256": "45571d6bc9e9e3939fb1082212e89a86634e79c2d85ea5a294d8e5020aae051f",
+      "bytes": 1202,
+      "file": "boundaries/python-mobile-final-receipt.json"
+    },
+    {
+      "sha256": "879b40f1a7b00a31f4c86337d8b25ccd991313ab5e3fe6d0213da4e230a7985e",
+      "bytes": 519,
+      "file": "boundaries/python-mobile-final.log"
+    },
+    {
+      "sha256": "4b0e4e1982f5676a6cac9442122ddb3b8fa67e976ff75ce611368dfa47b3e715",
+      "bytes": 1189,
+      "file": "boundaries/python-mobile-receipt.json"
+    },
+    {
+      "sha256": "c8b55007dc36eb043ee3ac16de719d6b78c018fc3b43889e81b50ed6e27a1feb",
+      "bytes": 12675,
+      "file": "boundaries/python-mobile.log"
+    },
+    {
+      "sha256": "831b4318311f0a034ef4bb5cb3fe07914789e337cffa4be9f7d58c3c32d16e4a",
+      "bytes": 5372,
+      "file": "boundaries/README-initial-ec9.md"
+    },
+    {
+      "sha256": "e2e2394cfb8776c484dce418aa0a8b2e4385c04a2bc88cef57c067b603d2825e",
+      "bytes": 6086,
+      "file": "boundaries/README.md"
+    },
+    {
+      "sha256": "5901ebd774cf586007fae2cfc2ca0b2043f11cd1a330b4cbe1ef6dd73cd12d12",
+      "bytes": 1195,
+      "file": "boundaries/repository-policy-final-receipt.json"
+    },
+    {
+      "sha256": "6a46550af8b27b0d1e3a834383c86d38457649d5e7ba07e556f9a938942b8e4d",
+      "bytes": 25,
+      "file": "boundaries/repository-policy-final.log"
+    },
+    {
+      "sha256": "5e8755a10b5856212839ae07eaaac86e362af5fd89799dad59c29f9a862464b1",
+      "bytes": 2932,
+      "file": "boundaries/run-boundary-gate.ps1"
+    },
+    {
+      "sha256": "91ee02e38b52e485f77e5c4e92e670d06f24997d740ca70ddcb13163dc8346b2",
+      "bytes": 1864,
+      "file": "boundaries/run-delta-fixture-recheck.ps1"
+    },
+    {
+      "sha256": "e9ce277be38d82f14dad2d3fc1a791094e03d5358b58ea953f113247b46a0dfd",
+      "bytes": 2949,
+      "file": "boundaries/run-final-boundary-gate.ps1"
+    },
+    {
+      "sha256": "aa10ba57223d4635b88c10898cd686266baf44c52b563ea2b290dd7fcd169eb7",
+      "bytes": 3067,
+      "file": "boundaries/summary-initial-ec9.json"
+    },
+    {
+      "sha256": "39942bc49df5cd18b96078d21106cc9b18d58bb08e09455f33b79fa6a40a7ed4",
+      "bytes": 3979,
+      "file": "boundaries/summary.json"
+    },
+    {
+      "sha256": "d46883d03b0e1768e3c6ba670b39acc4340a70deb92589d3c2813d376766a36a",
+      "bytes": 1141,
+      "file": "boundaries/ui-contract-receipt.json"
+    },
+    {
+      "sha256": "7e15d4981f52cc3daf48f51a5aef1f332dc491001d808a2ba5c73d4e3a33a80d",
+      "bytes": 54,
+      "file": "boundaries/ui-contract.log"
+    },
+    {
+      "sha256": "1eaefc78f29a3cdadfe08c9e46ca838513012530ca259d83874f8774533837f2",
+      "bytes": 1137,
+      "file": "boundaries/verify-receipt.json"
+    },
+    {
+      "sha256": "8afd139937fa15cb628750b50b12a7971f620eb32e8b2d603dbcdbebd5d84ba9",
+      "bytes": 872,
+      "file": "boundaries/verify.log"
+    },
+    {
+      "sha256": "dae12fb7c102e5b9957db8fa16577f18f83d544f42ac17b26936a15e3ecae2a8",
+      "bytes": 3157593,
+      "file": "flutter/gate.log"
+    },
+    {
+      "sha256": "11785b677a4ff6a4d9e16a61c113fe153c06b84ff7f043878997b593284c9139",
+      "bytes": 206,
+      "file": "flutter/input-after.json"
+    },
+    {
+      "sha256": "11785b677a4ff6a4d9e16a61c113fe153c06b84ff7f043878997b593284c9139",
+      "bytes": 206,
+      "file": "flutter/input-before.json"
+    },
+    {
+      "sha256": "f986fd47e1432311d3f89d067c6fdd2c971eff55bbaebbed1eda0b95192c99b9",
+      "bytes": 1110,
+      "file": "flutter/receipt.json"
+    }
+  ]
+}

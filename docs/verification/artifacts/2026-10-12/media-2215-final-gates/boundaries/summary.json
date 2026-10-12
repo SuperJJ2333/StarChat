@@ -1,0 +1,74 @@
+{
+  "utc": "2026-10-12T12:56:33.6629353Z",
+  "final_candidate_commit": "e432414276af7d6fe73afd9afc8b41d7bfd4b5b7",
+  "final_candidate_tree": "dd8f6068d952626e481328047819cb34950a648a",
+  "previous_candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "final_python_mobile": {
+    "actual_exit_code": 0,
+    "passed": 401,
+    "failed": 0,
+    "skipped": 1,
+    "pytest_duration_seconds": 36.36,
+    "receipt": "python-mobile-final-receipt.json",
+    "log": "python-mobile-final.log",
+    "log_sha256": "879b40f1a7b00a31f4c86337d8b25ccd991313ab5e3fe6d0213da4e230a7985e"
+  },
+  "final_repository_policy": {
+    "actual_exit_code": 0,
+    "result": "PASS",
+    "receipt": "repository-policy-final-receipt.json"
+  },
+  "history": {
+    "initial_python_mobile": {
+      "actual_exit_code": 1,
+      "passed": 396,
+      "failed": 5,
+      "skipped": 1,
+      "pytest_duration_seconds": 87.09,
+      "receipt": "python-mobile-receipt.json",
+      "remaining_contract_failure": "tests/mobile/test_ios_handoff_release_version.py::test_unsigned_pipeline_uses_current_source_version_at_every_handoff_boundary",
+      "environment_setup_failures": 4
+    },
+    "delta_supplementary": {
+      "actual_exit_code": 0,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "receipt": "delta-fixture-recheck-receipt.json",
+      "test_and_implementation_unchanged": true,
+      "preparation": "Original test-required ignored historical parent created in this candidate worktree only."
+    },
+    "initial_candidate": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+    "remaining_contract_failure_status": "CLOSED by final full suite on e432; iOS CI metadata corrected, no iOS build or publication triggered.",
+    "initial_readme": "README-initial-ec9.md",
+    "initial_summary": "summary-initial-ec9.json",
+    "initial_artifact_hashes": "artifact-hashes-initial-ec9.json"
+  },
+  "reused_gates": {
+    "closure_evidence": "final-gate-reuse.json",
+    "commit_diff": "final-candidate-metadata.diff",
+    "deployment_policy": "Prior actual PASS reused; closure unchanged.",
+    "template_tools": "Prior actual PASS reused; closure unchanged.",
+    "ui_contract": "Prior exit 0, 34 components / 535 screens reused; closure unchanged.",
+    "verify_script": "Prior actual exit 1 retained; unchanged missing .env environment blocker, not claimed as final whole-script success."
+  },
+  "final_input_comparison": {
+    "compared_file_count": 672,
+    "changed_input_paths": [],
+    "tracked_status_after": [],
+    "before": "boundary-inputs-final-before.json",
+    "after": "boundary-inputs-final-after.json",
+    "initial_670_changed_paths": [],
+    "candidate_commit_diff_paths": [
+      ".github/workflows/ios-enterprise-package.yml"
+    ]
+  },
+  "skipped_detail": "Both -q full runs report one skip without the detailed reason. No skip reason is invented.",
+  "not_executed": [
+    "Remaining verify.ps1 infrastructure, Getui, Matrix Bot, Business API/Worker full suites, Python AST, Alembic, OpenAPI stages: original script stopped before them and this client-media boundary task does not broaden to unrelated business services.",
+    "Flutter/analyze final gates: parallel parent owner; no duplicate execution here.",
+    "Native compilation, APK rebuild/signing, emulator/device installation, actual message send/receive, server deployment: parent/root scope, not executed by this subtask."
+  ],
+  "scope": "Only own boundary scripts/logs/receipts/reports and authorized ignored delta parent. No product/dependency/ADB/build/server changes; no git stage/commit/branch changes. Final CI metadata correction was provided by root.",
+  "remaining_action": "Parent/root bind this final Python gate and scoped reused results with their Flutter/analyze closure and device media verification. Whole verify.ps1 is still blocked on local .env; this subtask does not claim native/device end-to-end acceptance."
+}

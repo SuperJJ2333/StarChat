@@ -1,0 +1,101 @@
+{
+  "utc": "2026-10-12T12:49:49.2785748Z",
+  "candidate_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "files": [
+    {
+      "file": "boundary-inputs-after.json",
+      "size": 132333,
+      "sha256": "8d466a966ccd8906bff121b26c37fdd591a94c3639f8b7cf53b7c0c1283df2c7"
+    },
+    {
+      "file": "boundary-inputs-before.json",
+      "size": 132247,
+      "sha256": "975138b34adba2834063c01924085e3184b78c0a8201881122d0b50202045983"
+    },
+    {
+      "file": "delta-environment-prepare.json",
+      "size": 853,
+      "sha256": "68408554ee1cf38e120411874e70e1d96fbf6d631e4b9f1e187540cd5c80bf9f"
+    },
+    {
+      "file": "delta-fixture-recheck-receipt.json",
+      "size": 914,
+      "sha256": "8237f0cb31637d43f3c08730092911e98eea6ba440961d94fe2c8dc9f9f609c9"
+    },
+    {
+      "file": "delta-fixture-recheck.log",
+      "size": 100,
+      "sha256": "3dde14a39b8017851e7c0e6cb62733c976232ccb627a8731f1725cb0fd70fc56"
+    },
+    {
+      "file": "delta-inputs-before.json",
+      "size": 469,
+      "sha256": "8718bec349f15e6c922bc32d11645c1c8bf8d917791d648ddeb69d56068d68f3"
+    },
+    {
+      "file": "failure-inputs.json",
+      "size": 1219,
+      "sha256": "d690174a3d81f794036b7a3ccb42c7207f7664623737cd7601bd69da75d1fe18"
+    },
+    {
+      "file": "preflight.json",
+      "size": 1655,
+      "sha256": "7c65e6c2b7209ad850f6c2a699d7bc93b2402884e26e0c06763b6adbe9d78708"
+    },
+    {
+      "file": "python-import-paths.json",
+      "size": 1403,
+      "sha256": "83a29397866b45c0c1066ba05fbaf0207e7ee94fe19c5273c6a0c795c9a784b6"
+    },
+    {
+      "file": "python-mobile-receipt.json",
+      "size": 1189,
+      "sha256": "4b0e4e1982f5676a6cac9442122ddb3b8fa67e976ff75ce611368dfa47b3e715"
+    },
+    {
+      "file": "python-mobile.log",
+      "size": 12675,
+      "sha256": "c8b55007dc36eb043ee3ac16de719d6b78c018fc3b43889e81b50ed6e27a1feb"
+    },
+    {
+      "file": "README.md",
+      "size": 5372,
+      "sha256": "831b4318311f0a034ef4bb5cb3fe07914789e337cffa4be9f7d58c3c32d16e4a"
+    },
+    {
+      "file": "run-boundary-gate.ps1",
+      "size": 2932,
+      "sha256": "5e8755a10b5856212839ae07eaaac86e362af5fd89799dad59c29f9a862464b1"
+    },
+    {
+      "file": "run-delta-fixture-recheck.ps1",
+      "size": 1864,
+      "sha256": "91ee02e38b52e485f77e5c4e92e670d06f24997d740ca70ddcb13163dc8346b2"
+    },
+    {
+      "file": "summary.json",
+      "size": 3067,
+      "sha256": "aa10ba57223d4635b88c10898cd686266baf44c52b563ea2b290dd7fcd169eb7"
+    },
+    {
+      "file": "ui-contract-receipt.json",
+      "size": 1141,
+      "sha256": "d46883d03b0e1768e3c6ba670b39acc4340a70deb92589d3c2813d376766a36a"
+    },
+    {
+      "file": "ui-contract.log",
+      "size": 54,
+      "sha256": "7e15d4981f52cc3daf48f51a5aef1f332dc491001d808a2ba5c73d4e3a33a80d"
+    },
+    {
+      "file": "verify-receipt.json",
+      "size": 1137,
+      "sha256": "1eaefc78f29a3cdadfe08c9e46ca838513012530ca259d83874f8774533837f2"
+    },
+    {
+      "file": "verify.log",
+      "size": 872,
+      "sha256": "8afd139937fa15cb628750b50b12a7971f620eb32e8b2d603dbcdbebd5d84ba9"
+    }
+  ]
+}
