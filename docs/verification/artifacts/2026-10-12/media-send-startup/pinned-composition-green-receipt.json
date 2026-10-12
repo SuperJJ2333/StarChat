@@ -1,0 +1,9 @@
+{
+  "lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "ended_at": "2026-10-12T11:46:50.8158066Z",
+  "source_sha256": "54c01b0f2a090a19d26690d84d951653dbf8173311ed098bb343a1b8c8e466bf",
+  "test_sha256": "38651f0c11c83dec36d625c2728015315cd27107c3703eae595527a10a4b46ea",
+  "exit_code": 0,
+  "started_at": "2026-10-12T11:46:43.7363528Z",
+  "command": "flutter test --no-pub test/app_home_media_outbox_startup_test.dart test/app_home_lifecycle_test.dart --reporter expanded"
+}

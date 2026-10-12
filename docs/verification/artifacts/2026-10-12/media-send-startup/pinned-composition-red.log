@@ -1,0 +1,232 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart
+00:00 +0: AppHome binds durable media to its opened startup generation
+[chatflow/notif-diag] 2026-10-12T19:46:42.755903 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"uCpNRgU7-AJwVMIWQUkXIJZq","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:42.868340 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:42.868935 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: not null
+  Actual: <null>
+a valid secure binding must install the production sender
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart:265:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart line 265
+The test description was:
+  AppHome binds durable media to its opened startup generation
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: AppHome binds durable media to its opened startup generation [E]
+  Test failed. See exception logs above.
+  The test description was: AppHome binds durable media to its opened startup generation
+  
+Warning: At least one test in this suite creates an HttpClient. When running a test suite that uses
+TestWidgetsFlutterBinding, all HTTP requests will return status code 400, and no network request
+will actually be made. Any test expecting a real network connection and status code will fail.
+To test code that needs an HttpClient, provide your own HttpClient implementation to the code under
+test, so that your test can consistently provide a testable response to the code under test.
+00:00 +0 -1: AppHome production binding admits prepared image
+[chatflow/notif-diag] 2026-10-12T19:46:42.986862 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"OhWx1WgjFw9VIuDMB4Zv0X0I","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:43.017134 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:43.018111 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following MediaOutboxException was thrown running a test:
+MediaOutboxException(owner-unavailable)
+
+When the exception was thrown, this was the stack:
+#0      MatrixSdkE2eeClient._durableMediaFor (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:6736:7)
+#1      MatrixSdkE2eeClient._enqueuePreparedMedia (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:7681:21)
+<asynchronous suspension>
+#2      settle.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart:109:24)
+<asynchronous suspension>
+
+The test description was:
+  AppHome production binding admits prepared image
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -2: AppHome production binding admits prepared image [E]
+  Test failed. See exception logs above.
+  The test description was: AppHome production binding admits prepared image
+  
+00:00 +0 -2: AppHome production binding admits gallery video
+[chatflow/notif-diag] 2026-10-12T19:46:43.072222 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"AA3ywhaZPwrOUR6c0880yAK5","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:43.097187 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:43.097187 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following MediaOutboxException was thrown running a test:
+MediaOutboxException(owner-unavailable)
+
+When the exception was thrown, this was the stack:
+#0      MatrixSdkE2eeClient._durableMediaFor (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:6736:7)
+#1      MatrixSdkE2eeClient._enqueueVideoFile (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:7854:21)
+<asynchronous suspension>
+#2      MatrixSdkE2eeClient.enqueueVideoFile (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:7807:14)
+<asynchronous suspension>
+#3      settle.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart:109:24)
+<asynchronous suspension>
+
+The test description was:
+  AppHome production binding admits gallery video
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -3: AppHome production binding admits gallery video [E]
+  Test failed. See exception logs above.
+  The test description was: AppHome production binding admits gallery video
+  
+00:00 +0 -3: a delayed secure binding joins the current opened generation
+[chatflow/notif-diag] 2026-10-12T19:46:43.156955 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"RXMBtU9HbLnhFpvT2V8CFXz3","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:43.178956 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:43.178956 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: not null
+  Actual: <null>
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart:329:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart line 329
+The test description was:
+  a delayed secure binding joins the current opened generation
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -4: a delayed secure binding joins the current opened generation [E]
+  Test failed. See exception logs above.
+  The test description was: a delayed secure binding joins the current opened generation
+  
+00:00 +0 -4: a secure binding resolving after disposal cannot install a sender
+[chatflow/notif-diag] 2026-10-12T19:46:43.238048 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"IXWTFa99W3BJkzl0RV2crfkm","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:43.257580 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:43.257580 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:00 +1 -4: a delayed binding cannot cross an account identity change
+[chatflow/notif-diag] 2026-10-12T19:46:43.324252 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"YnsUExKK5uAlHDDPLI84t1SO","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:43.342529 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:43.342529 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:01 +2 -4: an installed sender becomes inactive after account change
+[chatflow/notif-diag] 2026-10-12T19:46:43.438296 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"r_SUiEtZPXkqiuQZNZpjiZTk","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:43.457826 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:43.458801 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: not null
+  Actual: <null>
+the account guard needs the production sender installed
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart:378:7)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart line 378
+The test description was:
+  an installed sender becomes inactive after account change
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:01 +2 -5: an installed sender becomes inactive after account change [E]
+  Test failed. See exception logs above.
+  The test description was: an installed sender becomes inactive after account change
+  
+00:01 +2 -5: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome binds durable media to its opened startup generation
+  C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits gallery video
+  C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+  C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: a delayed secure binding joins the current opened generation
+  C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: an installed sender becomes inactive after account change

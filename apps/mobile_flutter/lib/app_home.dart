@@ -1926,9 +1926,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             );
         syncWatchdog.start();
         _syncWatchdogStarted = true;
-        _bindConnectionStatus();
         _startup.open();
         _matrixReady = true;
+        // Network binding starts the account-owned media outbox. Capture the
+        // opened generation so its asynchronous secure binding remains current.
+        _bindConnectionStatus();
         _startHomeResources();
         if (mounted) setState(() {});
       },

@@ -1,0 +1,8 @@
+{
+  "lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "ended_at": "2026-10-12T11:45:46.2812855Z",
+  "exit_code": 0,
+  "started_at": "2026-10-12T11:45:38.6347742Z",
+  "PUB_HOSTED_URL": "https://pub.dev",
+  "command": "flutter pub get --offline --enforce-lockfile"
+}

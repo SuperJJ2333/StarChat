@@ -1,0 +1,4 @@
+*.log -text -diff
+*.json -text
+*.md -text
+*.dart -text

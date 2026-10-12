@@ -1,0 +1,137 @@
+Flutter assets will be downloaded from https://storage.googleapis.com. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome binds durable media to its opened startup generation
+[chatflow/notif-diag] 2026-10-12T19:46:48.440809 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"Ox1k2ywuf0TDLVzSOT3BM9nE","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:48.559272 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:48.560246 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:00 +1: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: native revoke failure still drains AppHome resources
+00:00 +1: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+[chatflow/notif-diag] 2026-10-12T19:46:48.661738 [startup] notification system start failed: LateError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: native revoke failure still drains AppHome resources
+[chatflow/notif-diag] 2026-10-12T19:46:48.596788 [startup] notification system start failed: LateError
+{"trace_id":"WwIWa0LTlnMb6kOvx-m6jJJ9","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+{"trace_id":"WwIWa0LTlnMb6kOvx-m6jJJ9","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:48.716469 [suppressed] wake cancellation failed: LateError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:00 +1: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: native revoke failure still drains AppHome resources
+[chatflow/notif-diag] 2026-10-12T19:46:48.718421 [suppressed] wake cancellation failed: LateError
+00:00 +1: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+[chatflow/network] business_request -> HTTP 404
+00:00 +2: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+00:00 +3: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:00 +4: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+00:01 +4: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: warm Matrix setup renders the shell instead of a blocking spinner
+[chatflow/notif-diag] 2026-10-12T19:46:49.013043 [startup] notification system start failed: LateError
+00:01 +5: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+00:01 +5: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: watchdog starts while notification bootstrap is not ready
+[chatflow/notif-diag] 2026-10-12T19:46:49.047704 [startup] notification system start failed: LateError
+00:01 +6: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+00:01 +6: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: AppHome publishes watchdog state and unbinds it on disposal
+[chatflow/notif-diag] 2026-10-12T19:46:49.097233 [startup] notification system start failed: LateError
+00:01 +7: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+00:01 +7: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_lifecycle_test.dart: group entry reaches GroupChatPage while profile preload is held
+[chatflow/notif-diag] 2026-10-12T19:46:49.143622 [startup] notification system start failed: LateError
+00:01 +8: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits prepared image
+{"trace_id":"Gxa1UB_dHuGQQjI_hXMeoXQW","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:49.435875 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:49.435875 [suppressed] wake cancellation failed: LateError
+00:01 +9: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: AppHome production binding admits gallery video
+[chatflow/notif-diag] 2026-10-12T19:46:49.484305 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"f6t17mCIPWrsVImNhapo0KJ6","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:50.224009 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:50.224009 [suppressed] wake cancellation failed: LateError
+00:02 +10: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: a delayed secure binding joins the current opened generation
+[chatflow/notif-diag] 2026-10-12T19:46:50.275749 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"YtycpSOpozQOVGpUQ15d9N7B","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:50.297827 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:50.297827 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:02 +11: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: a secure binding resolving after disposal cannot install a sender
+[chatflow/notif-diag] 2026-10-12T19:46:50.404781 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"O69zPgASPlbNM2qeHjBmZA-H","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:50.429368 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:50.429368 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:02 +12: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: a delayed binding cannot cross an account identity change
+[chatflow/notif-diag] 2026-10-12T19:46:50.516389 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"H1QP9MwqJ78ELBJGkpkHB8Ro","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:50.536991 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:50.536991 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:02 +13: C:/Users/Administrator/.codex/worktrees/media-send-startup-2214/StarChat/apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart: an installed sender becomes inactive after account change
+[chatflow/notif-diag] 2026-10-12T19:46:50.606114 [startup] notification system start failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+{"trace_id":"uMR62H_pHRPbfKnAmZlTeEXx","stage":"lifecycle","outcome":"failure","event_code":"E2EE_HOME_RESOURCE_DISPOSE_FAILED"}
+[chatflow/notif-diag] 2026-10-12T19:46:50.631142 [suppressed] wake cancellation failed: LateError
+[chatflow/notif-diag] 2026-10-12T19:46:50.632118 [suppressed] wake cancellation failed: LateError
+[chatflow/network] business_request -> HTTP 404
+[chatflow/network] business_request -> HTTP 404
+00:02 +14: All tests passed!

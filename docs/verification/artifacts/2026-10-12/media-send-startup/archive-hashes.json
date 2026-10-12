@@ -1,0 +1,16 @@
+{
+  "pinned-input-identity.json": "979a25be3d20895dea8b264ddb8cc93b0219c755ae0fc47b66b48fd198604fd4",
+  "pub-get-pinned-receipt.json": "50de6da9707ac21d0df6258edc22b0a70ca6e309d201fbcb82daf39b46b7b1cb",
+  "pinned-composition-green-receipt.json": "2392ca3f8a950a8aaea634e7c113740bbfed49343d7d1e999af5a9be1236e9c9",
+  "pub-get-pinned.log": "6f34a1ee9e3b33abf8d8a511982375f8aa0ccbac4994649f5eb4ecbf9de780b8",
+  "pinned-analyze-receipt.json": "e92740664ce98e79ebc35978616c6f5efeff82a46bb13ac27fcac5432cc2ee52",
+  "pinned-composition-red-receipt.json": "9aef8d8c675d3fc152f7bef9d53773090eb8e3116e5a42868ed4ae18b7a553d6",
+  "README.md": "4d0cabb5593c5ff5b4c6e1ecfe0b5e7781790fda1f66c7d56780b2e51e4cdf2b",
+  "desktop_media_neighbors_test.dart": "5e7a1163115cba1e0db20491b4a54a4880bb463e9552afa85232f58a67c53fd4",
+  "pinned-desktop-neighbors-green-receipt.json": "c655dd9a3a0e899cdb0d71387c3a9266bba400730b65186e1dbd630cfd60e355",
+  "pinned-composition-green.log": "6daaf964307553a225024758b213a1b453c3d2ab385ce0b7ad8f0ad69e5453a9",
+  "pinned-desktop-neighbors-green.log": "a44848ea06bf3c35457f1c8447f2e050ececdc9b6dfce7b5d0ae68621e3fc0da",
+  "pinned-composition-red.log": "b47b07e96836638437b68eec2847fc0ae02e9f3eff40ced61a9de1ebdfee6046",
+  "pinned-analyze.log": "8cc9b8042604890339d2810ed0a5f99c67ba422a607ffff22225eeb5b3cbdecc",
+  ".gitattributes": "e0b75e2eba2fbc1e838617713e6af2584b95ab11f5bc8642ab14114720815a89"
+}
