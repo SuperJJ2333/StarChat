@@ -1,0 +1,6 @@
+{
+  "started_utc": "2026-10-12T11:32:48.8857258+00:00",
+  "ended_utc": "2026-10-12T11:36:10.7982909+00:00",
+  "exit_code": 0,
+  "scope": "Read-only replay of known Android2214 source/final APK and already-decoded trees; no new build/sign/device"
+}

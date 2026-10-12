@@ -1,0 +1,44 @@
+{
+  "status": "pass",
+  "source_apk_sha256": "e56016e96962a88c6bb784ebf6d95110e4ab0dfdd95e0da63af2bdbb872d3509",
+  "final_apk_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "source_class_count": 25414,
+  "final_class_count": 25414,
+  "method_count": 168863,
+  "changed_smali_classes": [],
+  "source_dex": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex",
+    "classes6.dex"
+  ],
+  "final_dex": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex",
+    "classes6.dex"
+  ],
+  "changed_dex_binary": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex",
+    "classes6.dex"
+  ],
+  "manifest_semantics_identical": true,
+  "native_asset_entries": 274,
+  "changed_native_assets": [],
+  "added_native_assets": [],
+  "source_entries": 864,
+  "final_entries": 867,
+  "source_resource_entries": 475,
+  "final_resource_entries": 475,
+  "resources_arsc_present_and_nonempty": true,
+  "normalization": "Only typed static false/integer zero/reference null defaults and aapt element source-line positions; all other smali lines exact.",
+  "scope": "Semantic/preserved-payload rebuild comparison only. Separate signature/alignment/ABI/ELF/device gates required."
+}

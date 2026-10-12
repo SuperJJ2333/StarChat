@@ -1,0 +1,21 @@
+E
+======================================================================
+ERROR: test_package_private_class_is_compared (test_verify_rebuild.SemanticTests.test_package_private_class_is_compared)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_verify_rebuild.py", line 50, in test_package_private_class_is_compared
+    self.assertEqual(self.mod.verify(self.root)['source_class_count'],1)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\verify_rebuild.py", line 116, in verify
+    source, source_methods = smali_tree(root/'decoded')
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\verify_rebuild.py", line 63, in smali_tree
+    require(len(classes) == 1 and classes[0] not in descriptors, 'Missing/duplicate class descriptor: '+str(path.relative_to(root)))
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\verify_rebuild.py", line 24, in require
+    raise VerificationError(message)
+restored_rebuild.VerificationError: Missing/duplicate class descriptor: smali\example\Test.smali
+
+----------------------------------------------------------------------
+Ran 1 test in 0.019s
+
+FAILED (errors=1)

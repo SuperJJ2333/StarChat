@@ -1,0 +1,24 @@
+{
+  "recorded_utc": "2026-10-12T11:40:05.478996+00:00",
+  "scope": "Only four named StarChat verification trees, documented exact legacy paths and git all-ref history for exact script names; no whole-disk/session-secret search.",
+  "roots": [
+    "C:/Users/Administrator/.codex/worktrees/im-media-cache-review/StarChat/docs/verification",
+    "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification",
+    "D:/pythonProject/outsource/StarChat/docs/verification",
+    "C:/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification"
+  ],
+  "observed_before_reconstruction": {
+    "existing_named_scripts_found": 0,
+    "git_all_ref_named_script_history_found": 0,
+    "documented_20260905_scripts_present": false
+  },
+  "existing_identity_metadata_only": {
+    "directory": "%USERPROFILE%/.chatflow-signing/diagnostic-20260905",
+    "filenames": [
+      "diagnostic.p12",
+      "password.dpapi"
+    ],
+    "contents_read": false
+  },
+  "decision": "Reconstruct runbook-constrained tools; do not claim byte-identical restoration or generate key material."
+}

@@ -1,0 +1,29 @@
+FF
+======================================================================
+FAIL: test_tenth_dex_added_rejected (test_verify_rebuild.SemanticTests.test_tenth_dex_added_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_verify_rebuild.py", line 84, in test_tenth_dex_added_rejected
+    def test_tenth_dex_added_rejected(self):self.writezip('final.apk',dict(self.entries,**{'classes10.dex':b'new'}));self.rejected()
+                                                                                                                     ^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_verify_rebuild.py", line 43, in rejected
+    with self.assertRaises(self.mod.VerificationError):self.mod.verify(self.root)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: VerificationError not raised
+
+======================================================================
+FAIL: test_tenth_smali_folder_instruction_change_rejected (test_verify_rebuild.SemanticTests.test_tenth_smali_folder_instruction_change_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_verify_rebuild.py", line 88, in test_tenth_smali_folder_instruction_change_rejected
+    p=self.root/'verified-decoded/smali_classes10/example/Tenth.smali';p.write_text(p.read_text().replace('const/4 v0, 0x1','const/4 v0, 0x0'),encoding='utf-8');self.rejected()
+                                                                                                                                                                 ^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_verify_rebuild.py", line 43, in rejected
+    with self.assertRaises(self.mod.VerificationError):self.mod.verify(self.root)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: VerificationError not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.065s
+
+FAILED (failures=2)

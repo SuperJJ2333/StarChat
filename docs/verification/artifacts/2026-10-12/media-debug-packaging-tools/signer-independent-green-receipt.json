@@ -1,0 +1,6 @@
+{
+  "started_utc": "2026-10-12T11:38:02.6193411+00:00",
+  "ended_utc": "2026-10-12T11:38:13.7401742+00:00",
+  "exit_code": 0,
+  "scope": "18 isolated synthetic/static tests, fake USERPROFILE P12/DPAPI only; no real signing identity read and no real signing"
+}

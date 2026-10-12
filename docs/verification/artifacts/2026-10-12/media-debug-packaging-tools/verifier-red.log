@@ -1,0 +1,14 @@
+F
+======================================================================
+FAIL: test_tool_is_restored (test_verify_rebuild.Contract.test_tool_is_restored)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_verify_rebuild.py", line 25, in test_tool_is_restored
+    def test_tool_is_restored(self):self.assertTrue(TOOL.is_file(),'required archived verifier is absent and must be restored')
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : required archived verifier is absent and must be restored
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
