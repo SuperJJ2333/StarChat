@@ -1,0 +1,18 @@
+{
+  "case": "trim_candidate_all_synthetic_tests",
+  "expected_exit": 0,
+  "exit_code": 0,
+  "expected_test_count": 19,
+  "started_utc": "2026-10-12T12:05:08.9665512+00:00",
+  "ended_utc": "2026-10-12T12:05:20.8017174+00:00",
+  "elapsed_seconds": 11.8340517,
+  "wrapper_path": "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/sign-existing-identity.ps1",
+  "wrapper_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+  "wrapper_sha256_after": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+  "wrapper_unchanged_during_test": true,
+  "test_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
+  "log_sha256": "8c4e10fb6693578f9ef1750cc03d3d86cf21ed39966074678d652222a2f5c7c1",
+  "fixture": "synthetic_fake_USERPROFILE_DPAPI_CRLF",
+  "real_identity_accessed": false,
+  "real_signer_invoked": false
+}

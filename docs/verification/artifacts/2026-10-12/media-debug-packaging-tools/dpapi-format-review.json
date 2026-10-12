@@ -1,0 +1,61 @@
+{
+  "reviewed_utc": "2026-10-12T12:07:58.208291+00:00",
+  "decision": "PASS_FORMAT_CORRECTION_ONLY",
+  "ordered_reviews": [
+    "specification/domain",
+    "quality/security"
+  ],
+  "original_wrapper_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+  "corrected_wrapper_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+  "exact_single_expression_diff": true,
+  "whole_wrapper_synthetic_tests": 19,
+  "independent_format_test": 1,
+  "real_signing_performed_by_reviewer": false,
+  "files": [
+    {
+      "path": "test_sign_wrapper.py",
+      "bytes": 14632,
+      "sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d"
+    },
+    {
+      "path": "dpapi-format-green-receipt.json",
+      "bytes": 969,
+      "sha256": "967806b3b5b016f69f89c8dbfb58183379c04c0055e6b131cecd16c7095e8b55"
+    },
+    {
+      "path": "dpapi-format-green.log",
+      "bytes": 2425,
+      "sha256": "8c4e10fb6693578f9ef1750cc03d3d86cf21ed39966074678d652222a2f5c7c1"
+    },
+    {
+      "path": "dpapi-format-independent-receipt.json",
+      "bytes": 806,
+      "sha256": "85811cb6a113edccf06b2c028e526bf50fd88793900b2ceb7e83f8f0604298f0"
+    },
+    {
+      "path": "dpapi-format-independent.log",
+      "bytes": 252,
+      "sha256": "7383f546258a257919961031b7959e1d45114958d09dec85d25a446c6a9e6620"
+    },
+    {
+      "path": "dpapi-format-notes.md",
+      "bytes": 4087,
+      "sha256": "e67a6f6f9b2fa3fa85bb8e592819e0e03478350a451d78128680246dcf187c62"
+    },
+    {
+      "path": "dpapi-format-red-receipt.json",
+      "bytes": 804,
+      "sha256": "1d31a3b6ca64c8e4befb880f15636d2cee6457f2a0ef9c3999800b775ea69004"
+    },
+    {
+      "path": "dpapi-format-red.log",
+      "bytes": 1047,
+      "sha256": "0ddd4aad9e5aaba21b9548144d149c9c31895bc3fdc1faba1aa319e4fea1f43d"
+    },
+    {
+      "path": "dpapi-format-review.md",
+      "bytes": 3218,
+      "sha256": "7f8a5e111e7ade7d9ffbf4099265a44be91696bb08fd4b96bcaf3f26c4efec20"
+    }
+  ]
+}

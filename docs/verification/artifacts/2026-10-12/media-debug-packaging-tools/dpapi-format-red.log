@@ -1,0 +1,15 @@
+test_dpapi_line_terminator_preserves_password_and_decrypts (__main__.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts) ... FAIL
+
+======================================================================
+FAIL: test_dpapi_line_terminator_preserves_password_and_decrypts (__main__.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-media-cache-review\StarChat\docs\verification\artifacts\2026-10-12\media-debug-packaging-tools\test_sign_wrapper.py", line 186, in test_dpapi_line_terminator_preserves_password_and_decrypts
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : {"dpapi_roundtrip_pass":false,"failure_type":"System.FormatException","fixture_line_ending":"CRLF"}
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.605s
+
+FAILED (failures=1)

@@ -1,0 +1,15 @@
+{
+  "case": "original_raw_dpapi_read",
+  "expected_exit": 1,
+  "exit_code": 1,
+  "started_utc": "2026-10-12T12:04:48.2213039+00:00",
+  "ended_utc": "2026-10-12T12:04:48.9968910+00:00",
+  "elapsed_seconds": 0.7738658,
+  "wrapper_path": "C:\\Users\\Administrator\\.codex\\worktrees\\im-media-cache-review\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\media-debug-packaging-tools\\sign-existing-identity.ps1",
+  "wrapper_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+  "test_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
+  "log_sha256": "0ddd4aad9e5aaba21b9548144d149c9c31895bc3fdc1faba1aa319e4fea1f43d",
+  "fixture": "synthetic_fake_USERPROFILE_DPAPI_CRLF",
+  "real_identity_accessed": false,
+  "signer_invoked": false
+}

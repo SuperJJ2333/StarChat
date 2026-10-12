@@ -8,7 +8,8 @@ import tempfile
 import unittest
 
 HERE = Path(__file__).resolve().parent
-WRAPPER = HERE / 'sign-existing-identity.ps1'
+WRAPPER = Path(os.environ.get('CHATFLOW_SIGN_WRAPPER_UNDER_TEST',
+                             str(HERE / 'sign-existing-identity.ps1'))).resolve()
 CERT = '75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff'
 PWSH = shutil.which('pwsh.exe')
 
@@ -147,6 +148,43 @@ ConvertTo-Json -InputObject @($actual) -Compress
             self.assertEqual(args[args.index(flag) + 1], 'env:SYNTHETIC_SIGN_PASSWORD')
         self.assertNotIn('SYNTHETIC_SECRET_DO_NOT_PRINT', result.stdout + result.stderr)
         self.assertEqual(args[args.index('--ks-key-alias') + 1], 'chatflow-local-ab-20260905')
+
+    def test_dpapi_line_terminator_preserves_password_and_decrypts(self):
+        # Real Windows DPAPI with a synthetic value, never the actual signing files.
+        # Deliberate password whitespace proves normalization affects encoded text only.
+        result = self.run_ast_harness('''
+$assignment=$ast.Find({param($n)
+    $n -is [Management.Automation.Language.AssignmentStatementAst] -and
+    $n.Left.Extent.Text -eq '$taskSecurePassword' -and
+    $n.Right.Extent.Text.Contains('ConvertTo-SecureString')
+},$true)
+if($null -eq $assignment){throw 'Missing DPAPI read expression'}
+$taskDpapi=Join-Path $env:USERPROFILE '.chatflow-signing/diagnostic-20260905/password.dpapi'
+$synthetic=ConvertTo-SecureString '  synthetic-dpapi-line-ending-value  ' -AsPlainText -Force
+$encoded=ConvertFrom-SecureString -SecureString $synthetic
+[IO.File]::WriteAllText($taskDpapi,$encoded+"`r`n",$taskUtf8)
+$taskSecurePassword=$null; $pointer=[IntPtr]::Zero; $actual=$null
+$matched=$false; $failureType=$null
+try {
+    . ([scriptblock]::Create($assignment.Extent.Text))
+    $pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($taskSecurePassword)
+    $actual=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    $matched=$actual -ceq '  synthetic-dpapi-line-ending-value  '
+} catch {
+    $failureType=$_.Exception.GetType().FullName
+} finally {
+    if($pointer -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)}
+    if($taskSecurePassword){$taskSecurePassword.Dispose()}
+    $synthetic.Dispose(); $actual=$null; $encoded=$null
+}
+[ordered]@{dpapi_roundtrip_pass=$matched; failure_type=$failureType; fixture_line_ending='CRLF'} | ConvertTo-Json -Compress
+if(-not $matched){exit 1}
+''')
+        self.assertNotIn('synthetic-dpapi-line-ending-value', result.stdout + result.stderr)
+        self.assertFalse(self.marker.exists(), 'The DPAPI expression test must not invoke a signer')
+        self.assertFalse(self.output.exists())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIs(json.loads(result.stdout)['dpapi_roundtrip_pass'], True)
 
     def test_real_finally_clears_environment_and_temporary_output(self):
         result = self.run_ast_harness('''

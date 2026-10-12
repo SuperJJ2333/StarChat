@@ -1,0 +1,11 @@
+{
+  "ended_utc": "2026-10-12T12:07:04.8657010Z",
+  "started_utc": "2026-10-12T12:07:04.0953782Z",
+  "test_only_candidate_override": "C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/sign-existing-identity.ps1",
+  "candidate_after": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+  "scope": "Independent synthetic DPAPI format case only; no real password/P12/signing accessed",
+  "test_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
+  "command": "py -3.12 test_sign_wrapper.py WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts -v",
+  "candidate_before": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+  "exit_code": 0
+}
