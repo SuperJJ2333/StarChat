@@ -1,0 +1,10 @@
+{
+  "started_utc": "2026-10-12T11:16:04.1789066Z",
+  "completed_utc": "2026-10-12T11:16:06.6177393Z",
+  "wrapper_exit_code": 0,
+  "script_sha256": "73692840876d40d85d906aff65b7123c555b49b63a2a6dfa13d36326c39e89bb",
+  "source_tree": "im-worker-active-lease",
+  "local_ast_and_synthetic_privacy_check": "PASS",
+  "temporary_containers": 0,
+  "remote_mutations": 0
+}

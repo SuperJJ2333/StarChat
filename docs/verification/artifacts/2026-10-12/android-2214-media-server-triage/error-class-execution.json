@@ -1,0 +1,9 @@
+{
+  "started_utc": "2026-10-12T11:18:21.9173327Z",
+  "completed_utc": "2026-10-12T11:18:23.3519719Z",
+  "wrapper_exit_code": 0,
+  "script_sha256": "174dd8450b1b72a201e169fcd002fb7c06c4a24e621602cd998dd7bbb033aedd",
+  "scope": "Same original fixed 2h window; exact public push route and existing known refresh probe only",
+  "temporary_containers": 0,
+  "remote_mutations": 0
+}

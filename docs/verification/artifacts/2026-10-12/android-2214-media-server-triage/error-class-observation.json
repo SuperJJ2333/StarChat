@@ -1,0 +1,28 @@
+{
+  "observed_utc": "2026-10-12T11:18:21.721262+00:00",
+  "requested_since_utc": "2026-10-12T09:16:04.133820+00:00",
+  "requested_until_utc": "2026-10-12T11:16:04.133820+00:00",
+  "tail_cap": 40000,
+  "read_ok": true,
+  "fixed_class_counts": [
+    {
+      "category": "matrix_push_notify",
+      "method": "POST",
+      "status": 503,
+      "count": 2
+    },
+    {
+      "category": "refresh_known_probe",
+      "method": "POST",
+      "status": 401,
+      "count": 117
+    },
+    {
+      "category": "refresh_other_or_unmarked",
+      "method": "POST",
+      "status": 200,
+      "count": 21
+    }
+  ],
+  "privacy": "Only exact public endpoint categories and known probe boolean; no URI/query values/body/identity printed."
+}

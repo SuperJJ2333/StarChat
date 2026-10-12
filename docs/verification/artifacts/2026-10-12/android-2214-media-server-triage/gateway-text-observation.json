@@ -1,0 +1,151 @@
+{
+  "observed_utc": "2026-10-12T11:16:49.548028+00:00",
+  "requested_since_utc": "2026-10-12T09:16:04.133820+00:00",
+  "requested_until_utc": "2026-10-12T11:16:04.133820+00:00",
+  "tail_cap": 40000,
+  "privacy": "Only fixed route/status counts; no URI/query/body/IDs/raw lines.",
+  "read_ok": true,
+  "result": {
+    "lines": 8619,
+    "parsed_requests": 8599,
+    "unparsed_media_literal_lines": 6,
+    "tail_cap_reached": false,
+    "first_available_timestamp": "2026-10-12T09:16:07.189317646Z",
+    "last_available_timestamp": "2026-10-12T11:16:04.084960234Z",
+    "fixed_error_literal_counts": {},
+    "request_counts": [
+      {
+        "route": "matrix_media_config",
+        "method": "GET",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "route": "matrix_media_download",
+        "method": "GET",
+        "status": 200,
+        "count": 12
+      },
+      {
+        "route": "matrix_media_thumbnail",
+        "method": "GET",
+        "status": 200,
+        "count": 11
+      },
+      {
+        "route": "matrix_media_thumbnail",
+        "method": "GET",
+        "status": 304,
+        "count": 6
+      },
+      {
+        "route": "matrix_media_upload",
+        "method": "POST",
+        "status": 200,
+        "count": 6
+      },
+      {
+        "route": "matrix_room_send",
+        "method": "PUT",
+        "status": 200,
+        "count": 11
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 200,
+        "count": 7820
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 206,
+        "count": 15
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 302,
+        "count": 4
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 304,
+        "count": 1
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 401,
+        "count": 12
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 404,
+        "count": 39
+      },
+      {
+        "route": "other",
+        "method": "GET",
+        "status": 499,
+        "count": 13
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 200,
+        "count": 199
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 202,
+        "count": 81
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 204,
+        "count": 196
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 401,
+        "count": 123
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 404,
+        "count": 4
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 409,
+        "count": 26
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 429,
+        "count": 11
+      },
+      {
+        "route": "other",
+        "method": "POST",
+        "status": 503,
+        "count": 2
+      },
+      {
+        "route": "other",
+        "method": "PUT",
+        "status": 200,
+        "count": 4
+      }
+    ]
+  }
+}

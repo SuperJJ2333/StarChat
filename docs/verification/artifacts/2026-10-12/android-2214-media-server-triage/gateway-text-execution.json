@@ -1,0 +1,10 @@
+{
+  "started_utc": "2026-10-12T11:16:49.7139735Z",
+  "completed_utc": "2026-10-12T11:16:51.1945292Z",
+  "wrapper_exit_code": 0,
+  "script_sha256": "b5d2aad568caa254768cdb1a66b208c0aecb1a12d91342df6aca3806e41560c7",
+  "scope": "Same original fixed 2h window; supplement gateway text format only",
+  "local_ast_privacy_check": "PASS",
+  "temporary_containers": 0,
+  "remote_mutations": 0
+}

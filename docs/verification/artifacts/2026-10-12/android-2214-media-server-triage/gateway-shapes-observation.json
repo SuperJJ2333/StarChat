@@ -1,0 +1,119 @@
+{
+  "observed_utc": "2026-10-12T11:17:39.664815+00:00",
+  "requested_since_utc": "2026-10-12T09:16:04.133820+00:00",
+  "requested_until_utc": "2026-10-12T11:16:04.133820+00:00",
+  "tail_cap": 40000,
+  "read_ok": true,
+  "result": {
+    "static_error_route_shapes": [
+      {
+        "shape": "/[segment]",
+        "method": "GET",
+        "status": 404,
+        "count": 3
+      },
+      {
+        "shape": "/[segment]/[segment]",
+        "method": "GET",
+        "status": 404,
+        "count": 7
+      },
+      {
+        "shape": "/[segment]/[segment]/[segment]",
+        "method": "GET",
+        "status": 404,
+        "count": 5
+      },
+      {
+        "shape": "/[segment]/[segment]/[segment]/[segment]",
+        "method": "GET",
+        "status": 404,
+        "count": 1
+      },
+      {
+        "shape": "/_matrix/[segment]/v1/[segment]",
+        "method": "POST",
+        "status": 503,
+        "count": 2
+      },
+      {
+        "shape": "/_matrix/client/v3/rooms/[segment]/[segment]",
+        "method": "POST",
+        "status": 404,
+        "count": 4
+      },
+      {
+        "shape": "/_matrix/client/v3/rooms/[segment]/[segment]/[segment]",
+        "method": "GET",
+        "status": 404,
+        "count": 23
+      },
+      {
+        "shape": "/_matrix/client/v3/sync",
+        "method": "GET",
+        "status": 499,
+        "count": 13
+      },
+      {
+        "shape": "/api/v1/[segment]",
+        "method": "POST",
+        "status": 401,
+        "count": 1
+      },
+      {
+        "shape": "/api/v1/[segment]",
+        "method": "POST",
+        "status": 429,
+        "count": 11
+      },
+      {
+        "shape": "/api/v1/[segment]/[segment]",
+        "method": "POST",
+        "status": 401,
+        "count": 3
+      },
+      {
+        "shape": "/api/v1/[segment]/[segment]",
+        "method": "POST",
+        "status": 409,
+        "count": 26
+      },
+      {
+        "shape": "/api/v1/auth/refresh",
+        "method": "POST",
+        "status": 401,
+        "count": 117
+      },
+      {
+        "shape": "/api/v1/friends",
+        "method": "GET",
+        "status": 401,
+        "count": 1
+      },
+      {
+        "shape": "/api/v1/friends/requests",
+        "method": "GET",
+        "status": 401,
+        "count": 11
+      },
+      {
+        "shape": "/api/v1/support/[segment]/[segment]",
+        "method": "POST",
+        "status": 401,
+        "count": 2
+      }
+    ],
+    "media_nonaccess_fixed_classes": {
+      "request_body_buffered_to_temporary_file": 6
+    },
+    "upload_time_ranges_by_status": [
+      {
+        "status": 200,
+        "count": 6,
+        "first_utc": "2026-10-12T10:38:54.638958131Z",
+        "last_utc": "2026-10-12T11:12:00.316259928Z"
+      }
+    ]
+  },
+  "privacy": "Dynamic path segments replaced, queries discarded; no IP/user/body/token/raw line output."
+}

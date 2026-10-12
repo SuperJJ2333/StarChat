@@ -1,0 +1,10 @@
+{
+  "started_utc": "2026-10-12T11:17:39.7581958Z",
+  "completed_utc": "2026-10-12T11:17:41.3174610Z",
+  "wrapper_exit_code": 0,
+  "script_sha256": "7929e8e54e0dac6425310bb514c76efec06facfece9f55b146af350c8bf1db0b",
+  "scope": "Same original fixed 2h window; remaining status errors and nonaccess media fixed classes",
+  "local_ast_privacy_check": "PASS",
+  "temporary_containers": 0,
+  "remote_mutations": 0
+}

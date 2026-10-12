@@ -1,0 +1,8 @@
+{
+  "result": "PASS",
+  "source_ast_and_json": "PASS",
+  "gateway_synapse_upload_counts_agree": true,
+  "source_sha_matches_execution_metadata": true,
+  "interpretation": "No version-specific success rate or root-cause assertion",
+  "remote_operations_by_this_verifier": 0
+}
