@@ -1,0 +1,12 @@
+{
+  "app_latest_version": "0.4.45",
+  "app_latest_build": "2214",
+  "app_min_supported_build": "3",
+  "app_update_notes": "改进发送队列、历史加载和媒体缓存，增加媒体任务恢复和大小预检，优化Android后台运行稳定性。当前普通附件最高48MiB，图片因解码预算上限更低；过大时请压缩或缩小后重试。",
+  "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+  "app_ios_latest_version": "0.4.44",
+  "app_ios_latest_build": "2213",
+  "app_ios_min_supported_build": "3",
+  "app_ios_update_notes": "修复大历史会话快速上滑跳转、弱网新消息换位和语音首次播放问题，优化聊天记录加载与交互性能。",
+  "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1"
+}

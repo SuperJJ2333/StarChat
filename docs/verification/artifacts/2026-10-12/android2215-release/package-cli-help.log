@@ -1,0 +1,17 @@
+usage: package_release.py [-h] --apk APK --artifact ARTIFACT --steps STEPS
+                          --gates GATES --source-root SOURCE_ROOT
+                          --source-manifest SOURCE_MANIFEST --output OUTPUT
+                          --signing-confirmed-by SIGNING_CONFIRMED_BY
+
+Build a local, reviewable Android 2215 package. Never contacts a server.
+
+options:
+  -h, --help            show this help message and exit
+  --apk APK
+  --artifact ARTIFACT
+  --steps STEPS
+  --gates GATES
+  --source-root SOURCE_ROOT
+  --source-manifest SOURCE_MANIFEST
+  --output OUTPUT
+  --signing-confirmed-by SIGNING_CONFIRMED_BY

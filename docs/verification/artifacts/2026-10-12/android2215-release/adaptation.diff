@@ -1,0 +1,919 @@
+--- 2214/baseline/freeze_current.py
++++ 2215/baseline/freeze_current.py
+@@ -5,15 +5,15 @@
+ here=Path(__file__).resolve().parent
+ root=Path(r"D:/pythonProject/outsource/StarChat")
+ source=here/(kind+"-projection-source.py")
+-command="python3 -c "+shlex.quote("import base64;exec(base64.b64decode("+repr(base64.b64encode(source.read_bytes()).decode())+"))")
++command="python3 -B -c "+shlex.quote("import base64;exec(base64.b64decode("+repr(base64.b64encode(source.read_bytes()).decode())+"))")
+ if kind=="hk":
+  args=["pwsh.exe","-NoProfile","-File",str(root/"scripts/starchat-server.ps1"),"-Action","Command","-RemoteCommand",command]
+ else:
+  args=["ssh","-o","BatchMode=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=10","-J","jumper","-o","HostKeyAlias=13.229.60.153","-i",str(Path.home()/".ssh/tee_13153299.pem"),"ec2-user@18.143.207.225",command]
+ started=datetime.now().astimezone().isoformat()
+-r=subprocess.run(args,capture_output=True,text=True,encoding="utf-8")
++r=subprocess.run(args,capture_output=True,text=True,encoding="utf-8",timeout=180)
+ if r.returncode:
+- print(json.dumps({"kind":kind,"exit_code":r.returncode,"transport_error":r.stderr[:1200]},ensure_ascii=False));sys.exit(r.returncode)
++ print(json.dumps({"kind":kind,"exit_code":r.returncode,"transport_error":"REMOTE_COMMAND_FAILED_NO_RAW_OUTPUT"},ensure_ascii=False));sys.exit(r.returncode)
+ snapshot=json.loads(r.stdout)
+ if kind=="hk":
+  files=snapshot.pop("files")
+
+--- 2214/baseline/hk-projection-source.py
++++ 2215/baseline/hk-projection-source.py
+@@ -13,20 +13,23 @@
+ h=hashlib.sha256()
+ with old.open('rb') as f:
+  for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
+-containers=json.loads(subprocess.check_output(['docker','inspect',*subprocess.check_output(['docker','ps','-q'],text=True).split()],text=True))
++containers=json.loads(subprocess.check_output(['docker','inspect',*subprocess.check_output(['docker','ps','-q'],text=True,timeout=10).split()],text=True,timeout=10))
+ runtime=[{'name':v['Name'].lstrip('/'),'image':v['Image'],'id':v['Id'],'restart_count':v['RestartCount'],'started_at':v['State']['StartedAt']} for v in containers]
+ setting_code='''import json,os
+ from sqlalchemy import create_engine,text
+ from sqlalchemy.orm import sessionmaker
+ from app.modules.settings.service import SettingService
+ keys=('app_latest_version','app_latest_build','app_min_supported_build','app_update_notes','app_apk_url','app_ios_latest_version','app_ios_latest_build','app_ios_min_supported_build','app_ios_update_notes','app_ios_download_url')
+-engine=create_engine(os.environ['BUSINESS_DATABASE_URL'])
++engine=create_engine(os.environ['BUSINESS_DATABASE_URL'],connect_args={'connect_timeout':3})
+ try:
+- settings=SettingService(sessionmaker(bind=engine,autoflush=False,expire_on_commit=False)).get_many(keys)
+- with engine.connect() as connection:
++ with engine.begin() as connection:
++  connection.execute(text('SET TRANSACTION READ ONLY'))
++  connection.execute(text("SET LOCAL statement_timeout='5s'"))
++  settings=SettingService(sessionmaker(bind=connection,join_transaction_mode='create_savepoint',autoflush=False,expire_on_commit=False)).get_many(keys)
+   schema=list(connection.scalars(text('SELECT version_num FROM alembic_version')))
+  print(json.dumps({'settings':settings,'schema':schema},ensure_ascii=False))
+ finally:engine.dispose()
+ '''
+-db=json.loads(subprocess.check_output(['docker','exec','-i','-w','/opt/business-api','starchat-business-api-1','python3','-'],input=setting_code.encode()))
+-print(json.dumps({'checked_at_utc':datetime.now(timezone.utc).isoformat(),'files':files,'registry':registry,'aliases':aliases,'old_artifact':{'name':old.name,'bytes':old.stat().st_size,'sha256':h.hexdigest()},'target_exists':(root/'downloads/ChatFlow-0.4.45-build2214-arm64.apk').exists(),'runtime':runtime,**db},ensure_ascii=False))
++db=json.loads(subprocess.check_output(['docker','exec','-i','-w','/opt/business-api','starchat-business-api-1','python3','-B','-'],input=setting_code.encode(),timeout=12))
++guards={name:hashlib.sha256((Path('/opt/starchat/ops/refresh-guards')/name).read_bytes()).hexdigest() for name in ('business_release_guard.py','business_refresh_image_probe.py')}
++print(json.dumps({'permanent_guards':guards,'checked_at_utc':datetime.now(timezone.utc).isoformat(),'files':files,'registry':registry,'aliases':aliases,'old_artifact':{'name':old.name,'bytes':old.stat().st_size,'sha256':h.hexdigest()},'target_exists':(root/'downloads/ChatFlow-0.4.46-build2215-arm64.apk').exists(),'runtime':runtime,**db},ensure_ascii=False))
+
+--- 2214/baseline/sg-projection-source.py
++++ 2215/baseline/sg-projection-source.py
+@@ -1,7 +1,7 @@
+ 
+ import json,subprocess
+ from datetime import datetime,timezone
+-def aws(*args):return json.loads(subprocess.check_output(['/usr/bin/aws',*args,'--output','json'],text=True))
++def aws(*args):return json.loads(subprocess.check_output(['/usr/bin/aws',*args,'--output','json'],text=True,timeout=30))
+ identity=aws('sts','get-caller-identity')
+ assert identity['Account']=='218022113852' and identity['Arn']=='arn:aws:sts::218022113852:assumed-role/StarChatSgMaintenanceRole/i-035b46916e4cf43eb'
+ cf=aws('cloudfront','get-distribution-config','--id','E30IR8IHK6PMXZ')
+
+--- 2214/execute_release.py
++++ 2215/execute_release.py
+@@ -37,15 +37,15 @@
+     for name in ('package_release.py','execute_release.py'):
+         fail(frozen['files'].get('orchestrator/'+name)==digest(HERE/name), 'local orchestrator drift: '+name)
+     needed = {'delivery/'+package.NAME, 'evidence/artifact.json', 'evidence/steps.tsv',
+-        'evidence/gates.json', 'evidence/mobile-inputs.json', 'runtime-2214.tar.gz',
+-        'runtime/prepared-2214/release.json', 'source-backfill/plan.json'}
++        'evidence/gates.json', 'evidence/mobile-inputs.json', 'runtime-2215.tar.gz',
++        'runtime/prepared-2215/release.json', 'source-backfill/plan.json'}
+     fail(needed <= set(frozen['files']), 'incomplete frozen package')
+     artifact = read_json(root/'evidence/artifact.json')
+     identity = package.validate_build(root/'delivery'/package.NAME,artifact,
+                                      root/'evidence/steps.tsv',root/'evidence/gates.json')
+     fail(all(frozen.get(k) == v for k,v in identity.items()), 'frozen build identity drift')
+     fail(digest(root/'evidence/mobile-inputs.json') == identity['source_manifest_sha256'], 'manifest binding')
+-    archive = member(root,'runtime-2214.tar.gz')
++    archive = member(root,'runtime-2215.tar.gz')
+     fail(digest(archive) == frozen.get('runtime_sha256') and archive.stat().st_size == frozen.get('runtime_bytes'), 'archive identity')
+     expected = frozen.get('runtime_files')
+     fail(isinstance(expected,dict) and expected and all(frozen['files'].get('runtime/'+n)==h for n,h in expected.items()), 'runtime file binding')
+@@ -57,9 +57,9 @@
+             fail(item.isfile() and not name.is_absolute() and '..' not in name.parts, 'unsafe archive member')
+             with tar.extractfile(item) as stream:
+                 fail(hashlib.file_digest(stream,'sha256').hexdigest()==expected[item.name], 'archive member drift')
+-    release_path=root/'runtime/prepared-2214/release.json'
++    release_path=root/'runtime/prepared-2215/release.json'
+     fail(digest(release_path)==frozen.get('release_sha256'), 'release identity')
+-    release=package.load_release(root/'runtime/release_2214.py')
++    release=package.load_release(root/'runtime/release_2215.py')
+     r=read_json(release_path); release.validate_release(r)
+     fail(all(r.get(k)==v for k,v in identity.items() if k!='pubspec_lock_sha256'), 'record/build identity')
+     return frozen
+@@ -96,16 +96,16 @@
+ 
+ def stages(operation_id):
+     fail(isinstance(operation_id,str) and re.fullmatch('[a-z0-9][a-z0-9-]{7,63}',operation_id), 'safe unique operation ID required')
+-    return {'hk':'/opt/starchat/releases/android2214-'+operation_id,
+-            'sg':'/home/ec2-user/starchat-android2214-'+operation_id,
+-            'backup':'/opt/starchat/docs/verification/artifacts/2026-10-11/android2214-'+operation_id}
++    return {'hk':'/opt/starchat/releases/android2215-'+operation_id,
++            'sg':'/home/ec2-user/starchat-android2215-'+operation_id,
++            'backup':'/opt/starchat/docs/verification/artifacts/2026-10-12/android2215-'+operation_id}
+ 
+ 
+ def compare_baseline(host, current, root):
+     runtime=Path(root)/'runtime'
+     before=read_json(runtime/(host+'-live-snapshot.json'))
+     if host=='hk':
+-        for key in ('registry','aliases','old_artifact','target_exists','settings','schema'):
++        for key in ('registry','aliases','old_artifact','target_exists','settings','schema','permanent_guards'):
+             fail(current.get(key)==before[key], 'live HK baseline drift: '+key)
+         fail(sorted(current.get('runtime',[]),key=lambda x:x['name'])==sorted(before['runtime'],key=lambda x:x['name']), 'running container identity drift')
+         static=read_json(runtime/'static-baseline.json')['files']
+@@ -121,7 +121,7 @@
+     for host in ('hk','sg'):
+         code=member(Path(root)/'runtime',host+'-projection-source.py').read_text(encoding='utf-8')
+         compare_baseline(host,runner(host,code,timeout=180),root)
+-    return {'status':'BASELINE_EXACT','platforms':'android2213-ios2213','containers':35}
++    return {'status':'BASELINE_EXACT','platforms':'android2214-ios2213','containers':35}
+ 
+ 
+ def guarded_command(stage, frozen, arguments):
+@@ -138,12 +138,12 @@
+ 
+ 
+ def delivery_command(stage, frozen, operation):
+-    arguments=['python3',stage+'/delivery_2214.py',operation,stage+'/prepared-2214/release.json','--stage',stage]
++    arguments=['python3',stage+'/delivery_2215.py',operation,stage+'/prepared-2215/release.json','--stage',stage]
+     if operation in ('hk-install','hk-switch'):
+         # The public phase may be hours after upload. Recheck the service/ABI
+         # preservation boundary now; the payload still takes the host lock.
+         code=('import sys,subprocess\n'+f'sys.path.insert(0,{stage!r})\n'
+-              'import release_2214 as release\nrelease.host_preservation("/opt/starchat/frontend")\n'
++              'import release_2215 as release\nrelease.host_preservation("/opt/starchat/frontend")\n'
+               f'subprocess.run({[arguments[0],"-B",*arguments[1:]]!r},check=True,timeout=180)\n')
+         arguments=['python3','-c',code]
+     return guarded_command(stage,frozen,arguments)
+@@ -180,15 +180,15 @@
+ 
+ 
+ def install_runtime(root, frozen, paths, runner):
+-    archive=Path(root)/'runtime-2214.tar.gz'
++    archive=Path(root)/'runtime-2215.tar.gz'
+     for host in ('hk','sg'):
+         stage=paths[host]
+         runner(host,'import json,os\nfrom pathlib import Path\n'+f'p=Path({stage!r})\n'
+             'if any(x.is_symlink() for x in (p,*p.parents)): raise ValueError("unsafe stage")\n'
+             'p.mkdir(mode=0o700,parents=False,exist_ok=False);os.chmod(p,0o700)\nprint(json.dumps({"created":str(p)}))')
+-        runner(host,receive_code(stage+'/runtime-2214.tar.gz',archive),stream_path=archive)
++        runner(host,receive_code(stage+'/runtime-2215.tar.gz',archive),stream_path=archive)
+         code=('import hashlib,json,os,tarfile\nfrom pathlib import Path\n'
+-            f'root=Path({stage!r});a=root/"runtime-2214.tar.gz";expected={frozen["runtime_files"]!r}\n'
++            f'root=Path({stage!r});a=root/"runtime-2215.tar.gz";expected={frozen["runtime_files"]!r}\n'
+             f'if hashlib.sha256(a.read_bytes()).hexdigest()!={frozen["runtime_sha256"]!r}: raise ValueError("archive drift")\n'
+             'with tarfile.open(a) as tar:\n'
+             ' entries=tar.getmembers()\n'
+@@ -210,8 +210,8 @@
+     # Reuse the tested split/assemble contract without loading a mutable import
+     # search path. Split runs locally; exclusive receivers reject replay.
+     chunks=execution/'chunks'
+-    args=['python','-B',str(Path(root)/'runtime/delivery_2214.py'),'split',
+-          str(Path(root)/'runtime/prepared-2214/release.json'),'--stage',str(chunks),
++    args=['python','-B',str(Path(root)/'runtime/delivery_2215.py'),'split',
++          str(Path(root)/'runtime/prepared-2215/release.json'),'--stage',str(chunks),
+           '--source',str(Path(root)/'delivery'/package.NAME)]
+     import sys
+     args[0]=sys.executable
+@@ -262,20 +262,20 @@
+             host='sg' if operation.startswith('cdn') else 'hk'
+             result=runner(host,delivery_command(paths[host],frozen,operation))
+         elif operation=='publish':
+-            stage=paths['hk']; args=['python3',stage+'/release_2214.py','publish',stage+'/prepared-2214/release.json',
+-                '--backup',paths['backup'],'--trace','android2214-'+operation_id]
++            stage=paths['hk']; args=['python3',stage+'/release_2215.py','publish',stage+'/prepared-2215/release.json',
++                '--backup',paths['backup'],'--trace','android2215-'+operation_id]
+             result=runner('hk',guarded_command(stage,frozen,args))
+         elif operation=='inspect':
+             stage=paths['hk']
+             # Read partial states without trying to repair or classify them as
+             # committed. Audit is a separate read of the public API and trace.
+             code=('import json,os,sys\nfrom pathlib import Path\n'+f'sys.path.insert(0,{stage!r})\n'
+-                'import release_2214 as release\n'+f'r=release.read_json(Path({stage!r})/"prepared-2214/release.json")\n'
++                'import release_2215 as release\n'+f'r=release.read_json(Path({stage!r})/"prepared-2215/release.json")\n'
+                 'print(json.dumps({"settings":release.db("inspect",r),"alias":os.readlink("/opt/starchat/frontend/downloads/latest-arm64.apk"),'
+                 '"static":{n:release.digest(Path("/opt/starchat/frontend")/n) for n in r["deployment"]["static"]}}))')
+             result=runner('hk',guarded_command(stage,frozen,['python3','-c',code]))
+         else:
+-            stage=paths['hk']; args=['python3',stage+'/verify_production_2214.py',stage+'/prepared-2214/release.json','android2214-'+operation_id]
++            stage=paths['hk']; args=['python3',stage+'/verify_production_2215.py',stage+'/prepared-2215/release.json','android2215-'+operation_id]
+             result=runner('hk',guarded_command(stage,frozen,args))
+         receipt={'status':'PASS','operation':operation,'freeze_sha256':binding,
+                  'checked_at_utc':datetime.now(timezone.utc).isoformat(),'result':result}
+
+--- 2214/package_release.py
++++ 2215/package_release.py
+@@ -1,4 +1,4 @@
+-"""Build a local, reviewable Android 2214 package. Never contacts a server."""
++"""Build a local, reviewable Android 2215 package. Never contacts a server."""
+ import argparse
+ import ast
+ import csv
+@@ -14,9 +14,9 @@
+ 
+ HERE = Path(__file__).resolve().parent
+ SIGNER = '75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff'
+-NAME = 'ChatFlow-0.4.45-build2214-arm64.apk'
++NAME = 'ChatFlow-0.4.46-build2215-arm64.apk'
+ CHECKS = ('shared_flutter', 'native_android', 'final_apk')
+-MODULES = ('release_2214.py', 'delivery_2214.py', 'settings_2214.py', 'verify_production_2214.py')
++MODULES = ('release_2215.py', 'delivery_2215.py', 'settings_2215.py', 'verify_production_2215.py')
+ BASELINES = ('hk-live-snapshot.json', 'sg-live-snapshot.json', 'settings-before.json',
+              'static-baseline.json', 'cloudfront-before.json', 'bucket-policy-before.json')
+ 
+@@ -65,7 +65,7 @@
+ 
+ def load_release(path):
+     # Execute the verified source; never trust timestamp-based cached bytecode.
+-    module = ModuleType('release_2214_package')
++    module = ModuleType('release_2215_package')
+     module.__file__ = str(path)
+     exec(compile(regular(path).read_bytes(), str(path), 'exec'), module.__dict__)
+     return module
+@@ -89,7 +89,7 @@
+ def validate_build(apk, artifact, steps, gate_path):
+     regular(apk)
+     fail((artifact.get('version'), artifact.get('build'), artifact.get('mode')) ==
+-         ('0.4.45', 2214, 'standard-arm64-release') and type(artifact.get('build')) is int,
++         ('0.4.46', 2215, 'standard-arm64-release') and type(artifact.get('build')) is int,
+          'wrong target/version/mode')
+     fail(artifact.get('signer_sha256') == SIGNER, 'fixed signer required')
+     for key, length in (('source_commit', 40), ('mobile_manifest_sha256', 64),
+@@ -104,8 +104,8 @@
+             ('source_manifest_sha256', 'mobile_manifest_sha256'),
+             ('pubspec_lock_sha256', 'pubspec_lock_sha256'), ('artifact_sha256', 'final_apk_sha256')):
+         fail(gates.get(gate_key) == artifact[artifact_key], 'gate binding drift: ' + gate_key)
+-    identity = dict(package='com.liuhetong.mobile', abi='arm64-v8a', version='0.4.45',
+-                    build=2214, signer_sha256=SIGNER, artifact_bytes=size)
++    identity = dict(package='com.liuhetong.mobile', abi='arm64-v8a', version='0.4.46',
++                    build=2215, signer_sha256=SIGNER, artifact_bytes=size)
+     fail(gates.get('final_identity') == identity and
+          type(gates['final_identity']['artifact_bytes']) is int and
+          type(gates['final_identity']['build']) is int, 'final package/ABI/signer identity')
+@@ -116,7 +116,7 @@
+         hex_identity(evidence.get('sha256'), 64, 'gate evidence SHA')
+         fail(digest(member(Path(gate_path).parent, evidence.get('path'))) == evidence['sha256'],
+              'gate evidence drift: ' + key)
+-    return dict(version='0.4.45', build=2214, artifact_sha256=artifact['final_apk_sha256'],
++    return dict(version='0.4.46', build=2215, artifact_sha256=artifact['final_apk_sha256'],
+                 artifact_bytes=size, source_commit=artifact['source_commit'],
+                 source_manifest_sha256=artifact['mobile_manifest_sha256'],
+                 pubspec_lock_sha256=artifact['pubspec_lock_sha256'], signer_sha256=SIGNER)
+@@ -152,14 +152,14 @@
+     fail(output.parent.is_dir() and not any(p.is_symlink() for p in (output.parent, *output.parents)), 'safe existing output parent required')
+     # Validation precedes even the temporary output. No partially valid package
+     # appears at the final path if an input or offline preparation fails.
+-    temporary = Path(tempfile.mkdtemp(prefix='.2214-package-', dir=output.parent))
++    temporary = Path(tempfile.mkdtemp(prefix='.2215-package-', dir=output.parent))
+     try:
+         os.chmod(temporary, 0o700)
+         runtime = temporary / 'runtime'; runtime.mkdir(mode=0o700)
+         payload = HERE / 'payload'
+         for name in (*MODULES, *BASELINES):
+             shutil.copyfile(regular(payload / name), runtime / name)
+-        release = load_release(runtime / 'release_2214.py')
++        release = load_release(runtime / 'release_2215.py')
+         for name in (*release.PRESERVED, 'download.html', 'downloads/android-release.json'):
+             destination = runtime / 'hk-snapshot' / name
+             destination.parent.mkdir(parents=True, exist_ok=True)
+@@ -168,11 +168,11 @@
+             signing_confirmed_by=args.signing_confirmed_by, source_commit=record['source_commit'],
+             source_manifest_sha256=record['source_manifest_sha256'], snapshot=runtime/'hk-snapshot',
+             settings=runtime/'settings-before.json', cloudfront=runtime/'cloudfront-before.json',
+-            policy=runtime/'bucket-policy-before.json', output=runtime/'prepared-2214'))
+-        r = read_json(runtime / 'prepared-2214/release.json'); release.validate_release(r)
++            policy=runtime/'bucket-policy-before.json', output=runtime/'prepared-2215'))
++        r = read_json(runtime / 'prepared-2215/release.json'); release.validate_release(r)
+         # No policy write exists in the cloud operation. Preserve its local
+         # before/target bytes too, instead of merely equivalent JSON.
+-        shutil.copyfile(runtime/'bucket-policy-before.json',runtime/'prepared-2214/bucket-policy-target.json')
++        shutil.copyfile(runtime/'bucket-policy-before.json',runtime/'prepared-2215/bucket-policy-target.json')
+         delivery = temporary / 'delivery'; delivery.mkdir()
+         shutil.copyfile(args.apk, delivery / NAME)
+         evidence = temporary / 'evidence'; evidence.mkdir()
+@@ -193,7 +193,7 @@
+         edits = {}
+         for name, hashes in r['deployment']['static'].items():
+             target = backfill / 'frontend' / name; target.parent.mkdir(parents=True, exist_ok=True)
+-            shutil.copyfile(runtime/'prepared-2214/staged'/name, target)
++            shutil.copyfile(runtime/'prepared-2215/staged'/name, target)
+             edits['frontend/'+name] = {**hashes, 'staged': 'source-backfill/frontend/'+name}
+         write_json(backfill/'plan.json', {'mode':'review-only-no-repository-write', 'files':edits,
+             'preserved':{'frontend/'+n:h for n,h in r['deployment']['preserved'].items()},
+@@ -206,7 +206,7 @@
+                          if p.is_file() and '__pycache__' not in p.parts}
+         for name in runtime_files:
+             if name.endswith('.py'): ast.parse((runtime/name).read_text(encoding='utf-8'), feature_version=(3,9))
+-        archive = temporary/'runtime-2214.tar.gz'
++        archive = temporary/'runtime-2215.tar.gz'
+         with tarfile.open(archive, 'w:gz') as tar:
+             for name in runtime_files: tar.add(runtime/name, arcname=name, recursive=False)
+         # Omit import bytecode entirely from the final package.
+@@ -214,7 +214,7 @@
+         files = {p.relative_to(temporary).as_posix():digest(p) for p in sorted(temporary.rglob('*')) if p.is_file()}
+         freeze = {'schema':1, **record, 'files':files, 'runtime_files':runtime_files,
+             'runtime_sha256':digest(archive), 'runtime_bytes':archive.stat().st_size,
+-            'release_sha256':digest(runtime/'prepared-2214/release.json'),
++            'release_sha256':digest(runtime/'prepared-2215/release.json'),
+             'build_steps':validate_steps(evidence/'steps.tsv')}
+         write_json(temporary/'freeze-manifest.json', freeze)
+         os.rename(temporary, output)
+@@ -222,7 +222,7 @@
+                 'freeze_sha256':digest(output/'freeze-manifest.json'), **record}
+     except BaseException:
+         # Only this function's checked, newly-created temporary directory.
+-        fail(temporary.parent == output.parent and temporary.name.startswith('.2214-package-'), 'temporary ownership')
++        fail(temporary.parent == output.parent and temporary.name.startswith('.2215-package-'), 'temporary ownership')
+         shutil.rmtree(temporary)
+         raise
+ 
+
+--- 2214/payload/delivery_2214.py
++++ 2215/payload/delivery_2215.py
+@@ -7,7 +7,7 @@
+ import shutil
+ import subprocess
+ import tempfile
+-import release_2214 as release
++import release_2215 as release
+ 
+ CHUNK=16*1024*1024
+ ROLE='arn:aws:sts::218022113852:assumed-role/StarChatSgMaintenanceRole/i-035b46916e4cf43eb'
+@@ -22,7 +22,7 @@
+     import fcntl
+     stage=Path(stage)
+     if not stage.is_dir() or stage.is_symlink():raise ValueError('private stage missing/linked')
+-    with (stage/'.delivery-2214.lock').open('a') as handle:
++    with (stage/'.delivery-2215.lock').open('a') as handle:
+         fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB);yield
+ 
+ def split(r,source,directory):
+@@ -49,7 +49,7 @@
+         destination=stage/'final.apk'
+         if destination.exists() or destination.is_symlink():
+             verify_artifact(r,destination);return {'status':'already_exact','sha256':r['artifact_sha256']}
+-        fd,temporary=tempfile.mkstemp(prefix='.2214-assemble-',dir=stage)
++        fd,temporary=tempfile.mkstemp(prefix='.2215-assemble-',dir=stage)
+         try:
+             with os.fdopen(fd,'wb') as output:
+                 for part in parts:
+@@ -82,7 +82,7 @@
+         downloads=Path(root)/'downloads';destination=downloads/release.NAME
+         if mode=='hk-install':
+             if not before['installed']:
+-                fd,temporary=tempfile.mkstemp(prefix='.2214-apk-',dir=downloads)
++                fd,temporary=tempfile.mkstemp(prefix='.2215-apk-',dir=downloads)
+                 try:
+                     with os.fdopen(fd,'wb') as target,source.open('rb') as input_file:
+                         shutil.copyfileobj(input_file,target,1024*1024);target.flush();os.fsync(target.fileno())
+@@ -92,7 +92,7 @@
+             if not before['installed']:raise ValueError('install immutable APK first')
+             release.public_check(r,completed=False)
+             if before['alias']==release.OLD_NAME:
+-                fd,name=tempfile.mkstemp(prefix='.2214-alias-',dir=downloads);os.close(fd);Path(name).unlink()
++                fd,name=tempfile.mkstemp(prefix='.2215-alias-',dir=downloads);os.close(fd);Path(name).unlink()
+                 try:
+                     os.symlink(release.NAME,name)
+                     if os.readlink(downloads/'latest-arm64.apk')!=release.OLD_NAME:raise ValueError('alias CAS drift')
+@@ -136,7 +136,7 @@
+         if mode=='cdn-check':
+             if before['cloudfront']=='complete' and before['status']=='Deployed':before['public']=cloud_probe(r)
+             return before
+-        backup=stage/'cloud-2214-before.json'
++        backup=stage/'cloud-2215-before.json'
+         if backup.exists() and release.read_json(backup).get('plan')!=r['deployment']:
+             raise ValueError('previous cloud backup belongs to another plan; inspect')
+         if not backup.exists():
+@@ -145,14 +145,14 @@
+         if before['cloudfront']=='before':
+             current=cloud_state(r,stage)
+             if current['cloudfront']!='before' or current['etag']!=before['etag']:raise ValueError('distribution changed; inspect')
+-            target=stage/'cloudfront-2214-target.json';target.write_bytes(release.json_bytes(r['deployment']['cloudfront_after']))
++            target=stage/'cloudfront-2215-target.json';target.write_bytes(release.json_bytes(r['deployment']['cloudfront_after']))
+             updated=aws('cloudfront','update-distribution','--id',release.DIST,'--if-match',before['etag'],'--distribution-config','file://'+str(target))
+             if updated['Distribution']['DistributionConfig']!=r['deployment']['cloudfront_after']:raise ValueError('CloudFront update readback mismatch')
+         after=cloud_state(r,stage)
+         if after['cloudfront']!='complete' or after['policy']!='unchanged':raise ValueError('cloud readback mismatch')
+         if after['status']=='Deployed':after['public']=cloud_probe(r)
+         else:after['next']='Wait for Deployed, then cdn-check must pass public HEAD/CORS before HK alias switch'
+-        (stage/'cloud-2214-result.json').write_bytes(release.json_bytes(after))
++        (stage/'cloud-2215-result.json').write_bytes(release.json_bytes(after))
+         return after
+ 
+ def main():
+
+--- 2214/payload/release_2214.py
++++ 2215/payload/release_2215.py
+@@ -1,4 +1,4 @@
+-"""One record: offline prepare, read-only check, guarded Android 2214 publish.
++"""One record: offline prepare, read-only check, guarded Android 2215 publish.
+ 
+ No command is executed merely by importing this module. Cloud/binary installation
+ must complete independently before publish. No repository-wide deployment.
+@@ -16,14 +16,14 @@
+ import urllib.request
+ INSTALL = 'https://www.liuhetong888.com/download?platform=android&install=1'
+ IOS_INSTALL = 'https://www.liuhetong888.com/download?platform=ios&install=1'
+-NOTES = '改进发送队列、历史加载和媒体缓存，增加媒体任务恢复和大小预检，优化Android后台运行稳定性。当前普通附件最高48MiB，图片因解码预算上限更低；过大时请压缩或缩小后重试。'
+-OLD_NAME = 'ChatFlow-0.4.44-build2213-arm64.apk'
+-NAME = 'ChatFlow-0.4.45-build2214-arm64.apk'
+-OLD_SHA = '08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271'
++NOTES = '修复图片和视频发送失败问题，提升媒体发送稳定性。'
++OLD_NAME = 'ChatFlow-0.4.45-build2214-arm64.apk'
++NAME = 'ChatFlow-0.4.46-build2215-arm64.apk'
++OLD_SHA = '575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614'
+ OLD_PATHS = ['downloads/ChatFlow-0.4.19-build2188-arm64.apk','downloads/ChatFlow-0.4.21-build2190-arm64.apk','downloads/ChatFlow-0.4.24-build2193-arm64.apk','downloads/ChatFlow-0.4.25-build2194-arm64.apk']
+ RHP = 'fb8eb155-a1ae-4012-950c-c94d570e5efe'
+ OBJECT_ARN = 'arn:aws:s3:::starchat-installers-218022113852-sg/downloads/' + NAME
+-OLD_BYTES = 73139489
++OLD_BYTES = 73336097
+ BUCKET = 'starchat-installers-218022113852-sg'
+ DIST = 'E30IR8IHK6PMXZ'
+ DIRECT = 'https://www.liuhetong888.com/downloads/' + NAME
+@@ -63,9 +63,12 @@
+         alias = Path(root) / 'downloads' / name
+         if not alias.is_symlink() or os.readlink(alias) != target:
+             raise ValueError('preserved ABI alias drift: ' + name)
+-    names = subprocess.check_output(['docker', 'ps', '-q'], text=True).split()
++    for name, expected in FROZEN_HOST['permanent_guards'].items():
++        if digest(Path('/opt/starchat/ops/refresh-guards') / name) != expected:
++            raise ValueError('permanent guard/probe identity drift')
++    names = subprocess.check_output(['docker', 'ps', '-q'], text=True, timeout=10).split()
+     frozen = {x['name']: (x['id'], x['image'], x['restart_count'], x['started_at']) for x in FROZEN_HOST['runtime']}
+-    actual = json.loads(subprocess.check_output(['docker', 'inspect', *names]))
++    actual = json.loads(subprocess.check_output(['docker', 'inspect', *names], timeout=10))
+     current = {x['Name'].lstrip('/'): (x['Id'], x['Image'], x['RestartCount'], x['State']['StartedAt']) for x in actual}
+     if current != frozen:
+         raise ValueError('running-container identity drift; freeze again, never revert old images')
+@@ -73,13 +76,13 @@
+ def settings_target(before):
+     if set(before) != SETTINGS or any(not isinstance(v, str) or not v for v in before.values()):
+         raise ValueError('exact nonempty ten-setting snapshot required')
+-    expected = {'app_latest_version': '0.4.44', 'app_latest_build': '2213',
++    expected = {'app_latest_version': '0.4.45', 'app_latest_build': '2214',
+                 'app_min_supported_build': '3', 'app_apk_url': INSTALL,
+                 'app_ios_latest_version': '0.4.44', 'app_ios_latest_build': '2213',
+                 'app_ios_min_supported_build': '3', 'app_ios_download_url': IOS_INSTALL}
+     if any(before[k] != v for k, v in expected.items()):
+-        raise ValueError('2213 Android / 2213 iOS / minimum / URL baseline drift')
+-    return before | {'app_latest_version': '0.4.45', 'app_latest_build': '2214', 'app_update_notes': NOTES}
++        raise ValueError('2214 Android / 2213 iOS / minimum / URL baseline drift')
++    return before | {'app_latest_version': '0.4.46', 'app_latest_build': '2215', 'app_update_notes': NOTES}
+ 
+ def classify(before, after, current):
+     if current == before: return 'before'
+@@ -95,7 +98,7 @@
+             or type(artifact_bytes) is not int or artifact_bytes <= 0 or artifact_sha in (OLD_SHA, '0'*64)
+             or not isinstance(signing_confirmed_by, str) or not signing_confirmed_by.strip()):
+         raise ValueError('final signed artifact SHA/bytes and actual gate evidence required')
+-    return {'platform': 'android', 'version': '0.4.45', 'build': 2214,
++    return {'platform': 'android', 'version': '0.4.46', 'build': 2215,
+             'artifact_sha256': artifact_sha, 'artifact_bytes': artifact_bytes,
+             'artifact_url': DIRECT, 'cdn_url': CDN, 'network_selection': True,
+             'signing_confirmed_by': signing_confirmed_by, 'source_commit': source_commit,
+@@ -107,12 +110,12 @@
+     expected = b'data-cdn-host="d12fjr06o6tga5.cloudfront.net"'
+     old = f'id="android-direct-download" href="/downloads/{OLD_NAME}" download'.encode()
+     new = f'id="android-direct-download" href="/downloads/{NAME}" download'.encode()
+-    script = b'src="/src/download-redirect.js?v=2213-network"'
++    script = b'src="/src/download-redirect.js?v=2214-network"'
+     if page.count(expected) != 1 or page.count(old) != 1 or page.count(script) != 1:
+         raise ValueError('live Android network HTML baseline drift')
+     if page.count(b'href="/downloads/latest-arm64.apk"') != 1:
+         raise ValueError('native latest fallback drift')
+-    return page.replace(old, new).replace(script, b'src="/src/download-redirect.js?v=2214-network"')
++    return page.replace(old, new).replace(script, b'src="/src/download-redirect.js?v=2215-network"')
+ 
+ def expected_policy(paths):
+     return {'Version': '2012-10-17', 'Statement': [
+@@ -175,7 +178,7 @@
+         yield
+ 
+ def atomic(path, data):
+-    fd, temporary = tempfile.mkstemp(prefix='.2214-', dir=path.parent)
++    fd, temporary = tempfile.mkstemp(prefix='.2215-', dir=path.parent)
+     try:
+         with os.fdopen(fd, 'wb') as target:
+             target.write(data); target.flush(); os.fsync(target.fileno())
+@@ -247,13 +250,13 @@
+     if cf != FROZEN_CLOUDFRONT: raise ValueError('exact frozen CloudFront config and ETag required')
+     cf_after = cloudfront_target(cf['DistributionConfig']); policy_after = policy_target(policy)
+     old_registry = read_json(safe_file(snapshot, 'downloads/android-release.json'))
+-    expected_registry = {'platform': 'android', 'version': '0.4.44', 'build': 2213,
++    expected_registry = {'platform': 'android', 'version': '0.4.45', 'build': 2214,
+         'artifact_bytes': OLD_BYTES, 'sha256': OLD_SHA,
+         'cdn_url': CDN.replace(NAME, OLD_NAME), 'direct_url': DIRECT.replace(NAME, OLD_NAME)}
+-    if old_registry != expected_registry: raise ValueError('2213 live registry identity drift')
++    if old_registry != expected_registry: raise ValueError('2214 live registry identity drift')
+     targets = {'download.html': page_target(safe_file(snapshot, 'download.html').read_bytes()),
+-               'downloads/android-release.json': json_bytes({'platform': 'android', 'version': '0.4.45',
+-                   'build': 2214, 'artifact_bytes': args.bytes, 'sha256': args.sha256, 'cdn_url': CDN, 'direct_url': DIRECT})}
++               'downloads/android-release.json': json_bytes({'platform': 'android', 'version': '0.4.46',
++                   'build': 2215, 'artifact_bytes': args.bytes, 'sha256': args.sha256, 'cdn_url': CDN, 'direct_url': DIRECT})}
+     preserved = {name: digest(safe_file(snapshot, name)) for name in PRESERVED}
+     home = safe_file(snapshot, 'src/admin-home.js').read_bytes()
+     if b'/download?platform=android&install=1' not in home: raise ValueError('existing Android homepage network bridge required')
+@@ -284,7 +287,7 @@
+     if digest(page) != FROZEN_STATIC['download.html']['sha256']:
+         raise ValueError('frozen page input identity drift')
+     expected_payloads = {'download.html': page_target(page.read_bytes()),
+-        'downloads/android-release.json': json_bytes({'platform':'android', 'version':'0.4.45', 'build':2214,
++        'downloads/android-release.json': json_bytes({'platform':'android', 'version':'0.4.46', 'build':2215,
+             'artifact_bytes':r['artifact_bytes'], 'sha256':r['artifact_sha256'], 'cdn_url':CDN, 'direct_url':DIRECT})}
+     expected_static = {name: {'before':FROZEN_STATIC[name]['sha256'], 'after':sha(payload)}
+                        for name,payload in expected_payloads.items()}
+@@ -301,7 +304,7 @@
+ def db(mode, r, trace=None):
+     payload = {'mode': mode, 'expected': r['deployment']['settings_before'],
+                'after': r['deployment']['settings_after'], 'trace': trace}
+-    code = Path(__file__).with_name('settings_2214.py').read_bytes()
++    code = Path(__file__).with_name('settings_2215.py').read_bytes()
+     result = subprocess.check_output(['docker', 'exec', '-i', '-w', '/opt/business-api',
+         'starchat-business-api-1', 'python3', '-', json.dumps(payload)], input=code)
+     return json.loads(result)
+
+--- 2214/payload/settings_2214.py
++++ 2215/payload/settings_2215.py
+@@ -4,7 +4,7 @@
+ import re
+ import sys
+ 
+-NOTES = '改进发送队列、历史加载和媒体缓存，增加媒体任务恢复和大小预检，优化Android后台运行稳定性。当前普通附件最高48MiB，图片因解码预算上限更低；过大时请压缩或缩小后重试。'
++NOTES = '修复图片和视频发送失败问题，提升媒体发送稳定性。'
+ INSTALL='https://www.liuhetong888.com/download?platform=android&install=1'
+ IOS_INSTALL='https://www.liuhetong888.com/download?platform=ios&install=1'
+ KEYS=('app_latest_version','app_latest_build','app_min_supported_build','app_update_notes','app_apk_url',
+@@ -16,10 +16,10 @@
+     before,after=payload['expected'],payload['after']
+     if not isinstance(before,dict) or set(before)!=set(KEYS) or any(not isinstance(v,str) or not v for v in before.values()):
+         raise ValueError('exact ten-setting baseline required')
+-    fixed={'app_latest_version':'0.4.44','app_latest_build':'2213','app_min_supported_build':'3','app_apk_url':INSTALL,
++    fixed={'app_latest_version':'0.4.45','app_latest_build':'2214','app_min_supported_build':'3','app_apk_url':INSTALL,
+            'app_ios_latest_version':'0.4.44','app_ios_latest_build':'2213','app_ios_min_supported_build':'3','app_ios_download_url':IOS_INSTALL}
+-    if any(before[k]!=v for k,v in fixed.items()):raise ValueError('2213 settings baseline drift')
+-    values={'app_latest_version':'0.4.45','app_latest_build':'2214','app_update_notes':NOTES}
++    if any(before[k]!=v for k,v in fixed.items()):raise ValueError('2214 Android / 2213 iOS settings baseline drift')
++    values={'app_latest_version':'0.4.46','app_latest_build':'2215','app_update_notes':NOTES}
+     if after!=before|values:raise ValueError('only exact Android version/build/notes change allowed')
+     if payload['mode']=='apply' and (not isinstance(payload['trace'],str) or not re.fullmatch('[A-Za-z0-9_.:-]{8,100}',payload['trace'])):
+         raise ValueError('unique audit trace required')
+
+--- 2214/payload/test_settings_postgres_2214.py
++++ 2215/payload/test_settings_postgres_2215.py
+@@ -17,25 +17,25 @@
+ from app.modules.settings.service import SettingService
+ from app.modules.audit.models import AuditEvent
+ import app.modules.settings.service as service_module
+-import release_2214 as release
+-import settings_2214 as target
++import release_2215 as release
++import settings_2215 as target
+ 
+ BASELINE=release.read_json(HERE/'settings-before.json')
+ 
+ @pytest.fixture
+ def db(pg_url):
+-    schema='release2214_'+uuid4().hex
++    schema='release2215_'+uuid4().hex
+     initial=create_engine(pg_url)
+     with initial.begin() as connection:connection.execute(text('CREATE SCHEMA '+schema))
+     initial.dispose()
+     engine=create_engine(pg_url,connect_args={'options':'-csearch_path='+schema})
+     AppSetting.__table__.create(engine);AuditEvent.__table__.create(engine)
+     service=SettingService(create_session_factory(engine))
+-    service.set_many(BASELINE,actor_id='synthetic-seed',trace_id='seed-2214')
++    service.set_many(BASELINE,actor_id='synthetic-seed',trace_id='seed-2215')
+     try:yield engine,service
+     finally:engine.dispose()
+ 
+-def payload():return {'mode':'apply','expected':BASELINE,'after':release.settings_target(BASELINE),'trace':'synthetic-2214-publication'}
++def payload():return {'mode':'apply','expected':BASELINE,'after':release.settings_target(BASELINE),'trace':'synthetic-2215-publication'}
+ def audits(engine):
+     with engine.connect() as connection:return connection.scalar(select(func.count()).select_from(AuditEvent))
+ 
+@@ -99,4 +99,4 @@
+         assert publishing.result(timeout=5)==release.settings_target(BASELINE)
+         writing.result(timeout=5)
+     assert service.get('app_ios_update_notes')=='admin-after-release'
+-    assert service.get('app_latest_build')=='2214'
++    assert service.get('app_latest_build')=='2215'
+
+
+--- 2214/test_execution_gate.py
++++ 2215/test_execution_gate.py
+@@ -25,7 +25,7 @@
+         self.pkg = package_tests.module()
+         self.source = self.root/'source'
+         mobile = self.source/'apps/mobile_flutter'; mobile.mkdir(parents=True)
+-        (mobile/'pubspec.yaml').write_text('version: 0.4.45+2214\n', encoding='utf-8')
++        (mobile/'pubspec.yaml').write_text('version: 0.4.46+2215\n', encoding='utf-8')
+         (mobile/'pubspec.lock').write_text('synthetic lock\n', encoding='utf-8')
+         self.manifest = self.root/'mobile-inputs.json'
+         self.pkg.write_json(self.manifest, {'files':[{'path':p.relative_to(self.source).as_posix(),
+@@ -48,7 +48,7 @@
+         self.review = self.root/'review.json'
+         self.pkg.write_json(self.review, {'freeze_sha256':self.pkg.digest(self.output/'freeze-manifest.json'),
+             'source_commit':self.freeze['source_commit'], 'artifact_sha256':self.freeze['artifact_sha256'],
+-            'runtime_sha256':self.freeze['runtime_sha256'], 'operation_id':'test-20261011-123456',
++            'runtime_sha256':self.freeze['runtime_sha256'], 'operation_id':'test-20261012-123456',
+             'checks':{k:{'status':'pass','path':'review.md','sha256':self.pkg.digest(report)}
+                       for k in ('spec_domain','quality_security')},
+             'authorized_operations':list(executor().OPERATIONS)})
+@@ -61,16 +61,16 @@
+         self.assertEqual(set(backfill['files']), {'frontend/download.html','frontend/downloads/android-release.json'})
+         self.assertEqual(len(backfill['preserved']), 5)
+         before = self.pkg.read_json(self.output/'runtime/bucket-policy-before.json')
+-        after = self.pkg.read_json(self.output/'runtime/prepared-2214/bucket-policy-target.json')
++        after = self.pkg.read_json(self.output/'runtime/prepared-2215/bucket-policy-target.json')
+         self.assertEqual(before, after)
+         self.assertEqual((self.output/'runtime/bucket-policy-before.json').read_bytes(),
+-                         (self.output/'runtime/prepared-2214/bucket-policy-target.json').read_bytes())
++                         (self.output/'runtime/prepared-2215/bucket-policy-target.json').read_bytes())
+ 
+     def test_missing_identity_or_source_drift_has_no_output(self):
+         self.artifact.pop('final_apk_sha256'); self.pkg.write_json(self.receipt, self.artifact)
+         with self.assertRaises(ValueError): self.pkg.create_package(self.args)
+         self.assertFalse(self.output.exists())
+-        self.assertEqual(list(self.root.glob('.2214-package-*')), [])
++        self.assertEqual(list(self.root.glob('.2215-package-*')), [])
+ 
+     def test_source_drift_refused_before_output(self):
+         (self.source/'apps/mobile_flutter/pubspec.lock').write_text('drift', encoding='utf-8')
+@@ -79,7 +79,7 @@
+ 
+     def test_default_plan_never_calls_transport_or_creates_execution(self):
+         self.prepare(); calls=[]
+-        result=executor().run(self.output, 'runtime', 'test-20261011-123456', runner=calls.append)
++        result=executor().run(self.output, 'runtime', 'test-20261012-123456', runner=calls.append)
+         self.assertEqual(result['status'], 'PLAN_ONLY')
+         self.assertEqual(calls, [])
+         self.assertFalse((self.output/'execution').exists())
+@@ -87,20 +87,20 @@
+     def test_missing_review_bad_identity_and_changed_package_never_call_transport(self):
+         self.prepare(); calls=[]; execute=executor()
+         with self.assertRaises(ValueError):
+-            execute.run(self.output, 'runtime', 'test-20261011-123456', execute=True, runner=calls.append)
++            execute.run(self.output, 'runtime', 'test-20261012-123456', execute=True, runner=calls.append)
+         review=self.pkg.read_json(self.review); review['artifact_sha256']='f'*64; self.pkg.write_json(self.review,review)
+         with self.assertRaises(ValueError):
+-            execute.run(self.output,'runtime','test-20261011-123456',execute=True,review_path=self.review,runner=calls.append)
+-        (self.output/'runtime/settings_2214.py').write_text('drift',encoding='utf-8')
++            execute.run(self.output,'runtime','test-20261012-123456',execute=True,review_path=self.review,runner=calls.append)
++        (self.output/'runtime/settings_2215.py').write_text('drift',encoding='utf-8')
+         with self.assertRaises(ValueError):
+-            execute.run(self.output,'runtime','test-20261011-123456',execute=True,review_path=self.review,runner=calls.append)
++            execute.run(self.output,'runtime','test-20261012-123456',execute=True,review_path=self.review,runner=calls.append)
+         self.assertEqual(calls,[]); self.assertFalse((self.output/'execution').exists())
+ 
+     def test_out_of_order_mutation_refused_without_transport(self):
+         self.prepare(); calls=[]
+         for mode in ('upload','assemble','hk-install','cdn-install','hk-switch','publish'):
+             with self.subTest(mode=mode),self.assertRaises(ValueError):
+-                executor().run(self.output,mode,'test-20261011-123456',execute=True,review_path=self.review,runner=calls.append)
++                executor().run(self.output,mode,'test-20261012-123456',execute=True,review_path=self.review,runner=calls.append)
+         self.assertEqual(calls,[])
+ 
+     def test_fresh_baseline_drift_blocks_first_write(self):
+@@ -108,39 +108,39 @@
+         def remote(host, code, **kwargs):
+             calls.append((host,code)); return {'unexpected':'drift'}
+         with self.assertRaises(ValueError):
+-            executor().run(self.output,'runtime','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++            executor().run(self.output,'runtime','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+         self.assertEqual(len(calls),1)
+         self.assertIn('checked_at_utc',calls[0][1])
+-        self.assertFalse((self.output/'execution/test-20261011-123456/runtime.json').exists())
++        self.assertFalse((self.output/'execution/test-20261012-123456/runtime.json').exists())
+ 
+     def test_live_cdn_pending_blocks_alias_before_hk_mutation(self):
+         self.prepare(); execute=executor(); calls=[]
+-        execution=self.output/'execution/test-20261011-123456'; execution.mkdir(parents=True)
++        execution=self.output/'execution/test-20261012-123456'; execution.mkdir(parents=True)
+         binding={'freeze_sha256':self.pkg.digest(self.output/'freeze-manifest.json'),'status':'PASS'}
+         for mode in ('runtime','upload','assemble','hk-install','cdn-install'):
+             self.pkg.write_json(execution/(mode+'.json'),binding)
+         def remote(host,code,**kwargs):
+             calls.append(host); return {'cloudfront':'complete','status':'InProgress'}
+         with self.assertRaises(ValueError):
+-            execute.run(self.output,'hk-switch','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++            execute.run(self.output,'hk-switch','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+         self.assertEqual(calls,['sg'])
+ 
+     def test_uncertain_mutation_is_recorded_and_cannot_be_replayed(self):
+         self.prepare(); execute=executor(); calls=[]
+-        execution=self.output/'execution/test-20261011-123456'; execution.mkdir(parents=True)
++        execution=self.output/'execution/test-20261012-123456'; execution.mkdir(parents=True)
+         self.pkg.write_json(execution/'runtime.json',{'freeze_sha256':self.pkg.digest(self.output/'freeze-manifest.json'),'status':'PASS'})
+         def remote(host,code,**kwargs):
+             calls.append(host); raise TimeoutError('synthetic interrupted stream')
+         with self.assertRaises(TimeoutError):
+-            execute.run(self.output,'upload','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++            execute.run(self.output,'upload','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+         self.assertTrue((execution/'outcome-unknown.json').is_file())
+         count=len(calls)
+         with self.assertRaises(ValueError):
+-            execute.run(self.output,'upload','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++            execute.run(self.output,'upload','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+         self.assertEqual(len(calls),count)
+ 
+     def test_real_local_stream_receiver_and_archive_extraction(self):
+-        self.prepare(); execute=executor(); paths=execute.stages('test-20261011-123456')
++        self.prepare(); execute=executor(); paths=execute.stages('test-20261012-123456')
+         sandbox=self.root/'remote-sandbox'; sandbox.mkdir()
+         def remote(host,code,*,stream_path=None,timeout=600):
+             if 'checked_at_utc' in code:
+@@ -154,27 +154,27 @@
+                 result=subprocess.run([sys.executable,'-c',code],stdin=stream,capture_output=True,timeout=30)
+             self.assertEqual(result.returncode,0,result.stderr.decode())
+             return json.loads(result.stdout)
+-        result=execute.run(self.output,'runtime','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++        result=execute.run(self.output,'runtime','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+         self.assertEqual(result['status'],'PASS')
+         for host in ('hk','sg'):
+             for name,sha in self.freeze['runtime_files'].items():
+                 self.assertEqual(self.pkg.digest(sandbox/host/name),sha)
+         with self.assertRaises(ValueError):
+-            execute.run(self.output,'runtime','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++            execute.run(self.output,'runtime','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+ 
+     def test_unknown_publication_allows_readonly_inspect_without_publish_receipt(self):
+         self.prepare(); execute=executor(); calls=[]
+-        execution=self.output/'execution/test-20261011-123456'; execution.mkdir(parents=True)
++        execution=self.output/'execution/test-20261012-123456'; execution.mkdir(parents=True)
+         self.pkg.write_json(execution/'runtime.json',{'freeze_sha256':self.pkg.digest(self.output/'freeze-manifest.json'),'status':'PASS'})
+         self.pkg.write_json(execution/'outcome-unknown.json',{'operation':'publish'})
+         def remote(host,code,**kwargs): calls.append(host); return {'settings':'synthetic partial state'}
+-        result=execute.run(self.output,'inspect','test-20261011-123456',execute=True,review_path=self.review,runner=remote)
++        result=execute.run(self.output,'inspect','test-20261012-123456',execute=True,review_path=self.review,runner=remote)
+         self.assertEqual(result['status'],'PASS'); self.assertEqual(calls,['hk'])
+         self.assertTrue((execution/'outcome-unknown.json').exists())
+ 
+     def test_guarded_remote_programs_compile_and_verify_before_import(self):
+         self.prepare(); execute=executor()
+-        code=execute.guarded_command('/private/stage',self.freeze,['python3','/private/stage/release_2214.py','check'])
++        code=execute.guarded_command('/private/stage',self.freeze,['python3','/private/stage/release_2215.py','check'])
+         compile(code,'guarded runtime','exec')
+         self.assertLess(code.index('remote runtime drift'),code.index('subprocess.run'))
+         self.assertIn('unfrozen bytecode',code)
+@@ -183,7 +183,7 @@
+         self.prepare(); calls=[]
+         (self.root/'review.md').write_text('drift',encoding='utf-8')
+         with self.assertRaises(ValueError):
+-            executor().run(self.output,'runtime','test-20261011-123456',execute=True,review_path=self.review,runner=calls.append)
++            executor().run(self.output,'runtime','test-20261012-123456',execute=True,review_path=self.review,runner=calls.append)
+         with self.assertRaises(ValueError):
+             executor().run(self.output,'runtime','../escape',execute=True,review_path=self.review,runner=calls.append)
+         self.assertEqual(calls,[])
+
+--- 2214/test_package_gate.py
++++ 2215/test_package_gate.py
+@@ -11,7 +11,7 @@
+ 
+ def module():
+     path = HERE / 'package_release.py'
+-    assert path.is_file(), '2214 final-artifact package gate is not implemented'
++    assert path.is_file(), '2215 final-artifact package gate is not implemented'
+     spec = importlib.util.spec_from_file_location('package_release', path)
+     result = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(result)
+@@ -25,7 +25,7 @@
+         self.addCleanup(self.temp.cleanup)
+         self.root = Path(self.temp.name)
+         self.apk = self.root / 'final.apk'; self.apk.write_bytes(b'synthetic already-verified APK')
+-        self.artifact = dict(version='0.4.45', build=2214, mode='standard-arm64-release',
++        self.artifact = dict(version='0.4.46', build=2215, mode='standard-arm64-release',
+                              source_commit='b' * 40, mobile_manifest_sha256='c' * 64,
+                              pubspec_lock_sha256='d' * 64,
+                              signer_sha256='75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff',
+@@ -40,7 +40,7 @@
+                               key: dict(status='pass', path='evidence.log', sha256=hashlib.sha256(evidence.read_bytes()).hexdigest())
+                               for key in ('shared_flutter', 'native_android', 'final_apk')})
+         self.gates['final_identity'] = dict(package='com.liuhetong.mobile', abi='arm64-v8a',
+-            version='0.4.45', build=2214, signer_sha256=self.artifact['signer_sha256'],
++            version='0.4.46', build=2215, signer_sha256=self.artifact['signer_sha256'],
+             artifact_bytes=self.artifact['final_apk_bytes'])
+         self.gate_path = self.root / 'gates.json'
+ 
+@@ -51,7 +51,7 @@
+     def test_exact_candidate_and_three_hashed_gates_required(self):
+         record = self.validate()
+         self.assertEqual(record['artifact_sha256'], self.artifact['final_apk_sha256'])
+-        self.assertEqual(record['build'], 2214)
++        self.assertEqual(record['build'], 2215)
+         for missing in ('shared_flutter', 'native_android', 'final_apk'):
+             previous = self.gates['checks'].pop(missing)
+             with self.subTest(missing=missing), self.assertRaises(ValueError):
+@@ -61,7 +61,7 @@
+     def test_missing_artifact_identity_signer_drift_or_failed_step_is_refused(self):
+         module()
+         for key, bad in [('final_apk_sha256', None), ('final_apk_bytes', 0),
+-                         ('signer_sha256', 'e' * 64), ('build', 2213), ('source_commit', '0' * 40)]:
++                         ('signer_sha256', 'e' * 64), ('build', 2214), ('version', '0.4.45'), ('source_commit', '0' * 40)]:
+             before = self.artifact[key]; self.artifact[key] = bad
+             with self.subTest(key=key), self.assertRaises(ValueError):
+                 self.validate()
+@@ -84,7 +84,7 @@
+         module()
+         for container, key, bad in [(self.gates, 'pubspec_lock_sha256', 'e' * 64),
+                 (self.gates['final_identity'], 'abi', 'armeabi-v7a'),
+-                (self.gates['final_identity'], 'build', 2214.0),
++                (self.gates['final_identity'], 'build', 2215.0),
+                 (self.gates['final_identity'], 'artifact_bytes', True),
+                 (self.gates['checks']['native_android'], 'path', '../outside.log')]:
+             before = container[key]; container[key] = bad
+
+--- 2214/test_release_contract.py
++++ 2215/test_release_contract.py
+@@ -9,9 +9,9 @@
+ 
+ HERE = Path(__file__).resolve().parent
+ sys.path.insert(0, str(HERE / 'payload'))
+-import release_2214 as release
+-import delivery_2214 as delivery
+-import settings_2214 as settings
++import release_2215 as release
++import delivery_2215 as delivery
++import settings_2215 as settings
+ 
+ 
+ class ReleaseContract(unittest.TestCase):
+@@ -24,9 +24,9 @@
+         return release.record('a' * 64, 90000000, 'synthetic fixture',
+                               'b' * 40, 'c' * 64)
+ 
+-    def test_target_2214_fixed_signer_and_missing_identity_rejected(self):
++    def test_target_2215_fixed_signer_and_missing_identity_rejected(self):
+         target = self.record()
+-        self.assertEqual((target['version'], target['build']), ('0.4.45', 2214))
++        self.assertEqual((target['version'], target['build']), ('0.4.46', 2215))
+         self.assertEqual(target['signer_sha256'],
+                          '75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff')
+         for sha, size in [('', 1), ('0' * 64, 1), ('a' * 64, 0), ('a' * 64, True),
+@@ -41,13 +41,13 @@
+         after = release.settings_target(before)
+         changed = {key for key in before if before[key] != after[key]}
+         self.assertEqual(changed, {'app_latest_version', 'app_latest_build', 'app_update_notes'})
+-        self.assertEqual(after['app_latest_build'], '2214')
++        self.assertEqual(after['app_latest_build'], '2215')
+         self.assertEqual(after['app_ios_latest_build'], '2213')
+         self.assertEqual(after['app_ios_latest_version'], '0.4.44')
+         for key in before:
+             if key not in changed:
+                 self.assertEqual(after[key], before[key])
+-        payload = dict(mode='apply', expected=before, after=after, trace='synthetic-2214-cas')
++        payload = dict(mode='apply', expected=before, after=after, trace='synthetic-2215-cas')
+         self.assertEqual(settings.validate(payload), {key: after[key] for key in changed})
+         for key in ('app_ios_latest_build', 'app_min_supported_build', 'app_apk_url'):
+             wrong = copy.deepcopy(payload)
+@@ -59,24 +59,24 @@
+         before = (HERE / 'payload/hk-snapshot/download.html').read_bytes()
+         after = release.page_target(before)
+         expected = before.replace(
+-            b'id="android-direct-download" href="/downloads/ChatFlow-0.4.44-build2213-arm64.apk"',
+-            b'id="android-direct-download" href="/downloads/ChatFlow-0.4.45-build2214-arm64.apk"')
+-        expected = expected.replace(b'src="/src/download-redirect.js?v=2213-network"',
+-                                    b'src="/src/download-redirect.js?v=2214-network"')
++            b'id="android-direct-download" href="/downloads/ChatFlow-0.4.45-build2214-arm64.apk"',
++            b'id="android-direct-download" href="/downloads/ChatFlow-0.4.46-build2215-arm64.apk"')
++        expected = expected.replace(b'src="/src/download-redirect.js?v=2214-network"',
++                                    b'src="/src/download-redirect.js?v=2215-network"')
+         self.assertEqual(after, expected)
+         self.assertIn(b'ChatFlow-0.4.44-2213-enterprise-9e5d3582.ipa', after)
+         with self.assertRaises(ValueError):
+             release.page_target(after)
+ 
+-    def test_cloudfront_preserves_15_rules_and_only_appends_exact_2214_hk_rule(self):
++    def test_cloudfront_preserves_16_rules_and_only_appends_exact_2215_hk_rule(self):
+         before = copy.deepcopy(release.FROZEN_CLOUDFRONT['DistributionConfig'])
+         after = release.cloudfront_target(before)
+-        self.assertEqual(after['CacheBehaviors']['Quantity'], 16)
++        self.assertEqual(after['CacheBehaviors']['Quantity'], 17)
+         self.assertEqual(after['CacheBehaviors']['Items'][:-1], before['CacheBehaviors']['Items'])
+         old = next(item for item in before['CacheBehaviors']['Items']
+-                   if item['PathPattern'] == 'downloads/ChatFlow-0.4.44-build2213-arm64.apk')
++                   if item['PathPattern'] == 'downloads/ChatFlow-0.4.45-build2214-arm64.apk')
+         self.assertEqual(after['CacheBehaviors']['Items'][-1], old | {
+-            'PathPattern': 'downloads/ChatFlow-0.4.45-build2214-arm64.apk'})
++            'PathPattern': 'downloads/ChatFlow-0.4.46-build2215-arm64.apk'})
+         self.assertEqual({k: v for k, v in before.items() if k != 'CacheBehaviors'},
+                          {k: v for k, v in after.items() if k != 'CacheBehaviors'})
+         self.assertEqual(release.cloudfront_target(after), after)
+@@ -137,7 +137,7 @@
+                     patch.object(release, 'rollback_static') as rollback, \
+                     patch.object(Path, 'is_relative_to', return_value=True):
+                 with self.assertRaises(TimeoutError):
+-                    release.publish(r, Path(name), Path(name), backup, 'synthetic-2214-unknown')
++                    release.publish(r, Path(name), Path(name), backup, 'synthetic-2215-unknown')
+             rollback.assert_not_called()
+             self.assertIn('do not replay', (backup / 'outcome-unknown.json').read_text())
+ 
+
+--- 2214/test_static_rollback.py
++++ 2215/test_static_rollback.py
+@@ -11,7 +11,7 @@
+ 
+ class StaticRollback(unittest.TestCase):
+     def setUp(self):
+-        spec = importlib.util.spec_from_file_location('rollback_review_release', HERE/'payload/release_2214.py')
++        spec = importlib.util.spec_from_file_location('rollback_review_release', HERE/'payload/release_2215.py')
+         self.release = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.release)
+         scratch=HERE/'test-scratch'; scratch.mkdir(exist_ok=True)
+         self.temp=tempfile.TemporaryDirectory(dir=scratch); self.addCleanup(self.temp.cleanup)

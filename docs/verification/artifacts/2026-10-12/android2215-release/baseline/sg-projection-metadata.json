@@ -1,0 +1,13 @@
+{
+  "kind": "sg",
+  "started": "2026-10-12T19:59:21.836818+08:00",
+  "ended": "2026-10-12T19:59:27.962902+08:00",
+  "exit_code": 0,
+  "projection_source_sha256": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9",
+  "checked_at_utc": "2026-10-12T11:59:27.178466+00:00",
+  "summary": {
+    "etag": "E3R76HOPU0Z2CB",
+    "status": "Deployed",
+    "routes": 16
+  }
+}

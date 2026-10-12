@@ -1,0 +1,46 @@
+{
+  "status": "EXACT_TRANSACTION_CLOSURE_REUSED_NOT_RERUN",
+  "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+  "old_module_git_sha256": "2ce834bb06ef59ce3a30e54894859f2a5f2ebb21dafa1ee4c13c260fd9741734",
+  "new_module_source_sha256": "8d4a20399a96ff3207863c2a9227741f948785b43fde65fc81dd69438f2d55f1",
+  "transaction_source_sha256": "2a58136b46b4330f4695dd1f65506d8e4216b0fc06d3a3a0b0dacaa29e400742",
+  "transaction_utf8_exact": true,
+  "normalized_full_module_exact": true,
+  "pg_test_source_only_module_version_trace_labels_differ": true,
+  "historical_log_git_sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966",
+  "historical_result": "6 passed in 8.16s",
+  "new_pg_execution": false,
+  "dependencies": {
+    "services/business-api/app/modules/settings/service.py": {
+      "reference_git_sha256": "f658cba280c4f6356836876f69546962d186f0ee1b4870f6a9d4f4c26fd54332",
+      "author_head_git_sha256": "f658cba280c4f6356836876f69546962d186f0ee1b4870f6a9d4f4c26fd54332",
+      "equal": true
+    },
+    "services/business-api/app/modules/settings/models.py": {
+      "reference_git_sha256": "4787c3d98dacce976517206ae77eefe1f3ecd036141eb556a268dd852a1ca027",
+      "author_head_git_sha256": "4787c3d98dacce976517206ae77eefe1f3ecd036141eb556a268dd852a1ca027",
+      "equal": true
+    },
+    "services/business-api/app/modules/audit/models.py": {
+      "reference_git_sha256": "1a8893c2651ae714feac31fd359e93364054537e68873e8b2cbf385659223e4f",
+      "author_head_git_sha256": "1a8893c2651ae714feac31fd359e93364054537e68873e8b2cbf385659223e4f",
+      "equal": true
+    },
+    "services/business-api/app/core/database.py": {
+      "reference_git_sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+      "author_head_git_sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+      "equal": true
+    }
+  },
+  "api_image_unchanged_from_2214_baseline": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+  "schema_unchanged": true,
+  "cases": [
+    "three keys plus three audits commit together",
+    "iOS CAS drift refuses without write",
+    "readback failure rolls back values/audits",
+    "used trace refuses without write",
+    "concurrent admin set waits for transaction",
+    "concurrent admin set_many waits for transaction"
+  ],
+  "limits": "Historical isolated PG behavior is reused for identical transact/source dependencies. New version/notes validation is covered by new offline tests. No claim of rerunning PostgreSQL, current database recovery, or new APK validity."
+}

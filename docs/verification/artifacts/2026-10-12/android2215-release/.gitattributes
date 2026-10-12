@@ -1,0 +1,6 @@
+* text eol=lf
+baseline/hk-snapshot/** -text -diff
+payload/hk-snapshot/** -text -diff
+# Preserve unified-diff context and raw unittest subtest spacing as evidence.
+*.diff -whitespace
+*.log -whitespace

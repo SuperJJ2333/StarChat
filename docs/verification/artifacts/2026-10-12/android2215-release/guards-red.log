@@ -1,0 +1,53 @@
+test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure (test_permanent_guards.PermanentGuardBoundaries.test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure) ... 
+  test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure (test_permanent_guards.PermanentGuardBoundaries.test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure) (bad='str') ... FAIL
+  test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure (test_permanent_guards.PermanentGuardBoundaries.test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure) (bad='PermissionError') ... FAIL
+test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes) ... 
+  test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes) (key='business_release_guard.py') ... FAIL
+  test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes) (key='business_refresh_image_probe.py') ... FAIL
+test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes) ... FAIL
+
+======================================================================
+FAIL: test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure (test_permanent_guards.PermanentGuardBoundaries.test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure) (bad='str')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release\test_permanent_guards.py", line 43, in test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure
+    with self.subTest(bad=type(bad).__name__), patch.object(release, 'digest', **options), self.assertRaises(expected_error):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure (test_permanent_guards.PermanentGuardBoundaries.test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure) (bad='PermissionError')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release\test_permanent_guards.py", line 43, in test_before_public_write_rechecks_guards_and_fails_closed_on_read_failure
+    with self.subTest(bad=type(bad).__name__), patch.object(release, 'digest', **options), self.assertRaises(expected_error):
+AssertionError: PermissionError not raised
+
+======================================================================
+FAIL: test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes) (key='business_release_guard.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release\test_permanent_guards.py", line 27, in test_preflight_requires_exact_guard_and_probe_hashes
+    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'permanent_guards'):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes) (key='business_refresh_image_probe.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release\test_permanent_guards.py", line 27, in test_preflight_requires_exact_guard_and_probe_hashes
+    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'permanent_guards'):
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_preflight_requires_exact_guard_and_probe_hashes (test_permanent_guards.PermanentGuardBoundaries.test_preflight_requires_exact_guard_and_probe_hashes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release\test_permanent_guards.py", line 30, in test_preflight_requires_exact_guard_and_probe_hashes
+    with self.assertRaisesRegex(ValueError, 'permanent_guards'):
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.028s
+
+FAILED (failures=5)
+process_exit=1

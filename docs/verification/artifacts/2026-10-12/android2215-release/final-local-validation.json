@@ -1,0 +1,33 @@
+{
+  "checked_at_utc": "2026-10-12T12:07:10.154604+00:00",
+  "raw_git_export_tests": 32,
+  "test_result": "PASS",
+  "test_seconds": 7.683,
+  "test_exit_code": 0,
+  "ast_count": 16,
+  "cli_help_exit_codes": {
+    "package_release.py": 0,
+    "execute_release.py": 0
+  },
+  "tested_python_inputs": {
+    "execute_release.py": "5bab52cada1e3f1aecf631807d323e6df1ba3f6e87a0105a4d70b7da01eae9f7",
+    "package_release.py": "5f126779f9c8765dc21ebdbfad5f518fc435d374c94e6c913e25b6cc8f6715db",
+    "test_execution_gate.py": "d13745f21619d408f504387853fc545b7961a44178203fca72ff3cbffd8cc7ca",
+    "test_package_gate.py": "ca63d6eb9f8c2bbe9918b6c5b85ea43759a0be990ab9d482a1d8bd89cdc9b8a6",
+    "test_permanent_guards.py": "22f268cca1e32e1c99f8569efd349b542f2f6b1eea8413253be24d6c5a36aa78",
+    "test_release_contract.py": "9b0628aba404ddfb56c6289b633fec16ab40f954ecedd1b1b2aa01b11cf005f8",
+    "test_static_rollback.py": "3a5128898c78e47476eb602e0fc4767f559217ee224b5a3af1a9679b8c36ba9f",
+    "verify_preparation.py": "2b66a756afd10ebbd65029b347de0b46f071fa45c408aa667d99199a62806845",
+    "baseline/freeze_current.py": "526e1669963f7fb9045f0604fde07c44530e53d1ecb4ae71709fbc874b19494d",
+    "baseline/hk-projection-source.py": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6",
+    "baseline/sg-projection-source.py": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9",
+    "payload/delivery_2215.py": "c3a1f09928796284c20793ec9e68c225dd8f5ff563033ec22adc9f9945314139",
+    "payload/release_2215.py": "1a1fa5c00246d6cd3488af713058c51d3ba091a4bcf5ee3ffa41fc8ac057240d",
+    "payload/settings_2215.py": "8d4a20399a96ff3207863c2a9227741f948785b43fde65fc81dd69438f2d55f1",
+    "payload/test_settings_postgres_2215.py": "d694a01cb432e125f1e29912efb6e5efc8eabd8860f9ae438bd058061ba8ab46",
+    "payload/verify_production_2215.py": "827a7d714eb977917f7e783be0faf69b1fcb633bfd0c4eb661112f6bdce21f14"
+  },
+  "remote_calls_during_tests": 0,
+  "new_pg_execution": false,
+  "raw_git_static_captures_verified": 14
+}
