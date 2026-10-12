@@ -1,0 +1,17 @@
+test_default_prefix_returns_preflight_without_writes_or_build_tail (test_candidate_preflight.CandidatePreflight.test_default_prefix_returns_preflight_without_writes_or_build_tail) ... ok
+test_explicit_execute_is_required_to_reach_guarded_off_test_tail (test_candidate_preflight.CandidatePreflight.test_explicit_execute_is_required_to_reach_guarded_off_test_tail) ... ok
+test_old_source_version_refused_in_preflight (test_candidate_preflight.CandidatePreflight.test_old_source_version_refused_in_preflight) ... ok
+test_tool_drift_and_closure_failure_refused (test_candidate_preflight.CandidatePreflight.test_tool_drift_and_closure_failure_refused) ... ok
+test_binary_source_and_manifest_literal_are_not_normalized (test_lock_closure.ClosureBoundary.test_binary_source_and_manifest_literal_are_not_normalized) ... ok
+test_decoded_control_changed_deleted_added_and_main_inner_class (test_lock_closure.ClosureBoundary.test_decoded_control_changed_deleted_added_and_main_inner_class) ... ok
+test_duplicate_descriptor_across_dex_refused (test_lock_closure.ClosureBoundary.test_duplicate_descriptor_across_dex_refused) ... ok
+test_lockfile_host_and_exact_raw_bytes_preserved (test_lock_closure.ClosureBoundary.test_lockfile_host_and_exact_raw_bytes_preserved) ... ok
+test_manifest_only_version_and_aapt_line_coordinates_normalize (test_lock_closure.ClosureBoundary.test_manifest_only_version_and_aapt_line_coordinates_normalize) ... ok
+test_native_dependency_or_extra_file_changes_rejected (test_lock_closure.ClosureBoundary.test_native_dependency_or_extra_file_changes_rejected) ... ok
+test_source_control_and_current_only_version_line (test_lock_closure.ClosureBoundary.test_source_control_and_current_only_version_line) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 4.232s
+
+OK
+process_exit=0

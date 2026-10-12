@@ -1,0 +1,44 @@
+{
+  "build-android-2215-arm64.ps1": {
+    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/build-android-2214-arm64.ps1",
+    "reference_git_sha256": "ce7734d19f5c2625519da1039be463ac32a4b9ac23c257c83ffb735b5b5fa8ad",
+    "candidate_sha256": "7e16778d40ec7d6e661df33ce3cef6e87adb85990bec34e51f954fb289c09fb0",
+    "exact_equal": false
+  },
+  "freeze_mobile_input.py": {
+    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/freeze_mobile_input.py",
+    "reference_git_sha256": "05c291f757da1235aac42f239531a938a0e237aeeb14b0ad14fd854cb4f9a36b",
+    "candidate_sha256": "7faea867fb744dedeab984c76dcb231e4c3fad58babc0d757a6d37d64ded8a68",
+    "exact_equal": false
+  },
+  "strip_dev_plugin_registrant.py": {
+    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/strip_dev_plugin_registrant.py",
+    "reference_git_sha256": "5b44e5e5ae2ca4693c6f55b64980f5433bab5c4d27dc7c0c8cd99d50b46edaf4",
+    "candidate_sha256": "5b44e5e5ae2ca4693c6f55b64980f5433bab5c4d27dc7c0c8cd99d50b46edaf4",
+    "exact_equal": true
+  },
+  "verify_android_flutter_assets.py": {
+    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_path": "docs/verification/artifacts/2026-10-11/im-reliability-release/android-arm64/verify_android_flutter_assets.py",
+    "reference_git_sha256": "58076c8d541391f0f0842a12e79fbe7126304c2c7e068ccc462d6139dab124a6",
+    "candidate_sha256": "58076c8d541391f0f0842a12e79fbe7126304c2c7e068ccc462d6139dab124a6",
+    "exact_equal": true
+  },
+  "tools/sign-existing-identity.ps1": {
+    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/sign-existing-identity.ps1",
+    "reference_git_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "candidate_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "exact_equal": true
+  },
+  "tools/verify_rebuild.py": {
+    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/verify_rebuild.py",
+    "reference_git_sha256": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7",
+    "candidate_sha256": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7",
+    "exact_equal": true
+  }
+}

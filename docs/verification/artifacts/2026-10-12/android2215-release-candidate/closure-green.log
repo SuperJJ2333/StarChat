@@ -1,0 +1,12 @@
+test_decoded_control_changed_deleted_added_and_main_inner_class (test_lock_closure.ClosureBoundary.test_decoded_control_changed_deleted_added_and_main_inner_class) ... ok
+test_duplicate_descriptor_across_dex_refused (test_lock_closure.ClosureBoundary.test_duplicate_descriptor_across_dex_refused) ... ok
+test_lockfile_host_and_exact_raw_bytes_preserved (test_lock_closure.ClosureBoundary.test_lockfile_host_and_exact_raw_bytes_preserved) ... ok
+test_manifest_only_version_and_aapt_line_coordinates_normalize (test_lock_closure.ClosureBoundary.test_manifest_only_version_and_aapt_line_coordinates_normalize) ... ok
+test_native_dependency_or_extra_file_changes_rejected (test_lock_closure.ClosureBoundary.test_native_dependency_or_extra_file_changes_rejected) ... ok
+test_source_control_and_current_only_version_line (test_lock_closure.ClosureBoundary.test_source_control_and_current_only_version_line) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.057s
+
+OK
+process_exit=0

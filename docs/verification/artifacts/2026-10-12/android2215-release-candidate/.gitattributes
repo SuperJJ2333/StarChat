@@ -1,0 +1,5 @@
+* text eol=lf
+historical-lock-boundary.json -text -diff
+historical-build-steps.tsv -text -diff
+*.diff -whitespace
+*.log -whitespace

@@ -1,0 +1,239 @@
+--- 2214/build-android-2214-arm64.ps1
++++ 2215/build-android-2215-arm64.ps1
+@@ -9,6 +9,7 @@
+     [string]$RunId = ('run-' + (Get-Date -Format 'yyyyMMdd-HHmmss')),
+     [ValidateSet('W')][string]$SourceDrive = 'W',
+     [ValidatePattern('^[R-X]$')][string]$ArtifactDrive = 'V',
++    [switch]$Execute,
+     [switch]$PreflightOnly
+ )
+ 
+@@ -19,19 +20,24 @@
+ $OutputEncoding = $utf8
+ $env:PYTHONUTF8 = '1'
+ $env:PYTHONIOENCODING = 'utf-8'
++$env:PYTHONDONTWRITEBYTECODE = '1'
+ 
+ # ARM64 candidate only. This script never installs, uploads, or publishes an APK.
+ # Preserve full Material/Cupertino fonts for dynamic icons; still normal AOT release.
+ # A normal `flutter pub get` and freeze_mobile_input.py create must precede it.
+-$version = '0.4.45'
+-$build = 2214
++$version = '0.4.46'
++$build = 2215
+ $expectedCertificate = '75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff'
+ $flutter = 'C:\src\flutter\bin\flutter.bat'
+-$apktool = 'D:\pythonProject\outsource\StarChat\docs\verification\artifacts\2026-09-30\main-wallet-search\android-release\apktool_2.12.1.jar'
+-$signer = 'D:\pythonProject\outsource\StarChat\docs\verification\artifacts\2026-09-30\main-wallet-search\android-release\sign-existing-identity.ps1'
+-$verificationReference = 'D:\pythonProject\outsource\StarChat\docs\verification\artifacts\2026-09-27\android-public-diagnostics-update\android-release'
++$apktool = 'C:\Users\Administrator\.codex\worktrees\im-reliability\StarChat\docs\verification\artifacts\2026-10-12\android2214-media-regression\tools\apktool_2.12.1.jar'
++$signer = Join-Path $PSScriptRoot 'tools\sign-existing-identity.ps1'
++$verificationReference = Join-Path $PSScriptRoot 'tools'
+ $semanticVerifier = Join-Path $verificationReference 'verify_rebuild.py'
+-$lockVerifier = Join-Path $verificationReference 'verify_lock_boundary.py'
++$lockVerifier = Join-Path $PSScriptRoot 'verify_lock_closure.py'
++$lockBaseline = Join-Path $PSScriptRoot 'lock-closure-baseline.json'
++$toolIdentities = Join-Path $PSScriptRoot 'candidate-tool-identities.json'
++$javaHome = 'C:\Program Files\Microsoft\jdk-17.0.20.8-hotspot'
++$java = Join-Path $javaHome 'bin\java.exe'
+ $devRegistrantCorrection = Join-Path $PSScriptRoot 'strip_dev_plugin_registrant.py'
+ $buildTools = 'C:\Users\Administrator\AppData\Local\Android\Sdk\build-tools\36.0.0'
+ $aapt = Join-Path $buildTools 'aapt.exe'
+@@ -112,6 +118,10 @@
+     if ($badging -notmatch "(?m)^native-code: 'arm64-v8a'\s*$") { throw "Release APK must contain only arm64-v8a: $Log" }
+ }
+ 
++if ($Execute -and $PreflightOnly) { throw 'Execute and PreflightOnly are mutually exclusive' }
++foreach ($suppliedPath in @($Worktree, $OutputRoot, $MobileManifest)) {
++    if ($suppliedPath -match '[%!&|<>^"\r\n]') { throw 'Shell metacharacters are forbidden in build paths' }
++}
+ if ($RunId -notmatch '^run-[0-9]{8}-[0-9]{6}(-[a-z0-9]+)?$') {
+     throw 'RunId must be run-YYYYMMDD-HHMMSS with optional lowercase suffix'
+ }
+@@ -138,6 +148,17 @@
+ Require-File $lockVerifier 'Native lock-screen verifier'
+ Require-File $devRegistrantCorrection 'Bounded generated dev-plugin correction'
+ Require-File $freezeHelper 'Mobile input freeze helper'
++Require-File $lockBaseline 'Frozen static lock closure'
++Require-File $toolIdentities 'Pinned candidate tools'
++Require-File $java 'Pinned JDK17 executable'
++$pinnedTools = Get-Content -LiteralPath $toolIdentities -Raw -Encoding utf8 | ConvertFrom-Json
++foreach ($entry in $pinnedTools.files.PSObject.Properties) {
++    $toolPath = Join-Path $PSScriptRoot $entry.Name
++    Require-File $toolPath 'Frozen candidate helper'
++    if ((Get-FileHash -LiteralPath $toolPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.Value) { throw 'Candidate helper identity drift' }
++}
++if ((Get-FileHash -LiteralPath $apktool -Algorithm SHA256).Hash.ToLowerInvariant() -cne $pinnedTools.apktool_sha256) { throw 'Apktool identity drift' }
++$lockBaselineSha = (Get-FileHash -LiteralPath $lockBaseline -Algorithm SHA256).Hash.ToLowerInvariant()
+ Require-File (Join-Path $repo 'scripts\verify_android_release.py') 'Standard ARM64 release payload verifier'
+ $bumpScript = Join-Path $repo 'scripts\bump_version.ps1'
+ $versionContract = Join-Path $repo 'tests\mobile\test_app_build_contract.py'
+@@ -156,13 +177,13 @@
+ }
+ $pubspec = Get-Content -LiteralPath $pubspecPath -Raw -Encoding utf8
+ $appConfig = Get-Content -LiteralPath $configPath -Raw -Encoding utf8
+-if ($pubspec -notmatch '(?m)^version: 0\.4\.45\+2214\s*$' -or
+-    $appConfig -notmatch "appVersionName\s*=\s*'0\.4\.45'" -or
+-    $appConfig -notmatch 'compiledBuildNumber\s*=\s*2214\s*;') {
+-    throw 'Candidate pubspec.yaml and app_config.dart must both be 0.4.45+2214'
+-}
+-if ($ConfirmedProductionAndroidBuild -ge $build -or $ConfirmedProductionIosBuild -gt $build) {
+-    throw 'Build 2214 is already occupied by a confirmed production platform'
++if ($pubspec -notmatch '(?m)^version: 0\.4\.46\+2215\s*$' -or
++    $appConfig -notmatch "appVersionName\s*=\s*'0\.4\.46'" -or
++    $appConfig -notmatch 'compiledBuildNumber\s*=\s*2215\s*;') {
++    throw 'Candidate pubspec.yaml and app_config.dart must both be 0.4.46+2215'
++}
++if ($ConfirmedProductionAndroidBuild -ne 2214 -or $ConfirmedProductionIosBuild -ne 2213) {
++    throw 'Approved production baseline must be Android2214 and iOS2213'
+ }
+ $productionCheckAge = ([DateTimeOffset]::UtcNow - $ProductionCheckedAtUtc.ToUniversalTime()).TotalMinutes
+ if ($productionCheckAge -gt 30 -or $productionCheckAge -lt -2) {
+@@ -178,16 +199,15 @@
+ # This task's clean worktree uses its own normal build directory. Never reuse
+ # the historical junction whose C:/S: aliases caused shared-output deletion.
+ $expectedBuildRoot = Join-Path $mobileRoot 'build'
+-if (-not (Test-Path -LiteralPath $expectedBuildRoot -PathType Container)) {
+-    New-Item -ItemType Directory -Path $expectedBuildRoot -ErrorAction Stop | Out-Null
+-}
+-Assert-NoReparseDirectory $expectedBuildRoot
++if (Test-Path -LiteralPath $expectedBuildRoot) { Assert-NoReparseDirectory $expectedBuildRoot }
+ $bundleVerifier = Join-Path $PSScriptRoot 'verify_android_flutter_assets.py'
+ Require-File $bundleVerifier 'Complete Flutter resource verifier'
+ if (Test-Path -LiteralPath (Join-Path $output $RunId)) { throw 'Run directory already exists' }
+-if ($PreflightOnly) {
++$closurePreflight = @(& py -3.12 $lockVerifier --repo $repo --baseline $lockBaseline --expected-baseline-sha256 $lockBaselineSha)
++if ($LASTEXITCODE -ne 0 -or $closurePreflight.Count -ne 1) { throw 'Native/dependency source closure changed; no reuse' }
++if (-not $Execute) {
+     [ordered]@{
+-        preflight = 'passed'
++        preflight = 'passed'; build_started = $false; execute_required = $true
+         worktree = $repo
+         output_root = $output
+         version = $version
+@@ -207,7 +227,15 @@
+ $artifactMappingOwned = $false
+ $originalGradleOpts = $env:GRADLE_OPTS
+ $originalParallelDebug = $env:ORG_GRADLE_PROJECT_chatflowParallelDebug
++$originalPubHost = $env:PUB_HOSTED_URL
++$originalJavaHome = $env:JAVA_HOME
++$originalPath = $env:Path
+ try {
++    $env:PUB_HOSTED_URL = 'https://pub.dev'
++    $env:JAVA_HOME = $javaHome
++    $env:Path = (Join-Path $javaHome 'bin') + ';' + $originalPath
++    if (-not (Test-Path -LiteralPath $expectedBuildRoot -PathType Container)) { New-Item -ItemType Directory -Path $expectedBuildRoot -ErrorAction Stop | Out-Null }
++    Assert-NoReparseDirectory $expectedBuildRoot
+     $sourceMappingOwned = Ensure-Subst $SourceDrive $repo
+     $artifactMappingOwned = Ensure-Subst $ArtifactDrive $output
+     $shortRepo = "${SourceDrive}:\"
+@@ -231,14 +259,14 @@
+         if ($exitCode -ne 0) { throw "$Name failed with exit code $exitCode; inspect $log" }
+     }
+ 
+-    Invoke-NativeStep 'apktool-version' 'java' @('-jar', $apktool, '--version') 'apktool-version.log'
++    Invoke-NativeStep 'apktool-version' $java @('-jar', $apktool, '--version') 'apktool-version.log'
+     if ((Get-Content -LiteralPath (Join-Path $dest 'apktool-version.log') -Raw -Encoding utf8).Trim() -ne '2.12.1') {
+         throw 'Unexpected Apktool version'
+     }
+     Invoke-NativeStep 'flutter-version' $flutter @('--version') 'flutter-version.log'
+-    Invoke-NativeStep 'java-version' 'java' @('-version') 'java-version.log'
++    Invoke-NativeStep 'java-version' $java @('-version') 'java-version.log'
+     Invoke-NativeStep 'version-contract' 'py' @('-3.12', '-m', 'pytest', '-q', '-p', 'no:cacheprovider', (Join-Path $shortRepo 'tests\mobile\test_app_build_contract.py')) 'version-contract.log'
+-    $env:GRADLE_OPTS = '-Dorg.gradle.workers.max=2'
++    $env:GRADLE_OPTS = '-Dorg.gradle.workers.max=2 -Dorg.gradle.project.chatflowParallelDebug=false'
+     $defines = @(
+         '--dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com',
+         '--dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com',
+@@ -249,7 +277,7 @@
+     $buildArguments = @(
+         'build', 'apk', '--release', '--no-pub', '--flavor', 'standard',
+         '--no-tree-shake-icons',
+-        '--target-platform', 'android-arm64',
++        '--target-platform', 'android-arm64', '-t', 'lib/main.dart',
+         '--build-name', $version, '--build-number', "$build"
+     ) + $defines
+     [IO.File]::WriteAllText((Join-Path $dest 'flutter-arguments.json'), ($buildArguments | ConvertTo-Json), $utf8)
+@@ -292,11 +320,11 @@
+     $unsigned = Join-Path $dest 'unsigned.apk'
+     $aligned = Join-Path $dest 'aligned.apk'
+     $final = Join-Path $dest 'final.apk'
+-    Invoke-NativeStep 'apktool-decode' 'java' @('-Xmx4G', '-jar', $apktool, 'd', $source, '-o', $decoded, '-p', $framework) 'decode.log'
+-    Invoke-NativeStep 'apktool-rebuild' 'java' @('-Xmx4G', '-jar', $apktool, 'b', $decoded, '-p', $framework, '-o', $unsigned) 'rebuild.log'
++    Invoke-NativeStep 'apktool-decode' $java @('-Xmx4G', '-jar', $apktool, 'd', $source, '-o', $decoded, '-p', $framework) 'decode.log'
++    Invoke-NativeStep 'apktool-rebuild' $java @('-Xmx4G', '-jar', $apktool, 'b', $decoded, '-p', $framework, '-o', $unsigned) 'rebuild.log'
+     Invoke-NativeStep 'zipalign' $zipalign @('-P', '16', '-f', '4', $unsigned, $aligned) 'zipalign.log'
+     Assert-StableSignerPresent
+-    Invoke-NativeStep 'fixed-identity-sign' 'pwsh.exe' @('-NoProfile', '-File', $signer, '-InputApk', $aligned, '-OutputApk', $final) 'signature.log'
++    Invoke-NativeStep 'fixed-identity-sign' 'pwsh.exe' @('-NoProfile', '-File', $signer, '-InputApk', $aligned, '-OutputApk', $final, '-Apksigner', $apksigner, '-Execute') 'signature.log'
+     Require-File $final 'Signed final APK'
+ 
+     Invoke-NativeStep 'apksigner-verify' $apksigner @('verify', '--verbose', '--print-certs', $final) 'apksigner-verify.log'
+@@ -314,8 +342,8 @@
+     Assert-ReleaseIdentity (Join-Path $dest 'identity.log')
+     Invoke-NativeStep 'final-aapt-resources' $aapt @('dump', 'resources', $final) 'final-resources.log'
+     Invoke-NativeStep 'final-aapt-manifest' $aapt @('dump', 'xmltree', $final, 'AndroidManifest.xml') 'rebuilt-manifest.txt'
+-    Invoke-NativeStep 'independent-final-decode' 'java' @('-Xmx4G', '-jar', $apktool, 'd', $final, '-o', (Join-Path $dest 'verified-decoded'), '-p', (Join-Path $dest 'verify-framework')) 'verify-decode.log'
+-    Invoke-NativeStep 'final-lock-boundary' 'py' @('-3.12', $lockVerifier, (Join-Path $dest 'verified-decoded')) 'lock-boundary.json'
++    Invoke-NativeStep 'independent-final-decode' $java @('-Xmx4G', '-jar', $apktool, 'd', $final, '-o', (Join-Path $dest 'verified-decoded'), '-p', (Join-Path $dest 'verify-framework')) 'verify-decode.log'
++    Invoke-NativeStep 'final-lock-boundary' 'py' @('-3.12', $lockVerifier, '--repo', $repo, '--baseline', $lockBaseline, '--expected-baseline-sha256', $lockBaselineSha, '--decoded', (Join-Path $dest 'verified-decoded'), '--manifest', (Join-Path $dest 'rebuilt-manifest.txt')) 'lock-boundary.json'
+     Invoke-NativeStep 'rebuild-semantic-check' 'py' @('-3.12', $semanticVerifier, $dest) 'rebuild-verification.json'
+     Invoke-NativeStep 'frozen-input-after-verification' 'py' @('-3.12', $freezeHelper, 'verify', '--repo', $repo, '--manifest', $manifestPath, '--expected-sha256', $ExpectedMobileManifestSha256) 'frozen-after-verification.json'
+ 
+@@ -344,14 +372,21 @@
+         complete_bundle_verifier_sha256 = (Get-FileHash -LiteralPath $bundleVerifier -Algorithm SHA256).Hash.ToLowerInvariant()
+         dev_registrant_helper_sha256 = (Get-FileHash -LiteralPath $devRegistrantCorrection -Algorithm SHA256).Hash.ToLowerInvariant()
+         dev_registrant_after_sha256 = $registrantReceipt.after_sha256
++        lock_closure_baseline_sha256 = $lockBaselineSha
++        lock_closure_verifier_sha256 = (Get-FileHash -LiteralPath $lockVerifier -Algorithm SHA256).Hash.ToLowerInvariant()
++        signer_script_sha256 = (Get-FileHash -LiteralPath $signer -Algorithm SHA256).Hash.ToLowerInvariant()
++        apktool_sha256 = $pinnedTools.apktool_sha256
+         semantic_verifier_sha256 = (Get-FileHash -LiteralPath $semanticVerifier -Algorithm SHA256).Hash.ToLowerInvariant()
+         finished_at = (Get-Date).ToString('o')
+     }
+     [IO.File]::WriteAllText((Join-Path $dest 'artifact.json'), ($metadata | ConvertTo-Json -Depth 4), $utf8)
+-    Write-Output "BUILD_2214_ARM64_PASS $([IO.Path]::GetFullPath((Join-Path $output $RunId)))"
++    Write-Output "BUILD_2215_ARM64_PASS $([IO.Path]::GetFullPath((Join-Path $output $RunId)))"
+ } finally {
+     $env:GRADLE_OPTS = $originalGradleOpts
+     $env:ORG_GRADLE_PROJECT_chatflowParallelDebug = $originalParallelDebug
++    $env:PUB_HOSTED_URL = $originalPubHost
++    $env:JAVA_HOME = $originalJavaHome
++    $env:Path = $originalPath
+     if ($artifactMappingOwned -and (Get-SubstTarget $ArtifactDrive) -eq $output) {
+         & subst.exe "${ArtifactDrive}:" /D | Out-Null
+     }
+--- 2214/freeze_mobile_input.py
++++ 2215/freeze_mobile_input.py
+@@ -1,4 +1,4 @@
+-"""Freeze or verify all non-ignored mobile inputs for the Android 2214 build.
++"""Freeze or verify all non-ignored mobile inputs for the Android 2215 build.
+ 
+ This deliberately supports the current uncommitted worktree. It records file
+ paths and SHA256 values only, never file contents or credentials. Run `create`
+@@ -16,8 +16,8 @@
+ from pathlib import Path
+ 
+ 
+-VERSION = "0.4.45"
+-BUILD = 2214
++VERSION = "0.4.46"
++BUILD = 2215
+ GENERATED_INPUTS = (
+     "apps/mobile_flutter/.dart_tool/package_config.json",
+     "apps/mobile_flutter/.flutter-plugins-dependencies",
+@@ -92,11 +92,11 @@
+     pubspec = (repo / "apps/mobile_flutter/pubspec.yaml").read_text(encoding="utf-8")
+     config = (repo / "apps/mobile_flutter/lib/core/app_config.dart").read_text(encoding="utf-8")
+     if not re.search(rf"(?m)^version:\s*{re.escape(VERSION)}\+{BUILD}\s*$", pubspec):
+-        raise ValueError("pubspec.yaml must be 0.4.45+2214 before freezing")
++        raise ValueError("pubspec.yaml must be 0.4.46+2215 before freezing")
+     if not re.search(rf"appVersionName\s*=\s*'{re.escape(VERSION)}'", config) or not re.search(
+-        r"compiledBuildNumber\s*=\s*2214\s*;", config
++        r"compiledBuildNumber\s*=\s*2215\s*;", config
+     ):
+-        raise ValueError("app_config.dart must be 0.4.45+2214 before freezing")
++        raise ValueError("app_config.dart must be 0.4.46+2215 before freezing")
+     head = git_output(repo, "rev-parse", "HEAD").decode("ascii").strip()
+     if len(head) != 40:
+         raise ValueError("invalid source commit")

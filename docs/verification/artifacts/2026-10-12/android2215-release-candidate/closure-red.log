@@ -1,0 +1,84 @@
+test_decoded_control_changed_deleted_added_and_main_inner_class (test_lock_closure.ClosureBoundary.test_decoded_control_changed_deleted_added_and_main_inner_class) ... FAIL
+test_duplicate_descriptor_across_dex_refused (test_lock_closure.ClosureBoundary.test_duplicate_descriptor_across_dex_refused) ... FAIL
+test_lockfile_host_and_exact_raw_bytes_preserved (test_lock_closure.ClosureBoundary.test_lockfile_host_and_exact_raw_bytes_preserved) ... FAIL
+test_manifest_only_version_and_aapt_line_coordinates_normalize (test_lock_closure.ClosureBoundary.test_manifest_only_version_and_aapt_line_coordinates_normalize) ... FAIL
+test_native_dependency_or_extra_file_changes_rejected (test_lock_closure.ClosureBoundary.test_native_dependency_or_extra_file_changes_rejected) ... FAIL
+test_source_control_and_current_only_version_line (test_lock_closure.ClosureBoundary.test_source_control_and_current_only_version_line) ... FAIL
+
+======================================================================
+FAIL: test_decoded_control_changed_deleted_added_and_main_inner_class (test_lock_closure.ClosureBoundary.test_decoded_control_changed_deleted_added_and_main_inner_class)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 18, in setUp
+    self.m=load();base=HERE/'test-scratch';base.mkdir(exist_ok=True)
+           ^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 13, in load
+    if not path.is_file():raise AssertionError('strict lock boundary closure not implemented')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: strict lock boundary closure not implemented
+
+======================================================================
+FAIL: test_duplicate_descriptor_across_dex_refused (test_lock_closure.ClosureBoundary.test_duplicate_descriptor_across_dex_refused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 18, in setUp
+    self.m=load();base=HERE/'test-scratch';base.mkdir(exist_ok=True)
+           ^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 13, in load
+    if not path.is_file():raise AssertionError('strict lock boundary closure not implemented')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: strict lock boundary closure not implemented
+
+======================================================================
+FAIL: test_lockfile_host_and_exact_raw_bytes_preserved (test_lock_closure.ClosureBoundary.test_lockfile_host_and_exact_raw_bytes_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 18, in setUp
+    self.m=load();base=HERE/'test-scratch';base.mkdir(exist_ok=True)
+           ^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 13, in load
+    if not path.is_file():raise AssertionError('strict lock boundary closure not implemented')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: strict lock boundary closure not implemented
+
+======================================================================
+FAIL: test_manifest_only_version_and_aapt_line_coordinates_normalize (test_lock_closure.ClosureBoundary.test_manifest_only_version_and_aapt_line_coordinates_normalize)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 18, in setUp
+    self.m=load();base=HERE/'test-scratch';base.mkdir(exist_ok=True)
+           ^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 13, in load
+    if not path.is_file():raise AssertionError('strict lock boundary closure not implemented')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: strict lock boundary closure not implemented
+
+======================================================================
+FAIL: test_native_dependency_or_extra_file_changes_rejected (test_lock_closure.ClosureBoundary.test_native_dependency_or_extra_file_changes_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 18, in setUp
+    self.m=load();base=HERE/'test-scratch';base.mkdir(exist_ok=True)
+           ^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 13, in load
+    if not path.is_file():raise AssertionError('strict lock boundary closure not implemented')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: strict lock boundary closure not implemented
+
+======================================================================
+FAIL: test_source_control_and_current_only_version_line (test_lock_closure.ClosureBoundary.test_source_control_and_current_only_version_line)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 18, in setUp
+    self.m=load();base=HERE/'test-scratch';base.mkdir(exist_ok=True)
+           ^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-12\android2215-release-candidate\test_lock_closure.py", line 13, in load
+    if not path.is_file():raise AssertionError('strict lock boundary closure not implemented')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: strict lock boundary closure not implemented
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.002s
+
+FAILED (failures=6)
+process_exit=1

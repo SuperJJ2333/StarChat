@@ -1,0 +1,23 @@
+{
+  "recorded_utc": "2026-10-12T12:43:19.927681+00:00",
+  "tests": 11,
+  "test_exit_code": 0,
+  "test_log": "final-boundaries.log",
+  "python_ast": 7,
+  "powershell_parse": 2,
+  "actual_new_build": false,
+  "actual_new_signing": false,
+  "device_or_remote_calls": 0,
+  "root_files_modified": false,
+  "frozen_release_directory_modified": false,
+  "limits": "Preparation only; test preflight invokes Python doubles and has real build tail replaced by unconditional throw.",
+  "git_blob_export": {
+    "tests": 11,
+    "seconds": 4.232,
+    "exit_code": 0,
+    "log": "git-export-boundaries.log",
+    "pinned_tools": 8
+  },
+  "preparation_start_utc": "unknown (not instrumented; not inferred from file times)",
+  "remote_or_device_wait": false
+}

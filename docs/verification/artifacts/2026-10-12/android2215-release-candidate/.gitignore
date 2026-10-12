@@ -1,0 +1,4 @@
+test-scratch/
+git-export/
+__pycache__/
+run-*/

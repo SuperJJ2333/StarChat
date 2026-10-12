@@ -1,0 +1,17 @@
+{
+  "status": "HISTORICAL_REFERENCE_AND_CURRENT_SOURCE_CLOSURE_EXACT",
+  "started_utc": "2026-10-12T12:36:12.695388+00:00",
+  "completed_utc": "2026-10-12T12:36:13.229614+00:00",
+  "current_version": "0.4.45+2214 (root has not performed final version bump yet)",
+  "source_files": 400,
+  "reference_decoded_classes": 57,
+  "reference_apk_sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+  "reference_lock_receipt_sha256": "a933c16c38843f75202357e2e17c0f8f61b8646c79c167127557bec6f8c77f67",
+  "candidate_2215_built": false,
+  "device_access": false,
+  "limits": "Read-only old local APK/hash/decoded files and current relevant source; final 2215 decoded classes/manifest must pass again after actual build.",
+  "narrow_normalization_reverified_utc": "2026-10-12T12:40:36.116082+00:00",
+  "latest_checked_version": "0.4.46+2215",
+  "latest_root_head": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "baseline_sha256": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f"
+}
