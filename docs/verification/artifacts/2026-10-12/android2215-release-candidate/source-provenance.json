@@ -28,10 +28,10 @@
     "exact_equal": true
   },
   "tools/sign-existing-identity.ps1": {
-    "reference_commit": "538f90f6a4efcf5f30a17e1dec462ac01e43c94e",
+    "reference_commit": "3edbf0031e540a1ee067f9e686475b3227f5ac5b",
     "reference_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/sign-existing-identity.ps1",
-    "reference_git_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
-    "candidate_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "reference_git_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
+    "candidate_sha256": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
     "exact_equal": true
   },
   "tools/verify_rebuild.py": {

@@ -1,0 +1,17 @@
+{
+  "started_utc": "2026-10-12T13:01:00.702071+00:00",
+  "elapsed_seconds": 0.703,
+  "phase": "red",
+  "exit_code": 1,
+  "wrapper_sha256": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+  "test_commit": "bf6fa639fa3a02fab067b2708d27832c8299992f",
+  "test_path": "docs/verification/artifacts/2026-10-12/media-debug-packaging-tools/test_sign_wrapper.py",
+  "test_git_sha256": "7cb68309598f3e92c215600e0c5efbe161d001b095485ab3f84c7506267d3f3d",
+  "test_name": "test_sign_wrapper.WrapperTests.test_dpapi_line_terminator_preserves_password_and_decrypts",
+  "log_sha256": "9e1ebfcd3be1f0339d073d3887c266300658a2a8a67f0575a4c72fef330f73eb",
+  "synthetic_windows_dpapi_only": true,
+  "real_identity_read": false,
+  "actual_signing_or_build": false,
+  "red_expected_failure": "System.FormatException while parsing CRLF serialized DPAPI envelope",
+  "green_assertion": "CRLF envelope decrypts and preserves both plaintext boundary spaces; no signer/output APK"
+}

@@ -92,7 +92,7 @@ try {
     }
 
     $taskStage = 'protected identity loading'
-    $taskSecurePassword = Get-Content -LiteralPath $taskDpapi -Raw -Encoding utf8 | ConvertTo-SecureString
+    $taskSecurePassword = (Get-Content -LiteralPath $taskDpapi -Raw -Encoding utf8).Trim() | ConvertTo-SecureString
     $taskPasswordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($taskSecurePassword)
     $taskPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($taskPasswordPointer)
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($taskPasswordPointer)

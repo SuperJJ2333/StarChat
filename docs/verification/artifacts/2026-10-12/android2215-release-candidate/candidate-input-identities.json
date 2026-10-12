@@ -3,10 +3,10 @@
   "files": {
     ".gitattributes": "e5377008754db765026a76c2603f8fa84b93e5cb078cc6215f7f82e49a874bc9",
     ".gitignore": "608c5ec7c35abfd4b956451619563cb8b4d4013436e71cec33ab3d6b54d9b2df",
-    "README.md": "644c01e6b69bb5ee269095fc3c7037986b631e830abc472c5af8615d03993d09",
+    "README.md": "596110db6d246310ae4afd0c95edcf5d862776e6475b1159c8d86af4ba923d3b",
     "build-android-2215-arm64.ps1": "7e16778d40ec7d6e661df33ce3cef6e87adb85990bec34e51f954fb289c09fb0",
     "builder-adaptation.diff": "0e0642df37d0a33fcb2b68b8544c781d48c67cf46e2431451fdf8e9383fe5b87",
-    "candidate-tool-identities.json": "8d2847b24691e76292c4c1448090fbc674348d1d8c56acfd00e7ab3d45a88c85",
+    "candidate-tool-identities.json": "3d5a9b6f69dca6ffcc7c84479c557fee4a505fdc0d4d7cb9efbefbee9596c238",
     "closure-green.log": "50a8515e2908bd5e894bc02ea86ad5cc0e17d8b9ac1adce53646ae46c2cfefdb",
     "closure-red.log": "5193c1db9c23b6d66e1a488128273262be2cc51298a687f3d2d933314455baaf",
     "current-closure-preparation.json": "40354090184e5add029be374ae219bf4f6c0c6f108181a7fe58e51850d303b24",
@@ -19,15 +19,22 @@
     "lock-closure-baseline.json": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f",
     "normalization-red.log": "330d9f6773bc44cb57047ebd55ab178630e8d82cda392ef8a25f505dc97f992f",
     "preflight-fixture-scope.log": "b8870b20d6576373a75d25c7d7d982e3553e091d09b577462d7bdec749170a6d",
-    "source-provenance.json": "8dc49384f11cfef2ef5c6f7937a6fa3338a7e1d267588601035b0aa00aa58dff",
+    "signer-dpapi-green-receipt.json": "e9cb2a58ad61405ef23f91e2dfb660cc580b0e0af307a6ce731eedd49c0a0670",
+    "signer-dpapi-green.log": "f65701e96ae87932a8721743f64d573eccd05808f57ba21172151b27cf430bfb",
+    "signer-dpapi-red-receipt.json": "e146a323dfd9496b1c91d03156a259467e2dcd9d8e9d787f87b709fb92fd2ec3",
+    "signer-dpapi-red.log": "9e1ebfcd3be1f0339d073d3887c266300658a2a8a67f0575a4c72fef330f73eb",
+    "signer-followup.md": "4d7f238aa8d7800a0f71da04f087e7034afef7e8c7ca580b71925240d1656e1f",
+    "signer-preflight-green.log": "ec9034b55967ba544d8a46df5a5fdcf21eeeb543bb8801ce7355bdbebaa82509",
+    "source-provenance.json": "7e1f9717168a28c4a1d6e9abbf17cc88425d7549b60859222b6d0c1ed34d9b4d",
     "strip_dev_plugin_registrant.py": "5b44e5e5ae2ca4693c6f55b64980f5433bab5c4d27dc7c0c8cd99d50b46edaf4",
     "test_candidate_preflight.py": "5ffd8dabd71325d826b38d006e10d6764dbfca756d182f924657401066ad2173",
     "test_lock_closure.py": "a44f904d7c40ec72a1d244deac757516d8b0838a76468ec0027f55c47f15e594",
-    "tools/sign-existing-identity.ps1": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "tools/sign-existing-identity.ps1": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
     "tools/verify_rebuild.py": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7",
     "verification-receipt.json": "f00b93ae8a8355091b88cdde1092cdb750ed165365ad47e1bdb9092e52b8be54",
     "verify_android_flutter_assets.py": "58076c8d541391f0f0842a12e79fbe7126304c2c7e068ccc462d6139dab124a6",
-    "verify_lock_closure.py": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3"
+    "verify_lock_closure.py": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3",
+    "verify_signer_dpapi_regression.py": "f74b6086af0201408089726cbf1fdcd4fb35c76840c0922535820271405e8679"
   },
   "actual_candidate_apk": null
 }

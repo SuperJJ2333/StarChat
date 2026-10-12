@@ -14,7 +14,7 @@
 
 - Apktool固定2.12.1，使用root已取得的`android2214-media-regression/tools/apktool_2.12.1.jar`，SHA `66cf4524a4a45a7f56567d08b2c9b6ec237bcdd78cee69fd4a59c8a0243aeafa`；文件夹中的2214是历史工具来源，不是新包版本。
 - JDK17.0.20.8、Flutter C:/src/flutter、SDK build-tools36.0.0。完整decode→rebuild→`zipalign -P 16 -f 4`→现有固定75b31签名→apksigner(v2/v3/单signer)→签后`zipalign -c -P 16 4`。
-- 新签名和语义工具从root已审538f90f6的`media-debug-packaging-tools/`精确Git字节复制到本目录`tools/`，由`candidate-tool-identities.json`锁定。签名调用必须显式`-Apksigner`与`-Execute`，缺key/DPAPI即拒绝，不生成新身份。本轮没有读取key/DPAPI内容或签名。
+- 语义工具从root已审538f90f6、签名工具从root已修3edbf003的`media-debug-packaging-tools/`精确Git字节复制到本目录`tools/`，由`candidate-tool-identities.json`锁定。签名工具SHA为eef1c12e…13a4：仅对序列化DPAPI文本.Trim()，不修剪解密后的密码；e987初始复制的旧版本已被独审合成用例判定失败，修复及增量证据见`signer-followup.md`。签名调用必须显式`-Apksigner`与`-Execute`，缺key/DPAPI即拒绝，不生成新身份。本轮没有读取key/DPAPI内容或签名。
 - 缺失的legacy `verify_lock_boundary.py`不被静默删除。root明确批准严格closure复用：旧签名APK575e24f4…af614/73336097B、本地旧receipt SHA a933c16c…c77f67、步骤final-lock-boundary exit0。基线冻结400个Android/third_party/calls/依赖输入；文本仅CRLF→LF，二进制保持原字节，主pubspec只容许精确2214→2215版本行。最终新包必须再次核对57个MainActivity全家族/整个call包smali逐字节及全aapt清单（只容许版本字段/element源行号）。增删类、类变化、重复DEX类、其它manifest变化、lock/native输入变化均拒绝复用。不是重新运行失落工具，也不是新手机锁屏或媒体UI通过。
 - 2026-10-12T12:36Z当前原生source/旧包closure已只读核验；随后root升为2215，`current-closure-preparation.json`另记录新版本source闭包成功。最终新APK尚未存在，最终decoded检查仍待真正构建。
 
@@ -40,7 +40,7 @@
 
 - `closure-red.log`：缺失新closure实施时6FAIL；实现后6PASS。`normalization-red.log`另证明二进制/manifest字面内容不能被过宽归一化隐藏，修正后完整7项closure通过。
 - `test_candidate_preflight.py`只运行真实脚本preflight前缀，真实build尾部先替换为无条件throw；Python verify调用为替身，key/DPAPI为无效假文件，New-Item/subst为抛错替身。默认返回preflight、Execute才抵达不可执行的测试尾部、旧版本/工具漂移/closure失败拒绝，证明不启动构建。第一次失败是测试spy的PowerShell script scope归属，已保留`preflight-fixture-scope.log`，改用测试进程global计数，没有放宽builder。
-- `git-export-boundaries.log`：精确Git blob导出11PASS/4.232s；26输入和8工具身份全部一致。`final-boundaries.log`：原工作树11PASS/3.425s（7closure+4preflight）。PowerShell两文件解析及7Python AST通过。未运行恢复signer/semantic的旧等价全套；工具Git字节完全相同且已有独审/旧真实包回放记录。
+- `git-export-boundaries.log`：精确Git blob导出11PASS/4.232s；26输入和8工具身份全部一致。`final-boundaries.log`：原工作树11PASS/3.425s（7closure+4preflight）。PowerShell两文件解析及7Python AST通过。此处为e987冻结时记录，未运行恢复signer/semantic的旧等价全套。后续独审识别旧copied signer缺少root已修的DPAPI换行处理；见`signer-followup.md`的精确替换及专项RED→GREEN，不能把本段历史11项当作该缺陷通过。
 - 不执行全局verify.ps1：本任务只改独立构建工具/验证证据，无产品输入变化，全球render/build会写共享root并与父任务冲突。root仍负责最终产品门禁，不能把本11项称App测试。
 
 准备阶段没有新APK、真签名、真preflight输入全链或设备通过；下一步是独立双审和root实际候选preflight。缺失/漂移停止，不能用旧通过日志补新身份。

@@ -8,7 +8,7 @@
     "verify_lock_closure.py": "f0c99f00c4cd9e45bd567c1345193618442fcf55fe1f5689eb8276f78eb64ed3",
     "lock-closure-baseline.json": "5fc3ffe4eedb1a19216ececc25efb6131ced09852e9dbe624fc7196e30002a7f",
     "historical-lock-boundary.json": "a933c16c38843f75202357e2e17c0f8f61b8646c79c167127557bec6f8c77f67",
-    "tools/sign-existing-identity.ps1": "1baf91b7c2e3ed7951c3c3f9fab623d9cf6355d3dc3a2eade29f58508183b7d0",
+    "tools/sign-existing-identity.ps1": "eef1c12edf36c800166447911e6cc08f56ebb53224d7b24a40670ea07d1413a4",
     "tools/verify_rebuild.py": "e7460dc015b1270f95e327c958b794c66c67849546c8e950656b74967845c8d7"
   }
 }
