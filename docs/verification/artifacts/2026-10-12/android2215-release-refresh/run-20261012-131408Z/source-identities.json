@@ -1,0 +1,9 @@
+{
+  "source_commit": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "source_prefix": "docs/verification/artifacts/2026-10-12/android2215-release/baseline/",
+  "files": {
+    "freeze_current.py": "526e1669963f7fb9045f0604fde07c44530e53d1ecb4ae71709fbc874b19494d",
+    "hk-projection-source.py": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6",
+    "sg-projection-source.py": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9"
+  }
+}

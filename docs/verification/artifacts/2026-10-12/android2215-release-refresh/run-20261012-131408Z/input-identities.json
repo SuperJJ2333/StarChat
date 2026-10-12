@@ -1,0 +1,27 @@
+{
+  "identity_domain": "exact Git blob bytes; captured public static and JSON files use -text to preserve original bytes",
+  "files": {
+    ".gitattributes": "71395860d5bf3a0e5fddd9b7f0f6d889a0393787e5c3d8b03f16d1114f72ad73",
+    "README.md": "f82422bcda3c716c5db87a57a6422db55610bfbfcf15be8a4ede06adff5d0cdd",
+    "bucket-policy-before.json": "e71bfe128f0c797a9fd568c39ccbf44f14681886035d4e79041828be1a885153",
+    "cloudfront-before.json": "99e1ce882eb6513e6adec93e5b9a2901370e006e436dd6906410314e2c9cbbfb",
+    "comparison-receipt.json": "bfeb622d353c998c6c50bd6b02d38af136169efe7abe3b32efb769d33ada4a4d",
+    "freeze_current.py": "526e1669963f7fb9045f0604fde07c44530e53d1ecb4ae71709fbc874b19494d",
+    "hk-live-snapshot.json": "f4d8e75c3fd58005901619234378bd91a5331abc0cc901870b9e2a8d02060940",
+    "hk-projection-metadata.json": "b37822353a795f3a1f45e4c5182ed238642d95af7fa96b5b886ef7ea8e2c8897",
+    "hk-projection-source.py": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6",
+    "hk-snapshot/download.html": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44",
+    "hk-snapshot/downloads/android-release.json": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+    "hk-snapshot/downloads/ios/manifest.plist": "c5815bb8fdaae82912ad5e5a70be587f89a9be708a2aa71b285af04766aa40b9",
+    "hk-snapshot/src/admin-home.js": "b804b6f98d9cf52a0f981e46049b1f8660313f57083119f8a810965f38015c27",
+    "hk-snapshot/src/download-network-selector.js": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "hk-snapshot/src/download-network.js": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "hk-snapshot/src/download-redirect.js": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+    "settings-before.json": "2dedeb22e6dcfe114d513621fa6b2e24efa8c257b4d98df7762070eb1cc646b1",
+    "sg-live-snapshot.json": "3d940e58e09c917d5962c5540538177a00d0d29031b913f7fbdae07ae4529f4f",
+    "sg-projection-metadata.json": "8ccb375f83e561c59fb11841416ac47fda200b34c09846e792ffd6f799a68905",
+    "sg-projection-source.py": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9",
+    "source-identities.json": "be02dcd32bbe7e1b9497c5f05b1922c26b870cda47396ed9ff72999a4c6028f2",
+    "static-baseline.json": "b43f38667c4b73cc7d5981a59a442c47e519cae9e0d0ef7ee24e23dd708e6f55"
+  }
+}

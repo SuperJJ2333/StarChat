@@ -1,0 +1,289 @@
+{
+  "permanent_guards": {
+    "business_release_guard.py": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b",
+    "business_refresh_image_probe.py": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15"
+  },
+  "checked_at_utc": "2026-10-12T13:14:18.447538+00:00",
+  "registry": {
+    "artifact_bytes": 73336097,
+    "build": 2214,
+    "cdn_url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.45-build2214-arm64.apk",
+    "direct_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.45-build2214-arm64.apk",
+    "platform": "android",
+    "sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614",
+    "version": "0.4.45"
+  },
+  "aliases": {
+    "latest-arm32.apk": "ChatFlow-0.3.36-arm32.apk",
+    "latest-x86_64.apk": "ChatFlow-0.3.36-x86_64.apk",
+    "latest-arm64.apk": "ChatFlow-0.4.45-build2214-arm64.apk"
+  },
+  "old_artifact": {
+    "name": "ChatFlow-0.4.45-build2214-arm64.apk",
+    "bytes": 73336097,
+    "sha256": "575e24f4c841ed2388311ba19c06e23623838022ed2a438df6c56642436af614"
+  },
+  "target_exists": false,
+  "runtime": [
+    {
+      "name": "starchat-business-worker-1",
+      "image": "sha256:abda33f8fe5bb4abca45464a5d300fff8981a8b68908be1b64f6e3ee0d8a0e7f",
+      "id": "db5d65ff01ae55a878fe1a2231e25954df84f9aec8bfdabfacd90c535dae0b7c",
+      "restart_count": 0,
+      "started_at": "2026-10-11T10:40:04.658330755Z"
+    },
+    {
+      "name": "starchat-sygnal-1",
+      "image": "sha256:90fa02ff684b44aaaa08971845c2ed21d1d838eb4fb38c9e649d69a5be360dd0",
+      "id": "1a8c55a4fbf14a21640cc7a5de86b07926dffc4a85b90b314be6e39a4a179fca",
+      "restart_count": 0,
+      "started_at": "2026-10-11T03:29:47.738247231Z"
+    },
+    {
+      "name": "starchat-business-api-1",
+      "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+      "id": "87c62739027c607d1ae1b13af206a5960f44539a1b1a9c7ad60b3e11697c33c8",
+      "restart_count": 0,
+      "started_at": "2026-10-11T03:16:25.975858882Z"
+    },
+    {
+      "name": "starchat-getui-bridge-1",
+      "image": "sha256:0d3c204b0df4863a8826aef6b58556f0fc9c8a6c89d5ca0ec137eec81fe7f43c",
+      "id": "4173b36c75674fc1bbdbae04009e0214adb28ff7537a54f00ad0862db2bee66e",
+      "restart_count": 0,
+      "started_at": "2026-10-11T03:16:11.694847149Z"
+    },
+    {
+      "name": "starchat-gateway-1",
+      "image": "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+      "id": "bf6b51f25372c063fbbffd4f9c34fd4c076151e038431dcd9fa470476340c312",
+      "restart_count": 0,
+      "started_at": "2026-10-11T02:54:12.597093193Z"
+    },
+    {
+      "name": "starchat-synapse-sync-worker-1",
+      "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d",
+      "id": "ea4dda148ed6be5aa7deb4187b6a777c38b080b627713a096ddb70a47ded9463",
+      "restart_count": 0,
+      "started_at": "2026-10-11T02:53:51.409887733Z"
+    },
+    {
+      "name": "starchat-synapse-1",
+      "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d",
+      "id": "5c6f470dec7f2fbced266ebc1ce3322fcfdb03ddcf8aab6837be613e5bd516c5",
+      "restart_count": 0,
+      "started_at": "2026-10-11T02:53:38.869777948Z"
+    },
+    {
+      "name": "starchat-tron-watch-tron-watch-1",
+      "image": "sha256:961c3a0e1b9a32f40455ed1fe14cfa7e4a28ef9b6c2f139cb792108ca350b276",
+      "id": "56606fe6db470a295418da9f0b4f6d347321bff4293a5e937d8360a29804d9c2",
+      "restart_count": 0,
+      "started_at": "2026-10-05T12:10:41.446610106Z"
+    },
+    {
+      "name": "chatflow-recovery-20261004-worker",
+      "image": "sha256:449fef97b26ba00d62b7c128bdff1e440a127349f89fedf0e6556721c3aa2876",
+      "id": "0711276c6437faeac7ef532827c51fdf4ffd0f827901c885197b469f73d3c9b0",
+      "restart_count": 0,
+      "started_at": "2026-10-03T20:14:10.545378727Z"
+    },
+    {
+      "name": "chatflow-recovery-20261004-native",
+      "image": "sha256:449fef97b26ba00d62b7c128bdff1e440a127349f89fedf0e6556721c3aa2876",
+      "id": "de7878b51af8ba500644cb7bc6cb72eed26087202a49afaa8b96bc19de91b681",
+      "restart_count": 0,
+      "started_at": "2026-10-03T20:14:09.93430829Z"
+    },
+    {
+      "name": "chatflow-recovery-20261004-redis",
+      "image": "sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf",
+      "id": "8ab46d0e7b2a9ea9f5bc7c510f5b96e2a2a689336c35f4dd762c8dbbd3874a2f",
+      "restart_count": 0,
+      "started_at": "2026-10-03T18:44:27.794367418Z"
+    },
+    {
+      "name": "chatflow-recovery-20261004-gateway",
+      "image": "sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10",
+      "id": "1e44798c07625f4254fac887cec2c69c8b2ed7ce39145cd85e29b270b6ea6656",
+      "restart_count": 0,
+      "started_at": "2026-10-03T17:56:45.520715736Z"
+    },
+    {
+      "name": "chatflow-recovery-20261004-pg",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "938aed14bbc5bd0932519f4d4cda9915fa19bf2ac4652114b722ddc440be2cf3",
+      "restart_count": 0,
+      "started_at": "2026-10-03T17:02:00.007671778Z"
+    },
+    {
+      "name": "starchat-wallet-void-rehearsal-pg",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "80965d94204a95fd25c30d6f29acb2c85ddb8cb08acc425369237aef6f21c380",
+      "restart_count": 0,
+      "started_at": "2026-09-30T05:24:01.176891225Z"
+    },
+    {
+      "name": "friend-video-restore-pg16-20260927",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "64585f3417b34914a2e89ff6a64496e90a06d865f4ac127c3358b7005a257fc4",
+      "restart_count": 0,
+      "started_at": "2026-09-27T04:32:49.353597722Z"
+    },
+    {
+      "name": "friend-video-search-pg16-20260927",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "127bdf7f979189f670dd9eb49d6f78ec3e07f11bedaddc42a7f54ca6cc4462ff",
+      "restart_count": 0,
+      "started_at": "2026-09-26T18:48:51.889127118Z"
+    },
+    {
+      "name": "campusquest-minio-1",
+      "image": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+      "id": "2ac0530c992a615603e4cc125cdc4d7dc17b02548ff84917763913970d6995f3",
+      "restart_count": 0,
+      "started_at": "2026-09-24T12:09:39.361518485Z"
+    },
+    {
+      "name": "campusquest-postgres-1",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "id": "6a25ab90aebe9438f5b4aba428aa4a06407be5ecc3cfc135e35de2d5266a7c7e",
+      "restart_count": 0,
+      "started_at": "2026-09-24T11:47:41.409132339Z"
+    },
+    {
+      "name": "campusquest-redis-1",
+      "image": "sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf",
+      "id": "7009b8758becd26c7cc63812eabd608d1cf038904e58eeb80a292dc331e63901",
+      "restart_count": 0,
+      "started_at": "2026-09-24T11:47:41.414748683Z"
+    },
+    {
+      "name": "support-feedback-restore-20260923",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "a7917e4a9ea43a006d39d724d293c1a4c1ad9738c7f726b79dc5653232b4ff3f",
+      "restart_count": 0,
+      "started_at": "2026-09-23T08:00:59.788314894Z"
+    },
+    {
+      "name": "starchat-postgres-1",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "1a557639178c040a5d2523add3159edc64c56041e022def97148ee07dac72fee",
+      "restart_count": 0,
+      "started_at": "2026-09-09T21:14:02.934072413Z"
+    },
+    {
+      "name": "starchat-matrix-redis-1",
+      "image": "sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952",
+      "id": "795e51ae3a7b62f15fe523de9b81a13f69919c19c5bf6e62d63efcb68b4f0371",
+      "restart_count": 0,
+      "started_at": "2026-09-09T21:14:02.931290589Z"
+    },
+    {
+      "name": "starchat-ios-calls-ios-call-gateway-1",
+      "image": "sha256:8125fd6d2ca8659676b1a4dc7a4ce5c787af83b181024916c72072bbf000f771",
+      "id": "324d8a26c375447a918c0bdb51b6bd1d9e24459cd0d0e04b17b0cdde24454834",
+      "restart_count": 0,
+      "started_at": "2026-09-07T20:49:31.129784844Z"
+    },
+    {
+      "name": "codex-funding-intents-pg16-20260907",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "643b59cf9b5914546f85d8b9391113d9c45f267d72777bf79144eba29db45b62",
+      "restart_count": 0,
+      "started_at": "2026-09-07T17:13:05.102841758Z"
+    },
+    {
+      "name": "starchat-coturn-1",
+      "image": "sha256:71c3c990283385567f11794ee692e3a47b66fd9b0bb39e42afbe776e331dd888",
+      "id": "60857b16911e1f80b07899498252f051b43237165dcb5614fefece3e9304f7e9",
+      "restart_count": 0,
+      "started_at": "2026-09-05T09:26:04.517276807Z"
+    },
+    {
+      "name": "taobao-rpa-frontend-1",
+      "image": "sha256:c9bf94a309db4b8c27e9307d985b9b30780ddf7bfa7b28153ef6f9b6b001a779",
+      "id": "ecee15322cca5825c77a2c6197b84cecfde0b17ccf5b03928c106db3bf9467fa",
+      "restart_count": 0,
+      "started_at": "2026-08-30T06:29:51.249310138Z"
+    },
+    {
+      "name": "taobao-rpa-worker-1",
+      "image": "sha256:de09298179ccbd8451ee9aa159e836afb0accada4887eeff495ae5d1fb9fb7ad",
+      "id": "63d07790144463b4c1bb27292a200e20cd873127c007900c3c06b74307367fd6",
+      "restart_count": 0,
+      "started_at": "2026-08-30T06:08:23.405389812Z"
+    },
+    {
+      "name": "taobao-rpa-api-1",
+      "image": "sha256:6b7f7762ba441c5cfef87a9987a4346efbda7237de229c8f8ccd8bbfdf34b067",
+      "id": "eec96cfa8f6eb9de42cff7d6afc4f73fb95eaa5d1ce3f328c9e23a0355c5295a",
+      "restart_count": 0,
+      "started_at": "2026-08-30T06:08:23.246812463Z"
+    },
+    {
+      "name": "taobao-rpa-postgres-1",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "id": "5d4a1646720f1f3162f3f59eb2b21265dbd5e0905bd1cb78ae281bb77fd1c878",
+      "restart_count": 0,
+      "started_at": "2026-08-29T14:44:38.503057267Z"
+    },
+    {
+      "name": "taobao-rpa-redis-1",
+      "image": "sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf",
+      "id": "d3b09dff69b63270a8e47bd47ff713a9d2460cac308bb68622930e1b109c51cf",
+      "restart_count": 0,
+      "started_at": "2026-08-29T14:44:38.500886577Z"
+    },
+    {
+      "name": "starchat-matrix-bot-1",
+      "image": "sha256:ee6be1823e4359e67d140571eee219a2a0f20e5001d1bdf4a2631b7efc10c6d7",
+      "id": "3cefa4ae2624ecfebc457fe16353bf5a1fb240b801ef100f50019cad8835718f",
+      "restart_count": 0,
+      "started_at": "2026-08-18T07:57:03.529291364Z"
+    },
+    {
+      "name": "starchat-business-postgres-1",
+      "image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+      "id": "0d07d05048911539fb51fff24ff91c5787ca5b4f5f188ebc1121caafd1a153bf",
+      "restart_count": 0,
+      "started_at": "2026-08-18T07:56:52.69518218Z"
+    },
+    {
+      "name": "starchat-element-web-1",
+      "image": "sha256:3367f18a2b830fa6dd454c605a1c0a58ea328e831226b9774e9051ae573bd13f",
+      "id": "76711f9b5637d9385e7b07de240ea7bf0003516d2dee57cf2472af7acc81f270",
+      "restart_count": 0,
+      "started_at": "2026-08-18T07:14:53.748759751Z"
+    },
+    {
+      "name": "starchat-business-redis-1",
+      "image": "sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952",
+      "id": "e34bd2ed6646b41fd412295d40452c35a5f77fcd85b1ede47eb7f896f16d8a64",
+      "restart_count": 0,
+      "started_at": "2026-08-18T07:14:52.456249959Z"
+    },
+    {
+      "name": "starchat-mailpit-1",
+      "image": "sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707",
+      "id": "27148b9397985b45e363913d1a1d59b8defa75341c18a2526c455d88d2fc439c",
+      "restart_count": 0,
+      "started_at": "2026-08-18T07:14:52.445836315Z"
+    }
+  ],
+  "settings": {
+    "app_latest_version": "0.4.45",
+    "app_latest_build": "2214",
+    "app_min_supported_build": "3",
+    "app_update_notes": "改进发送队列、历史加载和媒体缓存，增加媒体任务恢复和大小预检，优化Android后台运行稳定性。当前普通附件最高48MiB，图片因解码预算上限更低；过大时请压缩或缩小后重试。",
+    "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+    "app_ios_latest_version": "0.4.44",
+    "app_ios_latest_build": "2213",
+    "app_ios_min_supported_build": "3",
+    "app_ios_update_notes": "修复大历史会话快速上滑跳转、弱网新消息换位和语音首次播放问题，优化聊天记录加载与交互性能。",
+    "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1"
+  },
+  "schema": [
+    "0095_wallet_source_alerts"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "status": "READ_ONLY_BASELINE_MATCH",
+  "hk_checked_at_utc": "2026-10-12T13:14:18.447538+00:00",
+  "sg_checked_at_utc": "2026-10-12T13:14:21.948533+00:00",
+  "comparison_baseline_commit": "c1b1ccd777d7ef11a1a1af956547b43bbf89d573",
+  "checks": {
+    "hk_permanent_guards_equal": true,
+    "hk_registry_equal": true,
+    "hk_aliases_equal": true,
+    "hk_old_artifact_equal": true,
+    "hk_target_exists_equal": true,
+    "hk_settings_equal": true,
+    "hk_schema_equal": true,
+    "hk_runtime_identity_equal": true,
+    "static_baseline_equal": true,
+    "sg_cloudfront_equal": true,
+    "sg_policy_equal": true,
+    "sg_identity_equal": true,
+    "sg_status_equal": true,
+    "expected_35_containers": true,
+    "android_2214_ios_2213_minima3": true,
+    "target2215_absent": true,
+    "guard_expected": true,
+    "cf16_deployed": true
+  },
+  "hk_snapshot_sha256": "f4d8e75c3fd58005901619234378bd91a5331abc0cc901870b9e2a8d02060940",
+  "sg_snapshot_sha256": "3d940e58e09c917d5962c5540538177a00d0d29031b913f7fbdae07ae4529f4f",
+  "production_writes": false,
+  "uploads": false,
+  "cloud_changes": false,
+  "temporary_containers": false
+}

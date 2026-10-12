@@ -1,0 +1,3 @@
+* text eol=lf
+hk-snapshot/** -text -diff
+*.json -text -diff
