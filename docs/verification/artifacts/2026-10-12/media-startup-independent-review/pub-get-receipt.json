@@ -1,0 +1,7 @@
+{
+  "exit_code": 0,
+  "command": "C:/src/flutter/bin/flutter.bat pub get --offline --enforce-lockfile",
+  "PUB_HOSTED_URL": "https://pub.dev",
+  "ended_utc": "2026-10-12T11:58:43.9482220Z",
+  "started_utc": "2026-10-12T11:58:34.2420733Z"
+}

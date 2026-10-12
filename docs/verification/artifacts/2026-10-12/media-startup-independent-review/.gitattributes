@@ -1,0 +1,4 @@
+*.log binary
+*.json -text whitespace=cr-at-eol
+*.md -text
+.gitattributes -text

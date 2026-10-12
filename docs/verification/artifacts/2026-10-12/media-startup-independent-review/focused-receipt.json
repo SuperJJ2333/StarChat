@@ -1,0 +1,7 @@
+{
+  "command": "C:/src/flutter/bin/flutter.bat test --no-pub test/app_home_media_outbox_startup_test.dart test/app_home_lifecycle_test.dart --reporter expanded",
+  "candidate": "ccd45e8e28f5110d852a2f46a568a1635f9a457f",
+  "ended_utc": "2026-10-12T12:00:56.7586172Z",
+  "exit_code": 0,
+  "started_utc": "2026-10-12T12:00:47.9601437Z"
+}

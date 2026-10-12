@@ -1,0 +1,73 @@
+{
+  "candidate": "ccd45e8e28f5110d852a2f46a568a1635f9a457f",
+  "decision": "APPROVE_SOURCE_FOCUSED_ONLY",
+  "ordered_reviews": [
+    "specification/domain",
+    "quality/security"
+  ],
+  "blocking_findings": [],
+  "independent_tests": {
+    "passed": 14,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "device_or_production_acceptance": false,
+  "created_utc": "2026-10-12T12:03:57.298933+00:00",
+  "evidence": [
+    {
+      "path": ".gitattributes",
+      "bytes": 79,
+      "sha256": "20d985719c58007598e233543631ba6f39b63bb97295a8e827d0eeb2c1eff35f"
+    },
+    {
+      "path": "after-run-and-author-evidence.json",
+      "bytes": 2968,
+      "sha256": "d5778b7cd873fe78b00c60e6ada9d8ec82ee4ac0ad12c2466608e2d7179184c8"
+    },
+    {
+      "path": "export-receipt.json",
+      "bytes": 705,
+      "sha256": "1c34c9ba699eb44b9c464403e3932efaec3abc56bb424564e5e89674d859a73b"
+    },
+    {
+      "path": "flutter-version.json",
+      "bytes": 612,
+      "sha256": "1045855544331875e94a011c6f9401508eb39858fa54629a07e407e46f575798"
+    },
+    {
+      "path": "focused-receipt.json",
+      "bytes": 343,
+      "sha256": "9e2cd0ad0c30d5c4b492277440d78e36d8cf16ba09925f87bc62e5f96c1b1b47"
+    },
+    {
+      "path": "focused.log",
+      "bytes": 11913,
+      "sha256": "5438b2c7d08c1526f7dcf7d322760d6dac369bcb2ee5c295fededadafa013839"
+    },
+    {
+      "path": "input-identities.json",
+      "bytes": 473463,
+      "sha256": "4274e532513ab30a1b535006e451d19a33d0372bfe0c26439a1dc571cb2661f7"
+    },
+    {
+      "path": "pub-get-receipt.json",
+      "bytes": 247,
+      "sha256": "3e7e2b63c3f6f46654029e469427fd06b6346638b94a2092c3bd65e1ab0811d8"
+    },
+    {
+      "path": "pub-get.log",
+      "bytes": 1336,
+      "sha256": "496581851a0c77ab177887e8597951b7aecfa644ae24cc435743e3bc5d140091"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6877,
+      "sha256": "2ff765b55e4870b353822f66038e0b089c849bdfbc7e378ba8810bdf3e3bef8e"
+    },
+    {
+      "path": "restore-receipt.json",
+      "bytes": 204,
+      "sha256": "a46cc917b666999c923b97a8a5fdd6693525d4ae846aabac3c0623d365fdd3fe"
+    }
+  ]
+}

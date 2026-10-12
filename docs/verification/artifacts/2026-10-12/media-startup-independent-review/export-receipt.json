@@ -1,0 +1,19 @@
+{
+  "started_utc": "2026-10-12T11:58:34.121196+00:00",
+  "candidate": "ccd45e8e28f5110d852a2f46a568a1635f9a457f",
+  "base_commit": "0ef24bd100b9f96760e7a6be2ef01c40c900e05c",
+  "own_head": "7f881d596c70b520d613e4a2b281151452f9c96b",
+  "mobile_tree_other_git_differences": [],
+  "exports": [
+    {
+      "path": "apps/mobile_flutter/lib/app_home.dart",
+      "existed": true,
+      "export_sha256": "54c01b0f2a090a19d26690d84d951653dbf8173311ed098bb343a1b8c8e466bf"
+    },
+    {
+      "path": "apps/mobile_flutter/test/app_home_media_outbox_startup_test.dart",
+      "existed": false,
+      "export_sha256": "ff11c524ab84b39cb0f347a67c870d9af3ee591e2b08d165635ef886e949997c"
+    }
+  ]
+}

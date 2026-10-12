@@ -1,0 +1,80 @@
+{
+  "reviewed_utc": "2026-10-12T12:02:03.104899+00:00",
+  "author_archive_files_checked": [
+    {
+      "path": "pinned-input-identity.json",
+      "sha256": "979a25be3d20895dea8b264ddb8cc93b0219c755ae0fc47b66b48fd198604fd4",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pub-get-pinned-receipt.json",
+      "sha256": "50de6da9707ac21d0df6258edc22b0a70ca6e309d201fbcb82daf39b46b7b1cb",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-composition-green-receipt.json",
+      "sha256": "2392ca3f8a950a8aaea634e7c113740bbfed49343d7d1e999af5a9be1236e9c9",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pub-get-pinned.log",
+      "sha256": "6f34a1ee9e3b33abf8d8a511982375f8aa0ccbac4994649f5eb4ecbf9de780b8",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-analyze-receipt.json",
+      "sha256": "e92740664ce98e79ebc35978616c6f5efeff82a46bb13ac27fcac5432cc2ee52",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-composition-red-receipt.json",
+      "sha256": "9aef8d8c675d3fc152f7bef9d53773090eb8e3116e5a42868ed4ae18b7a553d6",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "README.md",
+      "sha256": "4d0cabb5593c5ff5b4c6e1ecfe0b5e7781790fda1f66c7d56780b2e51e4cdf2b",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "desktop_media_neighbors_test.dart",
+      "sha256": "5e7a1163115cba1e0db20491b4a54a4880bb463e9552afa85232f58a67c53fd4",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-desktop-neighbors-green-receipt.json",
+      "sha256": "c655dd9a3a0e899cdb0d71387c3a9266bba400730b65186e1dbd630cfd60e355",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-composition-green.log",
+      "sha256": "6daaf964307553a225024758b213a1b453c3d2ab385ce0b7ad8f0ad69e5453a9",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-desktop-neighbors-green.log",
+      "sha256": "a44848ea06bf3c35457f1c8447f2e050ececdc9b6dfce7b5d0ae68621e3fc0da",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-composition-red.log",
+      "sha256": "b47b07e96836638437b68eec2847fc0ae02e9f3eff40ced61a9de1ebdfee6046",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": "pinned-analyze.log",
+      "sha256": "8cc9b8042604890339d2810ed0a5f99c67ba422a607ffff22225eeb5b3cbdecc",
+      "candidate_blob_equal": true
+    },
+    {
+      "path": ".gitattributes",
+      "sha256": "e0b75e2eba2fbc1e838617713e6af2584b95ab11f5bc8642ab14114720815a89",
+      "candidate_blob_equal": true
+    }
+  ],
+  "author_test_raw_sha256": "38651f0c11c83dec36d625c2728015315cd27107c3703eae595527a10a4b46ea",
+  "candidate_test_blob_sha256": "ff11c524ab84b39cb0f347a67c870d9af3ee591e2b08d165635ef886e949997c",
+  "test_equal_after_crlf_to_lf": true,
+  "input_files_unchanged_after_focus": 1620,
+  "package_config_unchanged": true
+}
