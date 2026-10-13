@@ -1,0 +1,11 @@
+{
+  "checked_at_utc": "2026-10-12T14:25:00.622041+00:00",
+  "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+  "operation": "publish",
+  "result": {
+    "backup": "/opt/starchat/docs/verification/artifacts/2026-10-12/android2215-mediafix-20261012-2215",
+    "status": "PUBLISH_PASS",
+    "trace": "android2215-mediafix-20261012-2215"
+  },
+  "status": "PASS"
+}

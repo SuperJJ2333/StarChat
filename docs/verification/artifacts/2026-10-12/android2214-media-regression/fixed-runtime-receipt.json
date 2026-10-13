@@ -1,0 +1,85 @@
+{
+  "recorded_utc": "2026-10-12T13:24:00.658923+00:00",
+  "status": "PASS_ACTUAL_EMULATOR_MEDIA",
+  "candidate_version": "0.4.46+2215",
+  "source_commit_at_debug_build": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "apk_sha256": "e3bd89359c3822e54dc6c6daa28d12c0117ff6f25f7c7a968eb03416d507ac2a",
+  "apk_bytes": 125901146,
+  "package": "com.liuhetong.mobile.debug",
+  "device": "emulator-5556",
+  "android_api": 28,
+  "abi": "x86_64",
+  "uid_before_after": 10090,
+  "updates": "2212→unfixed2214→fixed2215 with adb install -r, no uninstall/clear/downgrade",
+  "room": "Media-1012-2214 encrypted with exactly1 member and zeroinvitees, real app/session and normal RoomPage. Debug VM creates/navigates only own isolated room; media selected/sent via actual gallery UI. No SDK send/media/HTTP doubles during device run.",
+  "image": {
+    "ui": "Gallery actual owned JPEG selected, no red exclamation, bubble image rendered; original13K viewer shown",
+    "message_type": "m.image",
+    "status": "EventStatus.synced",
+    "server_id": true,
+    "receipt": "fixed-image-ack.json"
+  },
+  "video": {
+    "ui": "Gallery actual owned H264 MP4 selected; transient pending/upload then bubble no red, actual player frames+time progress0→2 seconds of3",
+    "message_type": "m.video",
+    "status": "EventStatus.synced",
+    "server_id": true,
+    "receipt": "fixed-relaunch-ack.json",
+    "cross_process_restart": "fixed-process-restart-receipt.json"
+  },
+  "queue_active_after_fix": true,
+  "evidence": [
+    {
+      "path": "fixed-main-debug-2215/receipt.json",
+      "sha256": "cdffcfab4770d2928a246df2df05907a6f59061c09510bcf9d30fb029afaa219",
+      "bytes": 639
+    },
+    {
+      "path": "fixed-main-debug-2215/install-receipt.json",
+      "sha256": "a40f3e4efa3c3c03f02b19993e05cdb9cb6a243321cfb8f07c66e1d6ee58cc3b",
+      "bytes": 926
+    },
+    {
+      "path": "fixed-main-debug-2215/rebuild-verification.log",
+      "sha256": "ffec5bc5d072ee23c07670e629b010cdce05824442fe249ae19723145a5aa50f",
+      "bytes": 2745
+    },
+    {
+      "path": "fixed-image-ack.json",
+      "sha256": "9c4e72c9db2830a38edbdc02a1bd8c2068f304489f65d7c36bc1a5b1f9c67974",
+      "bytes": 533
+    },
+    {
+      "path": "fixed-relaunch-ack.json",
+      "sha256": "e9ba07eb50cefd11c250aa0d1a4adcb0c610e3c5714eacedb602d3938c24989f",
+      "bytes": 532
+    },
+    {
+      "path": "fixed-process-restart-receipt.json",
+      "sha256": "22bb472c87949f6938142e130df01989c1452e943a982494700e4a8f856fea86",
+      "bytes": 1165
+    },
+    {
+      "path": "fixed-image-viewer.png",
+      "sha256": "35fe79a53fe9d2bb8865e2a59758b0de3dfb51b4dcf3a02cfa745036991b37bc",
+      "bytes": 80276
+    },
+    {
+      "path": "fixed-video-player.png",
+      "sha256": "00386cd668293156c3615f9b8a83e197f8e4d87b50dc110d9b66d9f0e29248fe",
+      "bytes": 100652
+    },
+    {
+      "path": "fixed-video-player-completed.png",
+      "sha256": "313f3cd547060d9a7e93688e6304f79b840e4fd9190561c442dbf4c53539ad95",
+      "bytes": 101491
+    }
+  ],
+  "limits": [
+    "One API28 x86_64 emulator, not all models/ROMs/ARM64 release or Android16KiB runtime",
+    "Self-only encrypted room validates real encryption/upload/server event sync/local rendering, not independent second-user receipt",
+    "No latency/P95 inference from manually timed screenshots; no weak-network or process-death recovery stress claim",
+    "Initial helper attempts had compilation-service unavailable/VM log URI expired, fixed by Flutter attach and fresh startup; those diagnostics are not product success evidence",
+    "A later screenshot request observed another app in the foreground; unrelated screenshot was discarded and no further device interaction performed. Earlier own-room screenshots/ACK remain the actual media evidence."
+  ]
+}

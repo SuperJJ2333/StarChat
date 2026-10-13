@@ -1,0 +1,19 @@
+{
+  "utc": "2026-10-13T12:33:00.793113+00:00",
+  "status": "PASS",
+  "freeze": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+  "files": {
+    "frontend/download.html": {
+      "after": "eeb75215b8bcea683202923ff27f5ce5c130e139a94d8a286c90f6dd82576dd4",
+      "before": "829a8cc49d1deef816de916d42b34b9cf3723e8ef5c2c418e77990bee1323c44",
+      "staged": "source-backfill/frontend/download.html"
+    },
+    "frontend/downloads/android-release.json": {
+      "after": "cf772f9d1a9e464bc71622ad4603d70ae96cfb14bf8d2966e24bcedde5f6ce5b",
+      "before": "a9e0289716761f72feaf688402f79592b0a225ae1479cd1b4e0564fc433113d7",
+      "staged": "source-backfill/frontend/downloads/android-release.json"
+    }
+  },
+  "five_preserved": true,
+  "scope": "local source only; production previously published"
+}

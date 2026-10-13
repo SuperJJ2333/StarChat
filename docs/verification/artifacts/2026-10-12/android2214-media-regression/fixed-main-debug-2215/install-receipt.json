@@ -1,0 +1,23 @@
+{
+  "status": "INSTALL_PASS",
+  "observed_utc": "2026-10-12T12:52:29.940112+00:00",
+  "apk_sha256": "e3bd89359c3822e54dc6c6daa28d12c0117ff6f25f7c7a968eb03416d507ac2a",
+  "version": "0.4.46+2215",
+  "package": "com.liuhetong.mobile.debug",
+  "before_version": 2214,
+  "before_uid": 10090,
+  "install": {
+    "exit": 0,
+    "stdout": "Performing Push Install\nSuccess\n",
+    "stderr": "C:\\Users\\Administrator\\.codex\\worktrees\\im-reliability\\StarChat\\docs\\verification\\artifacts\\2026-10-12\\android2214-media-regression\\fixed-main-debug-2215\\final.apk: 1 file pushed, 0 skipped. 47.0 MB/s (125901146 bytes in 2.555s)\n"
+  },
+  "seconds": 4.953,
+  "after_version": 2215,
+  "after_uid": 10090,
+  "data_preserved_by_update_install": true,
+  "launch": {
+    "exit": 0,
+    "stdout": "Starting: Intent { cmp=com.liuhetong.mobile.debug/com.liuhetong.mobile.MainActivity }\n",
+    "stderr": ""
+  }
+}

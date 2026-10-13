@@ -1,8 +1,13 @@
 # 当前工作状态
 
-## 2026-10-12 Android2214图片/视频发送P0回归：已复现，2215修复验证中
+## 2026-10-13 AWS全服务检查完成
 
-用户要求修复并安装模拟器debug，已有修改/部署授权继续有效。未修复真实main debug2214在5556（API28 x86_64、保留2212登录数据、UID10090）实际相册JPEG红叹号、MP4提示暂无法发送，媒体queue未激活；仅本人加密测试房间，无其他收件人。根因是AppHome在startup generation打开前开始媒体绑定，await后被代际检查拒绝；最小顺序修复已独审和专项RED→GREEN，冻结0.4.46+2215/ec9a38a8。修复debug常规重建与最终共享全量正在执行；2215尚未安装/发布，正式渠道仍Android2214/iOS2213，勿把旧5958当新候选门禁。恢复见[单独任务](tasks/2026-10-12-android2214-media-send-regression.md)。
+20:27–20:33+08实时检查，8现役容器运行/6项health healthy、systemd failed0，CoScene API/网页、GA Gold网页、ChatFlow AWS转发与STUN通过；磁盘23%、可用内存约3GiB。未重启或修改服务。日志轮转/两项healthcheck与历史容器治理列P2，AWS实例状态检查API退出254未取得结果。见[报告](../verification/2026-10-13-aws-service-audit.md)及[任务](tasks/2026-10-13-aws-service-audit.md)。
+
+## 2026-10-12 Android2214图片/视频P0回归：2215修复已发布
+
+启动generation打开前绑定媒体outbox导致owner-unavailable，已按最小顺序修复。真实API28 x64模拟器保数据覆盖2214→2215，实际相册图片/视频发送、服务端ACK、原图/视频播放和跨进程重开验证通过；5965PASS/9SKIP、401PASS/1SKIP、analyze0。固定75b31正式ARM64成品73262170B/SHA4b43bd1c…578b6a6，10月12日22:25+08发布、22:28审计和22:31公网验证通过；iOS仍2213/min3保持。两个下载源文件SHA回填完成。全ROM真机、独立接收方、16KiB旧风险仍未覆盖。见[修复报告](../verification/2026-10-12-android2214-media-send-fix.md)与[任务](tasks/2026-10-12-android2214-media-send-regression.md)。
+
 ## 2026-10-11 IM可靠性：Android2214与worker续租已发布
 
 用户已授权产品修改、服务重启和部署。Android0.4.45+2214已正式发布（10:37Z），固定75b31签名、73336097B/SHA575e24f4…af614；CF Deployed/HEAD/CORS、公开metadata、实际route投影/三条审计及工作站四项HTTPS通过；iOS仍0.4.44+2213、minimum均3。共享最终e9d297/f7a9：5958PASS/9SKIP/0FAIL、analyze0、边界401/1；Android3项API28 x86_64原生证据按闭包复用，未称最终ARM64实机通过。worker有界续租abda33f8/db5d65ff于10:39:52–10:40:17Z settled PASS；5源SHA/schema0095/其他容器保持，独立结构后验通过，warning已定位资金监控WAITING/BALANCE_UNSTABLE/RECONCILIATION_PENDING，业务状态保留待领域核验。恢复鉴权、推送跨房去重、媒体IO及日志此前已部署。iOS同运行时unsigned IPA SHA0fad8d42…a4d3b与20项原生测试通过，企业回签/真机保数据覆盖仍待。既有libcrypto4KiB/16KiB静态exit1、RELRO观察、OEM审核、全ROM弱网/功耗、端到端SLO与长期容量均未关闭。详情见[九域修复与发布结果](../verification/2026-10-11-im-reliability-release-result.md)、[任务](tasks/2026-10-11-im-reliability-implementation.md)与[批准计划](../superpowers/plans/2026-10-11-im-reliability-remediation.md)。

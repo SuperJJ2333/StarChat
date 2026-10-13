@@ -1,0 +1,64 @@
+{
+  "observed_utc": "2026-10-12T12:44:29.289648+00:00",
+  "status": "BASELINE_REPRODUCED",
+  "version": "0.4.45+2214",
+  "source_commit": "538f90f6",
+  "product_source": "e9d297 unchanged before source fix integration",
+  "target": "lib/main.dart",
+  "package": "com.liuhetong.mobile.debug",
+  "device": "emulator-5556",
+  "android_api": 28,
+  "android_version": "9",
+  "abi": "x86_64",
+  "signature_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+  "apk_sha256": "eec916a12fced936b9e165eade3ee3097412cfa76065a05a5195761e406015f8",
+  "apk_bytes": 125933914,
+  "rebuild_verification": "pass",
+  "signing_retry": "initial sign failed parsing DPAPI ciphertext trailing newline; serialized text Trim fix retained existing identity; sign-r2 exited 0",
+  "install_receipt": "baseline-main-debug-pinned/baseline-install.json",
+  "room": {
+    "synthetic_name": "Media-1012-2214",
+    "members": 1,
+    "encrypted": true,
+    "invites": 0,
+    "created_via": "Actual Matrix SDK public createGroupChat, app authenticated account; debug VM used to isolate owned room",
+    "navigation": "Actual MatrixHomePage.onOpenRoom(RoomOpenRequest), ordinary RoomPage; no guards disabled"
+  },
+  "media": {
+    "jpeg": {
+      "path": "synthetic-media/chatflow-regression-20261012.jpg",
+      "bytes": 13015,
+      "width": 640,
+      "height": 480
+    },
+    "mp4": {
+      "path": "synthetic-media/chatflow-regression-20261012.mp4",
+      "bytes": 18702,
+      "duration_seconds": 3,
+      "codec": "H264",
+      "width": 640,
+      "height": 360
+    }
+  },
+  "observations": {
+    "media_outbox_active": false,
+    "image": "Gallery UI selected owned synthetic JPEG; send shows red exclamation and image load failed/retry label",
+    "video": "Gallery UI individually selected owned synthetic MP4; toast video temporarily cannot send; no video server event",
+    "last_event_after_attempt": "initial room state event only (m.text projection), EventStatus.synced; not a successful media ACK"
+  },
+  "screenshots": [
+    {
+      "path": "baseline-selfroom-open.png",
+      "sha256": "e8d2c2147580a36de01e244e92894b75be025ebd8cb4942bc68b5ab15c01b3ef"
+    },
+    {
+      "path": "baseline-send-failed.png",
+      "sha256": "ca1302f5eb38efa31e7cc418dab550f5b12f985c60d875e1229fa8461ea8ab2d"
+    },
+    {
+      "path": "baseline-video-failed.png",
+      "sha256": "b0266533c5df3b6f7f64f1df77e153379b9ade86b8bda8cfd0820d62fbda6b14"
+    }
+  ],
+  "limits": "One API28 x86_64 emulator; no all-model or ARM64 release assertion. Raw account chats/screenshots and VM URIs not archived in Git."
+}

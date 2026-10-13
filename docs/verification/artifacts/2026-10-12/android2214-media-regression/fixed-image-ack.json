@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "mode": "check",
+  "device": "emulator-5556",
+  "package": "com.liuhetong.mobile.debug",
+  "room_name": "Media-1012-2214",
+  "encrypted": true,
+  "joined_or_invited_members": 1,
+  "created_now": false,
+  "media_outbox_active": "true",
+  "last_event_message_type": "m.image",
+  "last_event_status": "EventStatus.synced",
+  "last_event_has_server_id": "true",
+  "scope": "Debug VM via task localhost forward, public app/client methods. Only own encrypted room, no other recipients. No token/key/body output."
+}

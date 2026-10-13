@@ -1,0 +1,38 @@
+{
+  "checked_at_utc": "2026-10-12T14:28:48.558508+00:00",
+  "freeze_sha256": "d08e5c8aa80af4429c6dd8d8a953279d907ceb4c4b281f684998036d1a9a558b",
+  "operation": "audit",
+  "result": {
+    "audit_count": 3,
+    "audit_keys": [
+      "app_latest_build",
+      "app_latest_version",
+      "app_update_notes"
+    ],
+    "checked_at_utc": "2026-10-12T14:28:47.772977+00:00",
+    "projections": {
+      "android": {
+        "apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+        "configured": true,
+        "download_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+        "latest_build": 2215,
+        "latest_version": "0.4.46",
+        "min_supported_build": 3,
+        "notes": "\u4fee\u590d\u56fe\u7247\u548c\u89c6\u9891\u53d1\u9001\u5931\u8d25\u95ee\u9898\uff0c\u63d0\u5347\u5a92\u4f53\u53d1\u9001\u7a33\u5b9a\u6027\u3002",
+        "platform": "android"
+      },
+      "ios": {
+        "apk_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+        "configured": true,
+        "download_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+        "latest_build": 2213,
+        "latest_version": "0.4.44",
+        "min_supported_build": 3,
+        "notes": "\u4fee\u590d\u5927\u5386\u53f2\u4f1a\u8bdd\u5feb\u901f\u4e0a\u6ed1\u8df3\u8f6c\u3001\u5f31\u7f51\u65b0\u6d88\u606f\u6362\u4f4d\u548c\u8bed\u97f3\u9996\u6b21\u64ad\u653e\u95ee\u9898\uff0c\u4f18\u5316\u804a\u5929\u8bb0\u5f55\u52a0\u8f7d\u4e0e\u4ea4\u4e92\u6027\u80fd\u3002",
+        "platform": "ios"
+      }
+    },
+    "status": "ROUTE_AND_AUDIT_READBACK_PASS"
+  },
+  "status": "PASS"
+}

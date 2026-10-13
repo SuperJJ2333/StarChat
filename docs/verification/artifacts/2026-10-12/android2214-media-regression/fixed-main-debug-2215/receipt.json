@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "source_commit": "ec9a38a882096d80ff4a6ed1e31078dae95ee641",
+  "started_utc": "2026-10-12T12:38:03.1230899+00:00",
+  "completed_utc": "2026-10-12T12:45:29.0478674+00:00",
+  "target": "lib/main.dart",
+  "package": "com.liuhetong.mobile.debug",
+  "abi": "x86_64",
+  "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+  "final_apk_sha256": "e3bd89359c3822e54dc6c6daa28d12c0117ff6f25f7c7a968eb03416d507ac2a",
+  "final_apk_bytes": 125901146,
+  "scope": "Actual main app debug; source build/rebuild/sign/semantic checks only; installation and media runtime are separate."
+}

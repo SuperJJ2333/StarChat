@@ -1,0 +1,22 @@
+{
+  "recorded_utc": "2026-10-12T13:24:00.656439+00:00",
+  "device": "emulator-5556",
+  "package": "com.liuhetong.mobile.debug",
+  "apk_sha256": "e3bd89359c3822e54dc6c6daa28d12c0117ff6f25f7c7a968eb03416d507ac2a",
+  "before_pid_observed_in_prior_ps_A_output": 10821,
+  "after_pid_observed_now": 11824,
+  "after_pid_query_exit": 0,
+  "executed_restart_tool_result": {
+    "chunk_id": "f521a5",
+    "exit_code": 0,
+    "commands": [
+      "adb -s emulator-5556 shell am force-stop com.liuhetong.mobile.debug",
+      "adb -s emulator-5556 shell am start -n com.liuhetong.mobile.debug/com.liuhetong.mobile.MainActivity"
+    ],
+    "stdout": "Starting: Intent { cmp=com.liuhetong.mobile.debug/com.liuhetong.mobile.MainActivity }",
+    "timing": "Exact force-stop/start wall timestamps not separately persisted; command exit0 is from actual root tool result, not a simulated command"
+  },
+  "ack_receipt": "fixed-relaunch-ack.json",
+  "ack_receipt_sha256": "e9ba07eb50cefd11c250aa0d1a4adcb0c610e3c5714eacedb602d3938c24989f",
+  "limits": "Cross-process restart observed with retained app data; no device reboot, account logout, or real phone claim."
+}
