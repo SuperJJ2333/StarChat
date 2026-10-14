@@ -18,7 +18,16 @@ _WORD = re.compile(r'[0-9a-fA-F]{64}\Z')
 
 
 class TronReadError(RuntimeError):
-    """A complete, verified observation could not be obtained (safe to log)."""
+    """A complete, verified observation could not be obtained."""
+
+    def __init__(self, message, *, minimum_head=None):
+        super().__init__(message)
+        self.reason = {
+            'TRON solid head regressed': 'SOLID_HEAD_REGRESSED',
+            'TRON solid head conflicted': 'SOLID_HEAD_CONFLICT',
+            'TRON scan deadline exceeded': 'SCAN_DEADLINE',
+        }.get(message, 'SNAPSHOT_FAILED')
+        self.minimum_head = minimum_head
 
 
 class TronTemporaryReadError(TronReadError):
@@ -283,20 +292,34 @@ class TronReader:
             raise ValueError('Invalid observation window')
         self._deadline = time.monotonic() + self.max_scan_seconds
         minimum_head = None
-        for _ in range(3):
-            result, minimum_head = self._snapshot_once(address, start_ms, end_ms, minimum_head)
-            if result['stable_balance']:
-                return result
-        return result
+        try:
+            for attempt in range(3):
+                try:
+                    result, minimum_head = self._snapshot_once(address, start_ms, end_ms, minimum_head)
+                except TronReadError as exc:
+                    if (exc.reason != 'SOLID_HEAD_REGRESSED' or exc.minimum_head is None
+                            or attempt == 2
+                            or self._deadline - time.monotonic() < self._MIN_RETRY_BUDGET_SECONDS):
+                        raise
+                    minimum_head = exc.minimum_head
+                    time.sleep(0.5)
+                    continue
+                if result['stable_balance']:
+                    return result
+            return result
+        finally:
+            self._deadline = None
 
     def _snapshot_once(self, address, start_ms, end_ms, minimum_head):
         # Every retry rebuilds the complete observation under the original
         # deadline. Never combine a prior event cut with a newer balance.
         before = self._head()
-        if minimum_head is not None and (before[0] < minimum_head[0] or before[1] < minimum_head[1]):
-            raise TronReadError('TRON solid head regressed')
-        if minimum_head is not None and before[0] == minimum_head[0] and before != minimum_head:
+        if minimum_head is not None and (
+                (before[0] == minimum_head[0] and before != minimum_head)
+                or (before[0] - minimum_head[0]) * (before[1] - minimum_head[1]) < 0):
             raise TronReadError('TRON solid head conflicted')
+        if minimum_head is not None and (before[0] < minimum_head[0] or before[1] < minimum_head[1]):
+            raise TronReadError('TRON solid head regressed', minimum_head=minimum_head)
         end_ms = min(end_ms, before[1])
         if start_ms > end_ms:
             raise TronReadError('Observation window is not solidified yet')
@@ -312,10 +335,11 @@ class TronReader:
             raise TronReadError('Unverified TRON balance result')
         balance = int(_word(constants[0]), 16)
         after = self._head()
-        if after[0] < before[0] or after[1] < before[1]:
-            raise TronReadError('TRON solid head regressed')
-        if after[0] == before[0] and after != before:
+        if ((after[0] == before[0] and after != before)
+                or (after[0] - before[0]) * (after[1] - before[1]) < 0):
             raise TronReadError('TRON solid head conflicted')
+        if after[0] < before[0] or after[1] < before[1]:
+            raise TronReadError('TRON solid head regressed', minimum_head=before)
         return {'events': sorted(events, key=lambda event: (event['block_number'], event['txid'], event['log_index'])),
                 'balance_units': balance, 'solid_block': before[0],
                 'solid_timestamp_ms': before[1], 'stable_balance': before == after}, after

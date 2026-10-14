@@ -138,7 +138,7 @@ def test_observer_failure_retains_safe_validation_reason_and_watermark(logs, tmp
             raise TronReadError('TRON solid head regressed')
     observer = Observer(tmp_path/'observer.sqlite3', Reader(), 'synthetic', now_ms=lambda: 2000, start_ms=1000)
     result = observer.run_once()
-    assert result['error_code'] == 'SNAPSHOT_FAILED'
+    assert result['error_code'] == 'SOLID_HEAD_REGRESSED'
     assert result['checkpoint_ms'] == 1000
     failed = next(e for e in records(logs) if e['event'] == 'scan_failed')
     assert failed['reason_code'] == 'SOLID_HEAD_REGRESSED'
@@ -157,3 +157,18 @@ def test_source_diagnostics_explain_199_second_block_age(logs):
     assert row['observation_id'] == 3924
     assert row['run_id'] == 4368 and row['fresh_until_ms'] == 180000
     assert set(row['failed_conditions']) == {'SOLID_HEAD_STALE', 'SOURCE_RUN_ERROR', 'RECONCILIATION_PENDING'}
+
+@pytest.mark.parametrize('code,expected', [
+    ('SOLID_HEAD_REGRESSED','SOLID_HEAD_REGRESSED'),
+    ('SOLID_HEAD_CONFLICT','SOLID_HEAD_CONFLICT'),
+    ('SCAN_DEADLINE','SCAN_DEADLINE'),
+    ('secret-provider-value','SOURCE_RUN_ERROR'),
+])
+def test_source_health_log_retains_only_safe_run_reason(logs,code,expected):
+    d.source_health(now_ms=3000,heartbeat=2000,observed=2000,solid_ms=2000,
+        max_age_seconds=120,head_limit=180,observation_id=2,status='ERROR',
+        stable=True,reconciliation='SOURCE_MATCHED',healthy=False,error_code=code)
+    row=records(logs)[-1]
+    assert row['reason_code']==expected
+    assert row['failed_conditions']==[expected]
+    assert 'secret-provider-value' not in logs.getvalue()

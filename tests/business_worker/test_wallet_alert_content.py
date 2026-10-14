@@ -23,3 +23,18 @@ def test_email_explains_immutable_reason_time_impact_and_action():
                      '不会自动暂停钱包', '管理员', '处理建议'):
         assert expected in body
     assert '网络超时' not in body
+
+
+def test_email_preserves_explicit_head_regression():
+    sent=[]
+    def factory(*args,**kwargs):
+        smtp=RecordingSmtp(*args,**kwargs);sent.append(smtp);return smtp
+    sender=SmtpEmailSender(SmtpConfig(host='smtp.example.test',port=587,
+        from_address='alerts@example.test',use_starttls=True),smtp_factory=factory)
+    sender.send_wallet_alert(recipient='ops@example.test',event_id='event-1',
+        code='MANUAL_SOURCE_UNHEALTHY',severity='P1',incident_id='incident-1',
+        occurred_at='2026-10-15T00:00:00Z',diagnostics={'failed_conditions':['SOLID_HEAD_REGRESSED'],
+        'initial_conditions':['SOLID_HEAD_REGRESSED'],'duration_seconds':12})
+    body=sent[0].message.get_content()
+    assert '区块头倒退' in body and '底层起因尚未确认' not in body
+    assert '不会自动暂停钱包' in body

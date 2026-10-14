@@ -183,3 +183,13 @@ def test_reopened_unknown_cause_never_inherits_previous_generation(policy):
             .order_by(OutboxEvent.created_at)).all()
         assert events[0].event_headers['wallet_diagnostics']['failed_conditions'] == ['SOURCE_MALFORMED']
         assert events[1].event_headers['wallet_diagnostics']['failed_conditions'] == ['UNKNOWN']
+
+
+@pytest.mark.parametrize('reason',['SOLID_HEAD_REGRESSED','SOLID_HEAD_CONFLICT','SCAN_DEADLINE'])
+def test_known_head_reasons_remain_immediate_and_deduplicated(policy,reason):
+    assert failure(policy,(reason,)) is True
+    assert failure(policy,(reason,)) is True
+    assert count_alerts(policy[1])==1
+    with policy[1]() as session:
+        event=session.scalar(select(OutboxEvent).where(OutboxEvent.topic=='wallet.alert'))
+        assert event.event_headers['wallet_diagnostics']['failed_conditions']==[reason]

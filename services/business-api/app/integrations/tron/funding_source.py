@@ -196,8 +196,12 @@ class SQLiteFundingSource:
                     ('SOLID_HEAD_STALE', now_ms-solid_ms > self.solid_head_max_age_seconds*1000),
                     ('SOURCE_NETWORK_ERROR', run['error_code'] == 'SOURCE_NETWORK_ERROR'),
                     ('SOURCE_HTTP_UNAVAILABLE', run['error_code'] == 'SOURCE_HTTP_UNAVAILABLE'),
+                    ('SOLID_HEAD_REGRESSED', run['error_code'] == 'SOLID_HEAD_REGRESSED'),
+                    ('SOLID_HEAD_CONFLICT', run['error_code'] == 'SOLID_HEAD_CONFLICT'),
+                    ('SCAN_DEADLINE', run['error_code'] == 'SCAN_DEADLINE'),
                     ('SOURCE_RUN_ERROR', (run['status'] != 'OK' or run['error_code'] is not None)
-                     and run['error_code'] not in ('SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE')),
+                     and run['error_code'] not in ('SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE',
+                                                  'SOLID_HEAD_REGRESSED', 'SOLID_HEAD_CONFLICT', 'SCAN_DEADLINE')),
                     ('BALANCE_UNSTABLE', not stable),
                     ('RECONCILIATION_PENDING', reconciliation == 'RECONCILIATION_UNVERIFIED'),
                     ('BALANCE_DISCREPANCY', reconciliation == 'BALANCE_DISCREPANCY'),
@@ -212,7 +216,7 @@ class SQLiteFundingSource:
                     solid_ms=solid_ms, max_age_seconds=self.max_age_seconds,
                     head_limit=self.solid_head_max_age_seconds, observation_id=observation['id'],
                     status=run['status'], stable=stable, reconciliation=reconciliation, healthy=healthy,
-                    run_id=run['id'], fresh_until_ms=min(min(heartbeat,observed)+self.max_age_seconds*1000,
+                    run_id=run['id'], error_code=run['error_code'], fresh_until_ms=min(min(heartbeat,observed)+self.max_age_seconds*1000,
                                                       solid_ms+self.solid_head_max_age_seconds*1000))
                 pending_since = None
                 if fresh and run['status'] == 'OK' and run['error_code'] is None and reconciliation == 'RECONCILIATION_UNVERIFIED':
@@ -222,7 +226,8 @@ class SQLiteFundingSource:
                     if pending_since > observed:
                         raise FundingSourceError('SOURCE_MALFORMED')
                 if (fresh and run['status'] == 'ERROR' and run['error_code'] in
-                        ('SNAPSHOT_FAILED', 'SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE')
+                        ('SNAPSHOT_FAILED', 'SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE',
+                         'SOLID_HEAD_REGRESSED', 'SOLID_HEAD_CONFLICT', 'SCAN_DEADLINE')
                         and reconciliation != 'BALANCE_DISCREPANCY'):
                     failed_since = _integer(execute("""SELECT MIN(heartbeat_ms) FROM runs
                         WHERE id > COALESCE((SELECT MAX(id) FROM runs WHERE status='OK' AND error_code IS NULL),0)

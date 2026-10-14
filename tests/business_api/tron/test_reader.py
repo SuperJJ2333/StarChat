@@ -215,7 +215,7 @@ def test_retry_does_not_reset_original_total_deadline(monkeypatch):
 
 
 @pytest.mark.parametrize('position', ['within', 'between'])
-@pytest.mark.parametrize('conflict', ['blockID', 'timestamp'])
+@pytest.mark.parametrize('conflict', ['blockID', 'timestamp', 'timestamp_decrease'])
 def test_retry_cannot_forget_same_height_solid_head_conflict(position, conflict):
     chain = Chain()
     chain.heads = [110, 110, 110, 110] if position == 'within' else [110, 111, 111, 111]
@@ -230,7 +230,7 @@ def test_retry_cannot_forget_same_height_solid_head_conflict(position, conflict)
                 if conflict == 'blockID':
                     payload['blockID'] = 'ff' * 32
                 else:
-                    payload['block_header']['raw_data']['timestamp'] += 1
+                    payload['block_header']['raw_data']['timestamp'] += -1 if conflict == 'timestamp_decrease' else 1
         return httpx.Response(200, json=payload)
     reader = module().TronReader(client=httpx.Client(transport=httpx.MockTransport(respond)))
     with pytest.raises(module().TronReadError, match='conflicted'):

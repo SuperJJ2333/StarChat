@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-15 链上观察原因传递与有界重试已发布
+
+06:20:08+08完成API/Worker/观察器切换，后台原因文案同步；倒退/冲突/总时限原因保留到事故邮件和日志，完整重试最多3次且保留原始90秒预算/高水位，同高度及高度时间矛盾立即失败。147专项、58集成、16前端、36回退状态通过；最终镜像/兼容回退门禁和私有备份隔离恢复通过。06:28后验10连续OK、6stable MATCHED，3服务healthy/零重启，57其他容器保持。全仓verify因缺.env未完成，额外全后端回归36%时中止，不宣称整仓通过。源代码在im-reliability工作树；见[报告](../verification/2026-10-15-chain-observer-reasons-retry.md)和[任务](tasks/2026-10-15-chain-observer-reasons-retry.md)。
+
 ## 2026-10-13 AWS全服务检查完成
 
 20:27–20:33+08实时检查，8现役容器运行/6项health healthy、systemd failed0，CoScene API/网页、GA Gold网页、ChatFlow AWS转发与STUN通过；磁盘23%、可用内存约3GiB。未重启或修改服务。日志轮转/两项healthcheck与历史容器治理列P2，AWS实例状态检查API退出254未取得结果。见[报告](../verification/2026-10-13-aws-service-audit.md)及[任务](tasks/2026-10-13-aws-service-audit.md)。

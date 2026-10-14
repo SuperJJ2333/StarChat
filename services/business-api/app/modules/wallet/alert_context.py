@@ -10,6 +10,7 @@ CONDITIONS = TRANSIENT | frozenset({
     'BALANCE_DISCREPANCY', 'CLOCK_AHEAD', 'BASELINE_NOT_REACHED',
     'SOURCE_RUN_ERROR', 'SOURCE_MALFORMED', 'SOURCE_IDENTITY_MISMATCH',
     'SOURCE_REGRESSION', 'UNKNOWN',
+    'SOLID_HEAD_REGRESSED', 'SOLID_HEAD_CONFLICT', 'SCAN_DEADLINE',
 })
 NUMBERS = frozenset({
     'observation_id', 'heartbeat_age_ms', 'observation_age_ms', 'solid_head_age_ms',

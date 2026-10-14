@@ -29,7 +29,8 @@ ROUTES = {'head': '/walletsolidity/getnowblock', 'balance': '/walletsolidity/tri
           'receipt': '/walletsolidity/gettransactioninfobyid',
           'history': '/v1/accounts/{address}/transactions/trc20'}
 _conditions = frozenset(('CLOCK_AHEAD', 'SOLID_HEAD_STALE', 'OBSERVATION_STALE', 'HEARTBEAT_STALE',
-    'SOURCE_RUN_ERROR', 'BALANCE_UNSTABLE', 'RECONCILIATION_PENDING', 'BALANCE_DISCREPANCY'))
+    'SOURCE_RUN_ERROR', 'BALANCE_UNSTABLE', 'RECONCILIATION_PENDING', 'BALANCE_DISCREPANCY',
+    'SOLID_HEAD_REGRESSED', 'SOLID_HEAD_CONFLICT', 'SCAN_DEADLINE'))
 
 
 class _SafeHandler(logging.StreamHandler):
@@ -173,18 +174,20 @@ def validation_reason(exc):
 
 def source_health(*, now_ms, heartbeat, observed, solid_ms, max_age_seconds,
                   head_limit, observation_id, status, stable, reconciliation, healthy,
-                  run_id=None, fresh_until_ms=None):
+                  run_id=None, fresh_until_ms=None, error_code=None):
     fields = dict(heartbeat_age_ms=now_ms-heartbeat, observation_age_ms=now_ms-observed,
                   solid_head_age_ms=now_ms-solid_ms, freshness_limit_ms=head_limit*1000,
                   observation_id=observation_id, status=status, reconciliation=reconciliation,
                   run_id=run_id, fresh_until_ms=fresh_until_ms)
+    run_reason = error_code if error_code in (
+        'SOLID_HEAD_REGRESSED', 'SOLID_HEAD_CONFLICT', 'SCAN_DEADLINE') else 'SOURCE_RUN_ERROR'
     failed = []
     for condition, matched in (
         ('CLOCK_AHEAD', min(now_ms-heartbeat, now_ms-observed, now_ms-solid_ms) < 0),
         ('SOLID_HEAD_STALE', now_ms-solid_ms > head_limit*1000),
         ('OBSERVATION_STALE', now_ms-observed > max_age_seconds*1000),
         ('HEARTBEAT_STALE', now_ms-heartbeat > max_age_seconds*1000),
-        ('SOURCE_RUN_ERROR', status != 'OK'), ('BALANCE_UNSTABLE', not stable),
+        (run_reason, status != 'OK'), ('BALANCE_UNSTABLE', not stable),
         ('RECONCILIATION_PENDING', reconciliation == 'RECONCILIATION_UNVERIFIED'),
         ('BALANCE_DISCREPANCY', reconciliation == 'BALANCE_DISCREPANCY')):
         if matched:
@@ -201,7 +204,7 @@ def source_health(*, now_ms, heartbeat, observed, solid_ms, max_age_seconds,
     elif now_ms-heartbeat > max_age_seconds*1000:
         reason = 'HEARTBEAT_STALE'
     elif status != 'OK':
-        reason = 'SOURCE_RUN_ERROR'
+        reason = run_reason
     elif not stable:
         reason = 'BALANCE_UNSTABLE'
     elif reconciliation != 'SOURCE_MATCHED':
