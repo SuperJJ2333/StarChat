@@ -28,6 +28,10 @@ final class EmojiPreviewCache {
   final _flights = <String, Future<Uint8List>>{};
   final _versions = <String, int>{};
   Future<void> _queue = Future.value();
+  // Local hits must never queue behind a network miss. Bound disk probes
+  // separately; original loading and transformation retain their single lane.
+  final _reads = List<Future<void>>.generate(4, (_) => Future.value());
+  int _nextRead = 0, _epoch = 0;
   int _bytes = 0;
 
   Future<Uint8List> load(String key, Future<Uint8List> Function() original) {
@@ -40,26 +44,44 @@ final class EmojiPreviewCache {
   }
 
   Future<Uint8List> _enqueue(
-      String key, Future<Uint8List> Function() original) {
+      String key, Future<Uint8List> Function() original) async {
     final version = _versions[key] ?? 0;
-    final result = _queue.then((_) async {
-      Uint8List? bytes;
+    final epoch = _epoch;
+    bool current() => (_versions[key] ?? 0) == version && _epoch == epoch;
+    final slot = _nextRead++ % _reads.length;
+    final probe = _reads[slot].then((_) async {
       try {
-        bytes = await read?.call(key);
-      } catch (_) {/* cache miss */}
-      if (bytes == null) {
-        bytes = await transform(await original());
-        if ((_versions[key] ?? 0) == version) {
-          try {
-            await write?.call(key, bytes);
-          } catch (_) {/* memory only */}
-        }
+        return await read?.call(key);
+      } catch (_) {
+        return null;
       }
-      if ((_versions[key] ?? 0) != version) {
-        await delete?.call(key);
-        return bytes;
+    });
+    _reads[slot] = probe.then<void>((_) {});
+    try {
+      Uint8List? bytes = await probe;
+      if (!current()) throw StateError('Emoji preview invalidated');
+      if (bytes == null || bytes.isEmpty || bytes.length > maxBytes) {
+        final result = _queue.then((_) async {
+          if (!current()) throw StateError('Emoji preview invalidated');
+          final generated = await transform(await original());
+          if (current()) {
+            try {
+              await write?.call(key, generated);
+            } catch (_) {/* memory only */}
+          }
+          if (!current()) {
+            await delete?.call(key);
+            throw StateError('Emoji preview invalidated');
+          }
+          return generated;
+        });
+        _queue =
+            result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+        bytes = await result;
       }
-      if (bytes.length <= maxBytes) {
+      if (!current()) throw StateError('Emoji preview invalidated');
+      if (current() && bytes.length <= maxBytes) {
+        _bytes -= _memory.remove(key)?.length ?? 0;
         _memory[key] = bytes;
         _bytes += bytes.length;
         while (_bytes > maxBytes) {
@@ -67,14 +89,13 @@ final class EmojiPreviewCache {
         }
       }
       return bytes;
-    });
-    _queue = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
-    return result.whenComplete(() {
+    } finally {
       _flights.remove(key);
-    });
+    }
   }
 
   void clearMemory() {
+    _epoch++;
     _memory.clear();
     _bytes = 0;
   }
@@ -86,7 +107,17 @@ final class EmojiPreviewCache {
   }
 }
 
-Future<Uint8List> createEmojiPreview(Uint8List bytes) async {
+Future<void> _previewDecodes = Future<void>.value();
+
+/// All chat and vault first-frame codecs share one bounded decode lane.
+Future<Uint8List> createEmojiPreview(Uint8List bytes) {
+  final result = _previewDecodes.then((_) => _createEmojiPreview(bytes));
+  _previewDecodes =
+      result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+  return result;
+}
+
+Future<Uint8List> _createEmojiPreview(Uint8List bytes) async {
   // GIF codecs may allocate their logical canvas even when downscaling.
   validateGifForSend(bytes);
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:liuhetong_mobile/ui/chat/emoji_resource_glyph.dart';
-import 'package:liuhetong_mobile/ui/chat/emoji_text.dart';
+import 'package:liuhetong_mobile/ui/chat/shared_emoji_image.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,7 +27,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 void main() {
   // Run before any other animated glyph initializes the process-wide store.
   testWidgets(
-      'single super emoji keeps 96px neutral startup and offline vector fallback',
+      'single super emoji immediately shows 96px static vector until tap',
       (tester) async {
     final previous = PathProviderPlatform.instance;
     final paths = _PendingSupportPaths();
@@ -42,9 +42,12 @@ void main() {
     final glyph = find.byType(EmojiResourceGlyph);
     expect(tester.widget<EmojiResourceGlyph>(glyph).size, 96);
     expect(tester.getSize(glyph), const Size(96, 96));
-    expect(find.byType(SvgPicture), findsNothing);
+    expect(find.byType(SvgPicture), findsOneWidget);
     expect(find.byType(Image), findsNothing);
+    expect(find.byType(SharedEmojiImage), findsNothing);
 
+    await tester.tap(glyph);
+    await tester.pump();
     paths.pending.completeError(StateError('support directory offline'));
     await tester.pump();
     await tester.pump();
@@ -71,9 +74,9 @@ void main() {
           senderName: 'Test sender',
         ));
     expect(tester.takeException(), isNull);
-    expect(find.byType(EmojiVectorGlyph), findsNWidgets(4));
+    expect(find.byType(EmojiResourceGlyph), findsNWidgets(4));
     final rects = find
-        .byType(EmojiVectorGlyph)
+        .byType(EmojiResourceGlyph)
         .evaluate()
         .map((element) => tester.getRect(find.byWidget(element.widget)))
         .toList();
@@ -93,7 +96,7 @@ void main() {
       ),
     );
 
-    expect(find.byType(EmojiResourceGlyph), findsNothing);
+    expect(find.byType(EmojiResourceGlyph), findsNWidgets(2));
     expect(find.byType(SvgPicture), findsNWidgets(2));
     expect(find.byKey(const Key('message-avatar-slot')), findsOneWidget);
     expect(find.text('Legacy sender'), findsOneWidget);

@@ -13,7 +13,7 @@ class PendingSupportPaths extends PathProviderPlatform {
 
 void main() {
   testWidgets(
-      'default runtime startup is neutral before async paths and offline failure restores vector',
+      'default runtime startup displays vector while async paths are pending',
       (tester) async {
     final previous = PathProviderPlatform.instance;
     final paths = PendingSupportPaths();
@@ -28,7 +28,7 @@ void main() {
             child: Center(
                 child: EmojiResourceGlyph(
                     asset: 'assets/emoji/joy.webp', size: 32)))));
-    expect(find.byType(SvgPicture), findsNothing);
+    expect(find.byType(SvgPicture), findsOneWidget);
     expect(tester.getSize(find.byType(EmojiResourceGlyph)), const Size(32, 32));
     paths.pending.completeError(StateError('support directory offline'));
     await tester.pump();

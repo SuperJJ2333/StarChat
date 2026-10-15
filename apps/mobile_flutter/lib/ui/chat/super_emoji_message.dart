@@ -3,10 +3,9 @@ import 'package:flutter/cupertino.dart';
 import '../../features/emoji/fluent_emoji_catalog.dart';
 import 'wechat_message_bubble.dart';
 import 'emoji_resource_glyph.dart';
-import 'emoji_text.dart';
 import '../../core/support_identity_repository.dart';
 
-/// 超级表情消息（纯动效emoji）：复用 [WeChatMessageBubble] 的消息行布局，
+/// 超级表情消息：默认显示静态字形，点击播放；复用 [WeChatMessageBubble] 的消息行布局，
 /// 与普通消息一致地展示发送者头像与昵称/备注；表情本体保持微信式无气泡渲染。
 ///
 /// 资产为源分辨率（256px）animated WebP，8-bit 平滑 alpha；渲染尺寸不大于
@@ -80,12 +79,10 @@ final class SuperEmojiMessage extends StatelessWidget {
             for (final emoji in emojis)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: single
-                    ? EmojiResourceGlyph(
-                        asset: emoji.asset, size: singleEmojiEdge)
-                    : EmojiText(emoji.char,
-                        style:
-                            const TextStyle(fontSize: multiEmojiEdge / 1.18)),
+                child: EmojiResourceGlyph(
+                    asset: emoji.asset,
+                    size: single ? singleEmojiEdge : multiEmojiEdge,
+                    playOnTap: true),
               ),
           ],
         ),

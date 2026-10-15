@@ -6,6 +6,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
 import 'package:liuhetong_mobile/ui/chat/shared_emoji_player.dart';
 import 'package:liuhetong_mobile/ui/chat/shared_emoji_image.dart';
+import 'package:liuhetong_mobile/ui/chat/emoji_resource_glyph.dart';
+import 'package:liuhetong_mobile/features/emoji/emoji_resource_manifest.dart';
+import 'package:liuhetong_mobile/features/emoji/emoji_resource_store.dart';
+import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 
 class FakeCodec implements EmojiFrameCodec {
   FakeCodec(this.image);
@@ -86,6 +90,75 @@ class HeldSecondCodec implements EmojiFrameCodec {
 }
 
 void main() {
+  testWidgets(
+      'chat glyph does not subscribe until tap and stops on another tap',
+      (tester) async {
+    final parent = Directory(
+        '../../docs/verification/artifacts/2026-10-16/mobile-experience-2216/fixtures');
+    final directory = (await tester.runAsync(() async {
+      await parent.create(recursive: true);
+      return parent.createTemp('tap-emoji-');
+    }))!;
+    final maintenance = MaintenanceActivity();
+    final store = EmojiResourceStore(
+        directory: directory,
+        manifest: EmojiResourceManifest.parse(emojiManifestJson,
+            expectedDigest: emojiManifestDigest),
+        maintenance: maintenance);
+    await tester.runAsync(
+        () => store.accept('joy', File('assets/emoji/joy.webp').openRead()));
+    final image = await tinyImage();
+    final pool =
+        SharedEmojiPlayerPool(loader: (_, __) async => FakeCodec(image));
+    await tester.pumpWidget(MediaQuery(
+        data: const MediaQueryData(size: Size(800, 600)),
+        child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Center(
+                child: EmojiResourceGlyph(
+                    asset: 'assets/emoji/joy.webp',
+                    size: 96,
+                    playOnTap: true,
+                    store: store,
+                    pool: pool)))));
+    await tester.pump();
+    expect(pool.diagnostics['subscribers'], 0);
+    expect(find.byType(SharedEmojiImage), findsNothing);
+    await tester.tap(find.byType(EmojiResourceGlyph));
+    await tester.pump();
+    await tester.pump();
+    expect(pool.diagnostics['subscribers'], 1);
+    expect(find.byType(SharedEmojiImage), findsOneWidget);
+    await tester.tap(find.byType(EmojiResourceGlyph));
+    await tester.pump();
+    expect(pool.diagnostics['subscribers'], 0);
+    await tester.pumpWidget(const SizedBox());
+    pool.dispose();
+    image.dispose();
+    store.dispose();
+    maintenance.dispose();
+    await tester.runAsync(() => directory.delete(recursive: true));
+  });
+  testWidgets('pending codec paints fallback before any frame is ready',
+      (tester) async {
+    final pending = Completer<EmojiFrameCodec>();
+    final pool = SharedEmojiPlayerPool(loader: (_, __) => pending.future);
+    await tester.pumpWidget(MediaQuery(
+        data: const MediaQueryData(),
+        child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: SharedEmojiImage(
+                file: File('pending.webp'),
+                size: 32,
+                visible: true,
+                fallback: const Text('VISIBLE'),
+                pool: pool))));
+    expect(find.text('VISIBLE'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    pool.dispose();
+    pending.completeError(StateError('disposed pending codec'));
+    await tester.pump();
+  });
   TestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('warm subscription exposes the retained frame before visibility',
       (tester) async {

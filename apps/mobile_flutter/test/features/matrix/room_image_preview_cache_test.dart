@@ -8,8 +8,43 @@ import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/media_memory_budget.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/media_transfer_budget.dart';
+import 'package:liuhetong_mobile/features/matrix/chat_image_preview.dart';
+import '../media/media_test_fixtures.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('GIF static first frame persists and reentry does not reload original',
+      () async {
+    final disk = <String, Uint8List>{};
+    final first = RoomImagePreviewCache(
+        accountId: 'a',
+        roomId: 'gif-room',
+        read: (key) async => disk[key],
+        write: (key, value) async => disk[key] = value);
+    final gif = mediaTestGif();
+    final originalCopy = Uint8List.fromList(gif);
+    final frame = await first.load(
+        'gif:first-frame-160-v1',
+        () => loadChatImagePreview(
+            animated: true,
+            loadThumbnail: () async => null,
+            loadOriginal: () async => gif));
+    expect(frame.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(gif, originalCopy);
+    first.dispose();
+    final reopened = RoomImagePreviewCache(
+        accountId: 'a',
+        roomId: 'gif-room',
+        read: (key) async => disk[key],
+        write: (key, value) async => disk[key] = value);
+    expect(
+        await reopened.load('gif:first-frame-160-v1',
+            () async => throw StateError('offline original')),
+        frame);
+    expect(reopened.diskHits, 1);
+    expect(reopened.sourceLoads, 0);
+    reopened.dispose();
+  });
   test('prewarm skips legacy originals and bounds declared thumbnails',
       () async {
     var reads = 0;

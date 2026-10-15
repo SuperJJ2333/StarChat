@@ -47,10 +47,14 @@ final class EmojiResourceGlyph extends StatefulWidget {
       {super.key,
       required this.asset,
       required this.size,
+      this.playOnTap = false,
       this.store,
       this.pool});
   final String asset;
   final double size;
+
+  /// Picker tiles keep autoplay; message rows opt into explicit playback.
+  final bool playOnTap;
   final EmojiResourceStore? store;
   final SharedEmojiPlayerPool? pool;
   @override
@@ -61,7 +65,8 @@ final class _EmojiResourceGlyphState extends State<EmojiResourceGlyph> {
   File? _file;
   EmojiResourceStore? _boundStore;
   String? _pinned;
-  bool _visible = false, _loading = false, _localPending = false;
+  bool _visible = false, _loading = false, _playing = false;
+  bool get _animate => !widget.playOnTap || _playing;
   int _generation = 0;
   String get _id => widget.asset.split('/').last.replaceAll('.webp', '');
   FluentEmoji? get _emoji {
@@ -81,26 +86,27 @@ final class _EmojiResourceGlyphState extends State<EmojiResourceGlyph> {
   @override
   void didUpdateWidget(covariant EmojiResourceGlyph old) {
     super.didUpdateWidget(old);
-    if (old.asset != widget.asset || old.store != widget.store) {
+    if (old.asset != widget.asset ||
+        old.store != widget.store ||
+        old.playOnTap != widget.playOnTap) {
       _generation++;
       _release();
       _file = null;
-      _localPending = false;
+      _playing = false;
       _loading = false;
       _useVerified();
-      if (_visible) unawaited(_load());
+      if (_visible && _animate) unawaited(_load());
     }
   }
 
   void _useVerified() {
+    if (!_animate || _file != null) return;
     final store = widget.store ?? _readyStore;
     final file = store?.verifiedFile(_id);
     if (file == null) {
-      _localPending = store == null || store.hasLocalCandidate(_id);
-      if (_localPending) unawaited(_load());
+      if (store == null || store.hasLocalCandidate(_id)) unawaited(_load());
       return;
     }
-    _localPending = false;
     _boundStore = store;
     _pinned = _id;
     store!.pin(_id);
@@ -114,7 +120,7 @@ final class _EmojiResourceGlyphState extends State<EmojiResourceGlyph> {
   }
 
   Future<void> _load() async {
-    if (_loading || _file != null) return;
+    if (!_animate || _loading || _file != null) return;
     _loading = true;
     final generation = _generation, id = _id;
     final store = widget.store ?? await _store();
@@ -128,7 +134,6 @@ final class _EmojiResourceGlyphState extends State<EmojiResourceGlyph> {
     _loading = false;
     setState(() {
       _file = file;
-      _localPending = false;
     });
   }
 
@@ -143,30 +148,51 @@ final class _EmojiResourceGlyphState extends State<EmojiResourceGlyph> {
   Widget build(BuildContext context) {
     final emoji = _emoji;
     final vector = emoji == null ? null : vectorEmojiByChar(emoji.char);
+    final unicode = Center(
+        child: Text(emoji?.char ?? '◉',
+            style: TextStyle(fontSize: widget.size * .75)));
     final fallback = vector != null
         ? SvgPicture.asset(vector.asset,
-            width: widget.size, height: widget.size, fit: BoxFit.contain)
-        : Center(
-            child: Text(emoji?.char ?? '',
-                style: TextStyle(fontSize: widget.size * .75)));
+            width: widget.size,
+            height: widget.size,
+            fit: BoxFit.contain,
+            placeholderBuilder: (_) => unicode)
+        : unicode;
     return SizedBox(
         width: widget.size,
         height: widget.size,
         child: MediaVisibility(
           onChanged: (visible) {
             if (!mounted) return;
-            if (_visible != visible) setState(() => _visible = visible);
-            if (visible) unawaited(_load());
+            if (_visible != visible) {
+              setState(() {
+                _visible = visible;
+                if (!visible && widget.playOnTap) _playing = false;
+              });
+            }
+            if (visible && _animate) unawaited(_load());
           },
-          child: _file == null
-              ? (_localPending ? const SizedBox.expand() : fallback)
-              : SharedEmojiImage(
-                  file: _file!,
-                  size: widget.size,
-                  visible: _visible,
-                  pool: widget.pool,
-                  fallback: fallback,
-                ),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.playOnTap
+                ? () {
+                    setState(() => _playing = !_playing);
+                    if (_playing) {
+                      _useVerified();
+                      unawaited(_load());
+                    }
+                  }
+                : null,
+            child: !_animate || _file == null
+                ? fallback
+                : SharedEmojiImage(
+                    file: _file!,
+                    size: widget.size,
+                    visible: _visible,
+                    pool: widget.pool,
+                    fallback: fallback,
+                  ),
+          ),
         ));
   }
 }

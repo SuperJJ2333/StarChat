@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as crypto;
 import '../media/media_test_fixtures.dart';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,7 +7,17 @@ import 'package:liuhetong_mobile/features/matrix/emoji_vault.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_emoji_vault.dart';
 
 final class FakeMatrixEmojiVaultBackend
-    implements MatrixEmojiVaultBackend, MatrixEmojiVaultMetadataBackend {
+    implements
+        MatrixEmojiVaultBackend,
+        MatrixEmojiVaultMetadataBackend,
+        MatrixEmojiVaultRevisionBackend {
+  bool revoked = false;
+  @override
+  int get metadataRevision {
+    if (revoked) throw StateError('account session revoked');
+    return 0;
+  }
+
   String? storedRoomId;
   bool encrypted = true;
   var creates = 0;
@@ -75,6 +86,23 @@ final class FakeMatrixEmojiVaultBackend
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('cached preview cannot return after account revocation', () async {
+    final backend = FakeMatrixEmojiVaultBackend()..uploaded = mediaTestPng();
+    final session = await MatrixEmojiVault.open(backend);
+    final item = EmojiVaultItem(
+        id: 'preview',
+        sha256: crypto.sha256.convert(backend.uploaded!).toString(),
+        mimeType: 'image/png',
+        encryptedFile: const {},
+        createdAt: DateTime.utc(2026),
+        isAnimated: false);
+    await session.loadPreview(item);
+    final cached = session.loadPreview(item);
+    backend.revoked = true;
+    await expectLater(cached, throwsStateError);
+    await expectLater(session.loadPreview(item), throwsStateError);
+  });
   test('warm metadata opens offline without waiting for network history',
       () async {
     final backend = FakeMatrixEmojiVaultBackend()

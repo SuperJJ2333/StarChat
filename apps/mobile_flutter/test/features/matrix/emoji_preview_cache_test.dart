@@ -8,6 +8,46 @@ import 'package:liuhetong_mobile/features/matrix/emoji_preview_cache.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('removed disk preview cannot publish its late cached bytes', () async {
+    final disk = Completer<Uint8List?>();
+    final cache = EmojiPreviewCache(read: (_) => disk.future);
+    final pending =
+        cache.load('removed', () async => throw StateError('must not fetch'));
+    await cache.remove('removed');
+    disk.complete(Uint8List.fromList([7]));
+    await expectLater(pending, throwsStateError);
+  });
+  test('clearing memory fences pending original from repopulating disk',
+      () async {
+    final original = Completer<Uint8List>();
+    var writes = 0;
+    final cache = EmojiPreviewCache(
+        transform: (bytes) async => bytes,
+        write: (_, __) async {
+          writes++;
+        });
+    final pending = cache.load('pressure', () => original.future);
+    await Future<void>.delayed(Duration.zero);
+    cache.clearMemory();
+    original.complete(Uint8List.fromList([4]));
+    await expectLater(pending, throwsStateError);
+    expect(writes, 0);
+  });
+  test('slow original does not block a different encrypted disk hit', () async {
+    final original = Completer<Uint8List>();
+    final cache = EmojiPreviewCache(
+        read: (key) async => key == 'cached' ? Uint8List.fromList([8]) : null,
+        transform: (bytes) async => bytes);
+    final slow = cache.load('slow', () => original.future);
+    Uint8List? hit;
+    final fast = cache
+        .load('cached', () async => throw StateError('offline'))
+        .then((value) => hit = value);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(hit, [8]);
+    original.complete(Uint8List.fromList([1]));
+    await Future.wait([slow, fast]);
+  });
   test('byte budget evicts old previews while disk avoids reloading originals',
       () async {
     var loads = 0;
@@ -190,7 +230,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await cache.remove('a');
     gate.complete(Uint8List(1));
-    await load;
+    await expectLater(load, throwsStateError);
     expect(disk, isEmpty);
   });
 }

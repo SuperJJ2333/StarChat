@@ -77,6 +77,7 @@ import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
 import 'gif_image_policy.dart';
 import 'chat_image_preview.dart';
+import 'emoji_preview_cache.dart';
 import '../../ui/chat/message_scroll_locator.dart';
 import '../../ui/chat/latest_message_anchor.dart';
 import 'room_image_preview_cache.dart';
@@ -786,7 +787,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         continue;
       }
       if (message.kind == RoomMessageKind.image &&
-          (_isAnimatedImage(message) ||
+          (!_isAnimatedImage(message) &&
               _mediaHashes(message.id)?.thumbnailSha256 == null)) {
         continue;
       }
@@ -811,6 +812,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (message.kind == RoomMessageKind.image) {
         if (_cachedImagePreview(message) != null) continue;
         unawaited(prewarmDeclaredImagePreview(
+          // Animated messages probe only our derived static-frame namespace.
           hasDeclaredThumbnail: true,
           animated: false,
           readCached: (maxBytes) =>
@@ -2465,10 +2467,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   MediaCacheKey _previewKey(RoomMessageViewModel message) {
     final hashes = _mediaHashes(message.id);
-    return _mediaKey(message.id,
-        thumbnail:
-            !_isAnimatedImage(message) && hashes?.thumbnailSha256 != null);
+    return _mediaKey(message.id, thumbnail: hashes?.thumbnailSha256 != null);
   }
+
+  // Include the verified source identity so a changed event digest cannot
+  // reuse an older derived preview. Local txid seeds keep their existing IDs.
+  String _firstFramePreviewId(RoomMessageViewModel message) =>
+      '${_mediaKey(message.id).cacheId}:first-frame-160-v1';
 
   Uint8List? _cachedOriginal(RoomMessageViewModel message, Object identity) {
     _mediaPolicyFor(message)
@@ -2499,6 +2504,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Uint8List? _cachedImagePreview(RoomMessageViewModel message) {
     try {
       if (widget.roomLease.canceled) return null;
+      if (_isAnimatedImage(message)) {
+        final bytes =
+            roomImagePreviewCache.get(_firstFramePreviewId(message)) ??
+                roomImagePreviewCache.get(message.stableId) ??
+                (_mediaHashes(message.id)?.thumbnailSha256 != null
+                    ? contentMediaMemoryCache.get(_previewKey(message).cacheId)
+                    : null);
+        return bytes != null && !isGifBytes(bytes) ? bytes : null;
+      }
       if (_mediaHashes(message.id) == null) {
         return roomImagePreviewCache.get(message.stableId);
       }
@@ -2510,6 +2524,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<Uint8List?> _readCachedImagePreview(RoomMessageViewModel message,
       {int? maxBytes}) async {
+    if (_isAnimatedImage(message)) {
+      final bytes =
+          await roomImagePreviewCache.readCached(_firstFramePreviewId(message));
+      if (bytes != null) {
+        return maxBytes == null || bytes.length <= maxBytes ? bytes : null;
+      }
+      // A local-only warm probe must never decode/load the GIF original.
+      if (_mediaHashes(message.id)?.thumbnailSha256 == null) return null;
+    }
     if (_mediaHashes(message.id) == null) {
       if (maxBytes != null) return null;
       return roomImagePreviewCache.readCached(message.stableId);
@@ -2518,6 +2541,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (maxBytes != null && !key.eventId.startsWith('thumb:')) return null;
     final cached = contentMediaMemoryCache.get(key.cacheId);
     if (cached != null) {
+      if (_isAnimatedImage(message) && isGifBytes(cached)) return null;
       return maxBytes == null || cached.length <= maxBytes ? cached : null;
     }
     final file = await MediaCache.cached(
@@ -2529,6 +2553,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (file == null) return null;
     if (maxBytes != null && await file.length() > maxBytes) return null;
     final bytes = await loadMediaWithCache(key, file.readAsBytes);
+    if (_isAnimatedImage(message) && isGifBytes(bytes)) return null;
     return maxBytes == null || bytes.length <= maxBytes ? bytes : null;
   }
 
@@ -2536,6 +2561,30 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 安全不变量：闪照不得经普通预览/磁盘缓存管线加载（会在气泡与专用
     // 查看器里走独立内存缓存，见 MediaMessageAccessPolicy）。
     _mediaPolicyFor(message).assertOrdinaryMediaAllowed('imagePreview');
+    if (_isAnimatedImage(message)) {
+      return roomImagePreviewCache.load(_firstFramePreviewId(message),
+          () async {
+        final key = _previewKey(message);
+        if (_mediaHashes(message.id) != null) {
+          // Preserve the declared digest-checked thumbnail contract: a corrupt
+          // trusted thumbnail is not silently replaced by an unchecked one.
+          final bytes = key.eventId.startsWith('thumb:')
+              ? await controller!.loadThumbnail(message.id)
+              : await controller!.loadAttachment(message.id);
+          if (bytes == null) {
+            throw const FormatException('Missing declared thumbnail');
+          }
+          return createEmojiPreview(bytes);
+        }
+        return loadChatImagePreview(
+          animated: true,
+          loadThumbnail: () => controller!.loadThumbnail(message.id),
+          loadOriginal: () => imageMemoryCache.putIfAbsent(
+              _mediaKey(message.id).cacheId,
+              () => controller!.loadAttachment(message.id)),
+        );
+      });
+    }
     if (_mediaHashes(message.id) != null) {
       final key = _previewKey(message);
       if (key.eventId.startsWith('thumb:')) {

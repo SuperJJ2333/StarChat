@@ -23,7 +23,7 @@ final class SharedEmojiImage extends StatefulWidget {
 final class _SharedEmojiImageState extends State<SharedEmojiImage> {
   EmojiPlayback? _playback;
   int? _size;
-  bool _ready = false, _failed = false;
+  bool _ready = false;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -48,7 +48,6 @@ final class _SharedEmojiImageState extends State<SharedEmojiImage> {
       // Initial attachment may notify synchronously; no listener until after it.
       _playback!.setVisible(widget.visible);
       _ready = _playback!.frame != null;
-      _failed = _playback!.failed;
       _playback!.addListener(_availabilityChanged);
     } else {
       _playback!.setVisible(widget.visible);
@@ -58,11 +57,9 @@ final class _SharedEmojiImageState extends State<SharedEmojiImage> {
   void _availabilityChanged() {
     final ready = _playback?.frame != null;
     // Only availability changes rebuild fallback. Animation frames repaint.
-    final failed = _playback?.failed ?? false;
-    if (mounted && (ready != _ready || failed != _failed)) {
+    if (mounted && ready != _ready) {
       setState(() {
         _ready = ready;
-        _failed = failed;
       });
     }
   }
@@ -87,7 +84,7 @@ final class _SharedEmojiImageState extends State<SharedEmojiImage> {
         height: widget.size,
         child: RepaintBoundary(
             child: Stack(fit: StackFit.expand, children: [
-          if (!_ready && _failed) widget.fallback,
+          if (!_ready) widget.fallback,
           CustomPaint(painter: _EmojiPainter(_playback!)),
         ])),
       );

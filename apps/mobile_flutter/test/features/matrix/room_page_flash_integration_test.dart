@@ -1,5 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:crypto/crypto.dart' as crypto;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +18,8 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/media_index.dart';
+import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/video_poster_pipeline.dart';
 import 'package:liuhetong_mobile/features/matrix/video_poster_session_cache.dart';
 import 'package:liuhetong_mobile/ui/chat/flash_photo.dart';
@@ -22,6 +29,42 @@ import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
+import '../media/media_test_fixtures.dart';
+
+final _animatedThumbnail = mediaTestGif();
+final _animatedThumbnailDigest =
+    crypto.sha256.convert(_animatedThumbnail).toString();
+
+final class _PreviewPaths extends PathProviderPlatform {
+  _PreviewPaths(this.root);
+  final String root;
+  @override
+  Future<String?> getApplicationDocumentsPath() async => root;
+  @override
+  Future<String?> getApplicationSupportPath() async => root;
+}
+
+Future<T> _settleRoomPreview<T>(WidgetTester tester, Future<T> future) async {
+  var done = false;
+  T? result;
+  Object? failure;
+  future.then((value) {
+    result = value;
+    done = true;
+  }, onError: (Object error) {
+    failure = error;
+    done = true;
+  });
+  for (var i = 0; i < 100 && !done; i++) {
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump(const Duration(milliseconds: 10));
+  }
+  expect(done, isTrue,
+      reason: 'real preview work must settle while FakeAsync is advanced');
+  if (failure != null) throw failure!;
+  return result as T;
+}
 
 final class _FlashClient extends Client {
   _FlashClient(String tag) : super('room-page-flash-$tag') {
@@ -76,8 +119,10 @@ final class _FlashRoom extends Room {
     String? eventContextId,
   }) async {
     _onTimelineUpdate = onUpdate;
-    return _timeline ??=
-        _FlashTimeline(this, includeVideo: _tag.startsWith('video-'));
+    return _timeline ??= _FlashTimeline(this,
+        includeVideo: _tag.startsWith('video-'),
+        includeGif: _tag.startsWith('gif-'),
+        includeGifThumbnail: _tag == 'gif-memory');
   }
 
   @override
@@ -94,7 +139,10 @@ final class _FlashRoom extends Room {
 }
 
 final class _FlashTimeline extends Fake implements Timeline {
-  _FlashTimeline(Room room, {bool includeVideo = false})
+  _FlashTimeline(Room room,
+      {bool includeVideo = false,
+      bool includeGif = false,
+      bool includeGifThumbnail = false})
       : events = [
           Event(
             room: room,
@@ -102,9 +150,44 @@ final class _FlashTimeline extends Fake implements Timeline {
             senderId: '@peer:test',
             type: EventTypes.Message,
             originServerTs: DateTime.utc(2026, 9, 13),
-            content: const {
+            originalSource: includeGifThumbnail
+                ? MatrixEvent(
+                    type: EventTypes.Encrypted,
+                    content: const {},
+                    senderId: '@peer:test',
+                    eventId: r'$normal-before',
+                    originServerTs: DateTime.utc(2026, 9, 13))
+                : null,
+            content: {
               'msgtype': 'm.image',
-              'body': '普通图片1',
+              'body': includeGif ? 'animation.gif' : '普通图片1',
+              if (includeGif)
+                'info': {
+                  'mimetype': 'image/gif',
+                  if (includeGifThumbnail)
+                    'thumbnail_file': {
+                      'url': 'mxc://test/animated-thumbnail',
+                      'v': 'v2',
+                      'key': {
+                        'alg': 'A256CTR',
+                        'ext': true,
+                        'kty': 'oct',
+                        'key_ops': ['encrypt', 'decrypt'],
+                        'k': base64UrlEncode(List<int>.filled(32, 0))
+                            .replaceAll('=', '')
+                      },
+                      'iv': base64Encode(List<int>.filled(16, 0)),
+                      'hashes': {
+                        'sha256': base64Encode(List<int>.filled(32, 0))
+                      },
+                    },
+                },
+              if (includeGifThumbnail)
+                'chatflow_media': {
+                  'v': 1,
+                  'content_sha256': 'a' * 64,
+                  'thumbnail_sha256': _animatedThumbnailDigest,
+                },
             },
           ),
           Event(
@@ -227,6 +310,90 @@ final class _MemoryStore implements SecureKeyValueStore {
 }
 
 void main() {
+  testWidgets(
+      'GIF-format memory thumbnail is rejected locally and becomes a static room preview',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(clearMediaMemoryCaches);
+    final previousPaths = PathProviderPlatform.instance;
+    final root = (await tester.runAsync(() async {
+      final parent = Directory.fromUri(Directory.current.uri.resolve(
+          '../../docs/verification/artifacts/2026-10-16/mobile-experience-2216/fixtures/'));
+      await parent.create(recursive: true);
+      return parent.createTemp('gif-memory-');
+    }))!;
+    PathProviderPlatform.instance = _PreviewPaths(root.absolute.path);
+    final previousIndex = MediaIndex.shared;
+    final index = MediaIndex(
+        databasePath: inMemoryDatabasePath,
+        factory: databaseFactoryFfiNoIsolate);
+    MediaIndex.overrideShared(index);
+    addTearDown(() async {
+      await index.close();
+      MediaIndex.overrideShared(previousIndex);
+      PathProviderPlatform.instance = previousPaths;
+      await root.delete(recursive: true);
+    });
+    final client = _FlashClient('gif-memory');
+    final thumbnailKey = MediaCacheKey(
+        accountId: client.userID!,
+        roomId: client.room.id,
+        eventId: r'thumb:$normal-before',
+        contentSha256: _animatedThumbnailDigest);
+    await tester.runAsync(() => contentMediaMemoryCache.putAsync(
+        thumbnailKey.cacheId, _animatedThumbnail));
+    await _pumpRoom(tester, client);
+    final bubble = tester.widget<ContainImageBubble>(
+        find.byKey(const ValueKey(r'image-$normal-before')));
+    expect(bubble.initialBytes, isNull);
+    final local = await _settleRoomPreview(tester, bubble.loadCached!());
+    expect(
+        local == null || local.take(8).join(',') == '137,80,78,71,13,10,26,10',
+        isTrue,
+        reason: 'a local GIF thumbnail must not bypass first-frame generation');
+    // The original has no download descriptor: success requires reusing the
+    // trusted thumbnail already in memory, rather than fetching the original.
+    final preview = await _settleRoomPreview(tester, bubble.load());
+    expect(preview.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
+    final codec =
+        (await tester.runAsync(() => ui.instantiateImageCodec(preview)))!;
+    expect(codec.frameCount, 1);
+    codec.dispose();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+  testWidgets('GIF room reentry paints retained static first frame immediately',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(clearMediaMemoryCaches);
+    final client = _FlashClient('gif-reentry');
+    final lease = await _lease(client);
+    const eventId = r'$normal-before';
+    final info = lease.roomInfo;
+    final key = '${lease.mediaCacheKey(eventId).cacheId}:first-frame-160-v1';
+    final bytes = Uint8List.fromList(base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
+    final previousRoom = RoomImagePreviewCache.forRoomSession(
+        accountId: '${info.homeserver}|${info.currentUserId}',
+        memoryNamespace: info.currentUserId ?? '',
+        roomId: info.id);
+    previousRoom.seed(key, bytes);
+    previousRoom.dispose();
+    await _pumpRoom(tester, client);
+    await tester.pump(const Duration(milliseconds: 200));
+    final bubbles =
+        tester.widgetList<ContainImageBubble>(find.byType(ContainImageBubble));
+    expect(
+        bubbles
+            .where((bubble) => bubble.initialBytes != null)
+            .single
+            .initialBytes,
+        bytes);
+    expect(find.byType(Image), findsWidgets);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+    lease.cancel();
+  });
   testWidgets('room reentry passes retained video poster into first frame',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

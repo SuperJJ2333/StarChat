@@ -88,8 +88,13 @@ final class MatrixEmojiVault {
 
   String _previewKey(EmojiVaultItem item) =>
       '$roomId:${item.id}:${item.sha256}:160-v1';
-  Future<Uint8List> loadPreview(EmojiVaultItem item) =>
-      _previews.load(_previewKey(item), () => loadBytes(item));
+  Future<Uint8List> loadPreview(EmojiVaultItem item) async {
+    _revision;
+    final bytes =
+        await _previews.load(_previewKey(item), () => loadBytes(item));
+    _revision; // Cached hits also yield; a revoked account cannot paint them.
+    return bytes;
+  }
 
   Future<void> removeItem(String id) async {
     final matches = vault.items.where((item) => item.id == id);
