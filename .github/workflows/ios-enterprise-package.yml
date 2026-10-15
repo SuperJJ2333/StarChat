@@ -260,7 +260,7 @@ jobs:
           flutter build ios --simulator --debug --config-only --no-codesign --no-pub \
             -t integration_test/ios_timeline_storage_migration_native_test.dart \
             2>&1 | tee "$RUNNER_TEMP/simulator-evidence/config-only.log"
-      - name: Execute three real native integration targets with bounded attachment
+      - name: Execute native integration targets with bounded attachment
         timeout-minutes: 50
         working-directory: apps/mobile_flutter
         run: |
@@ -273,6 +273,7 @@ jobs:
               'integration_test/ios_timeline_storage_migration_native_test.dart',
               'integration_test/sqlcipher_readonly_native_test.dart',
               'integration_test/ios_keychain_archive_native_test.dart',
+              'integration_test/media_outbox_persistence_native_test.dart',
           ]
           for target in targets:
               for attempt in range(1, 4):
