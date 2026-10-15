@@ -209,6 +209,67 @@ final class _RoomSnapshot {
   final int memberCount;
 }
 
+/// One startup handoff of an already displayed local snapshot. This is a
+/// short-lived UI reference, never a persistence layer or an access capability.
+final class MatrixHomeHandoff extends ChangeNotifier {
+  MatrixHomeHandoff(
+      {required this.api, required this.matrix, required this.eligible})
+      : _epoch = api.sessionEpoch,
+        _owner = matrix.sendPreparationIdentity,
+        _account = matrix.userId;
+
+  final BusinessApiClient api;
+  final MatrixSdkE2eeClient matrix;
+  final bool Function() eligible;
+  final int _epoch;
+  final Object _owner;
+  final String? _account;
+  MatrixConversationSnapshot? _snapshot;
+  bool _retired = false;
+
+  bool get isCurrent =>
+      !_retired &&
+      eligible() &&
+      _account != null &&
+      matrix.isLoggedIn &&
+      matrix.userId == _account &&
+      api.sessionEpoch == _epoch &&
+      matrix.sendPreparationIdentity == _owner;
+
+  MatrixConversationSnapshot? read(
+      BusinessApiClient api, MatrixSdkE2eeClient matrix) {
+    if (!isCurrent ||
+        !identical(api, this.api) ||
+        !identical(matrix, this.matrix)) {
+      // Reading during build must not notify listeners. The session listener
+      // also retires on loss of eligibility, removing any mounted fallback.
+      _snapshot = null;
+      _retired = true;
+      return null;
+    }
+    return _snapshot;
+  }
+
+  void publish(MatrixConversationSnapshot snapshot) {
+    if (!isCurrent) {
+      retire();
+      return;
+    }
+    _snapshot = snapshot;
+  }
+
+  void invalidateIfUnavailable() {
+    if (!isCurrent) retire();
+  }
+
+  void retire() {
+    final changed = !_retired || _snapshot != null;
+    _retired = true;
+    _snapshot = null;
+    if (changed) notifyListeners();
+  }
+}
+
 class MatrixHomePage extends StatefulWidget {
   const MatrixHomePage({
     super.key,
@@ -229,6 +290,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onIdentityProjection,
     this.onConversationRowBuild,
     this.performanceTrace,
+    this.startupHandoff,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -241,6 +303,7 @@ class MatrixHomePage extends StatefulWidget {
   final ProfileRepository? identityCache;
   final bool previewOnly;
   final PerformanceTrace? performanceTrace;
+  final MatrixHomeHandoff? startupHandoff;
   final VoidCallback? onUnreadChanged;
 
   /// 房间页面的统一打开入口（AppHome 注入）。消息列表只负责等待动画、
@@ -269,6 +332,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   bool _initialFirstFrameRendered = false;
   bool _initialSnapshotSettled = false;
   bool _initialSnapshotFailed = false;
+  bool _localSnapshotFailed = false;
 
   void _finishInitialPerformanceTrace() {
     if (!_initialFirstFrameRendered || !_initialSnapshotSettled) return;
@@ -524,6 +588,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       _autoAllowGroupJoin != true ? _invites : const [];
 
   Future<void> _acceptGroupInvite(MatrixGroupInviteSnapshot room) async {
+    if (widget.previewOnly) return;
     try {
       await widget.matrix.conversations.acceptGroupInvite(room.id);
       await _processPendingGroupInvites();
@@ -544,6 +609,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   }
 
   Future<void> _declineGroupInvite(MatrixGroupInviteSnapshot room) async {
+    if (widget.previewOnly) return;
     try {
       await widget.matrix.conversations.declineGroupInvite(room.id);
       await _processPendingGroupInvites();
@@ -583,6 +649,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _ownsIdentityCache = widget.identityCache == null;
     _identityAccountId = widget.matrix.userId;
     _supportIdentities = widget.api.supportIdentities;
+    final initial = widget.startupHandoff?.read(widget.api, widget.matrix);
+    if (initial != null) _applyClientSnapshot(initial);
     conversationPreferencesChanged.addListener(_preferencesChanged);
     // BUG-20（真机回归修订）：仅当房间进入/离开草稿态时重排列表
     // （文本编辑由逐 tile 通知器处理，不重建列表）。
@@ -626,6 +694,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     ProfileRepository? restored;
     try {
       if (widget.identityCache == null && accountId != null) {
+        // Matrix already passed SessionGate's local identity checks. Optional
+        // cached remarks/avatars may arrive later; no business refresh is run.
+        unawaited(_refreshClientSnapshot());
         restored = await ProfileRepository.create(
             api: api, accountKey: 'matrix:$accountId');
         if (!current()) return;
@@ -646,7 +717,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     } finally {
       restored?.dispose();
     }
-    if (current()) await _refreshClientSnapshot();
+    if (current()) await _refreshClientSnapshot(immediate: true);
   }
 
   void _attachMatrixListeners() {
@@ -722,74 +793,90 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     widget.onUnreadChanged?.call();
   }
 
-  Future<void> _refreshClientSnapshot() async {
+  Future<void> _refreshClientSnapshot({bool immediate = false}) async {
     final ownerEpoch = _snapshotOwnerEpoch;
     final matrix = widget.matrix;
     final loader = widget.snapshotLoader ?? matrix.conversations.snapshot;
     try {
-      await _snapshotRefresh.request(loader, immediate: !_hasClientSnapshot,
-          onValue: (snapshot) {
+      await _snapshotRefresh.request(loader,
+          immediate: immediate || !_hasClientSnapshot, onValue: (snapshot) {
         if (!mounted ||
             ownerEpoch != _snapshotOwnerEpoch ||
             !identical(widget.matrix, matrix)) {
           return;
         }
-        final nextRooms = <_RoomSnapshot>[];
-        final liveRoomIds = <String>{};
-        for (final room in snapshot.rooms) {
-          liveRoomIds.add(room.id);
-          final signature = _RoomInputSignature.fromRoom(
-              room,
-              _roomTime(room),
-              _conversationUnread(room),
-              room.lastEvent == null
-                  ? null
-                  : decryptionStates
-                      .knownStateFor(room.lastEvent!.eventId)
-                      ?.state);
-          final cached = _roomProjectionCache[room.id];
-          if (cached != null && cached.signature == signature) {
-            nextRooms.add(cached.snapshot);
-          } else {
-            final projected = _snapshotRoom(room);
-            _roomProjectionCache[room.id] =
-                _RoomProjectionCacheEntry(signature, projected);
-            nextRooms.add(projected);
-            widget.onRoomProjection?.call(room.id);
-          }
+        _applyClientSnapshot(snapshot);
+        final handoff = widget.startupHandoff;
+        if (widget.previewOnly) {
+          handoff?.publish(snapshot);
+        } else {
+          // Fresh live data is authoritative; startup no longer owns a copy.
+          handoff?.retire();
         }
-        _roomProjectionCache.removeWhere((id, _) => !liveRoomIds.contains(id));
-        _conversationRows.removeWhere((id, _) => !liveRoomIds.contains(id));
-        _conversationKeys.removeWhere((id, _) => !liveRoomIds.contains(id));
-        final changed = !_hasClientSnapshot ||
-            _unresolvedRoomCount != snapshot.unresolvedRoomCount ||
-            _vaultRoomId != snapshot.vaultRoomId ||
-            _reminderRoomId != snapshot.reminderRoomId ||
-            !_sameRoomSnapshots(_rooms, nextRooms);
-        if (!changed) {
-          _markInitialSnapshotReady();
-          _scheduleIdentityRecovery();
-          return;
-        }
-        setState(() {
-          _hasClientSnapshot = true;
-          _unresolvedRoomCount = snapshot.unresolvedRoomCount;
-          _vaultRoomId = snapshot.vaultRoomId;
-          _reminderRoomId = snapshot.reminderRoomId;
-          _rooms = List.unmodifiable(nextRooms);
-        });
-        _markInitialSnapshotReady();
-        _scheduleIdentityRecovery();
-        _warmSupportIdentities(nextRooms);
       });
     } catch (_) {
-      if (!_initialSnapshotSettled && mounted) {
+      if (!mounted ||
+          ownerEpoch != _snapshotOwnerEpoch ||
+          !identical(widget.matrix, matrix)) {
+        return;
+      }
+      if (!_hasClientSnapshot) setState(() => _localSnapshotFailed = true);
+      if (!_initialSnapshotSettled) {
         _initialSnapshotSettled = true;
         _initialSnapshotFailed = true;
         _finishInitialPerformanceTrace();
       }
       // Keep cached presentation during sync/revocation.
     }
+  }
+
+  void _applyClientSnapshot(MatrixConversationSnapshot snapshot) {
+    final nextRooms = <_RoomSnapshot>[];
+    final liveRoomIds = <String>{};
+    for (final room in snapshot.rooms) {
+      liveRoomIds.add(room.id);
+      final signature = _RoomInputSignature.fromRoom(
+          room,
+          _roomTime(room),
+          _conversationUnread(room),
+          room.lastEvent == null
+              ? null
+              : decryptionStates.knownStateFor(room.lastEvent!.eventId)?.state);
+      final cached = _roomProjectionCache[room.id];
+      if (cached != null && cached.signature == signature) {
+        nextRooms.add(cached.snapshot);
+      } else {
+        final projected = _snapshotRoom(room);
+        _roomProjectionCache[room.id] =
+            _RoomProjectionCacheEntry(signature, projected);
+        nextRooms.add(projected);
+        widget.onRoomProjection?.call(room.id);
+      }
+    }
+    _roomProjectionCache.removeWhere((id, _) => !liveRoomIds.contains(id));
+    _conversationRows.removeWhere((id, _) => !liveRoomIds.contains(id));
+    _conversationKeys.removeWhere((id, _) => !liveRoomIds.contains(id));
+    final changed = !_hasClientSnapshot ||
+        _unresolvedRoomCount != snapshot.unresolvedRoomCount ||
+        _vaultRoomId != snapshot.vaultRoomId ||
+        _reminderRoomId != snapshot.reminderRoomId ||
+        !_sameRoomSnapshots(_rooms, nextRooms);
+    if (!changed) {
+      _markInitialSnapshotReady();
+      _scheduleIdentityRecovery();
+      return;
+    }
+    setState(() {
+      _hasClientSnapshot = true;
+      _localSnapshotFailed = false;
+      _unresolvedRoomCount = snapshot.unresolvedRoomCount;
+      _vaultRoomId = snapshot.vaultRoomId;
+      _reminderRoomId = snapshot.reminderRoomId;
+      _rooms = List.unmodifiable(nextRooms);
+    });
+    _markInitialSnapshotReady();
+    _scheduleIdentityRecovery();
+    _warmSupportIdentities(nextRooms);
   }
 
   Future<void> _refreshMembers() async {
@@ -966,6 +1053,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         setState(() {
           _rooms = const [];
           _hasClientSnapshot = false;
+          _localSnapshotFailed = false;
           _unresolvedRoomCount = 0;
           _roomProjectionCache.clear();
           _conversationRows.clear();
@@ -1081,30 +1169,35 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     );
   }
 
-  Future<void> _showMore() => showTopMoreMenu(context,
-      onCreateGroup: widget.onCreateGroup,
-      onAddFriend: () => Navigator.push(
-          context,
-          MotionPageRoute(
-              builder: (_) => AddFriendPage(
-                  contactActions: ContactActions(
-                    onMessage: widget.onMessage,
-                    onVoice: widget.onVoice,
-                    onVideo: widget.onVideo,
-                  ),
-                  api: widget.api,
-                  identityCache: _identityCache))),
-      onScan: () => Navigator.of(context, rootNavigator: true).push(
-          MotionPageRoute(
-              fullscreenDialog: true,
-              builder: (_) => ScanQrPage(
-                  api: widget.api,
-                  groupJoinApi: widget.api,
-                  identityCache: _identityCache,
-                  onGroupJoined: (roomId) => unawaited(
-                      _openRoomById(roomId, source: RoomOpenSource.scan))))),
-      onAppearance: () => showThemePickerSheet(context, widget.themeController),
-      appearanceKey: const Key('messages-appearance'));
+  Future<void> _showMore() async {
+    if (widget.previewOnly) return;
+    await showTopMoreMenu(context,
+        onCreateGroup: widget.onCreateGroup,
+        onAddFriend: () => Navigator.push(
+            context,
+            MotionPageRoute(
+                builder: (_) => AddFriendPage(
+                    contactActions: ContactActions(
+                      onMessage: widget.onMessage,
+                      onVoice: widget.onVoice,
+                      onVideo: widget.onVideo,
+                    ),
+                    api: widget.api,
+                    identityCache: _identityCache))),
+        onScan: () => Navigator.of(context, rootNavigator: true).push(
+            MotionPageRoute(
+                fullscreenDialog: true,
+                builder: (_) => ScanQrPage(
+                    api: widget.api,
+                    groupJoinApi: widget.api,
+                    identityCache: _identityCache,
+                    onGroupJoined: (roomId) => unawaited(
+                        _openRoomById(roomId, source: RoomOpenSource.scan))))),
+        onAppearance: () =>
+            showThemePickerSheet(context, widget.themeController),
+        appearanceKey: const Key('messages-appearance'));
+  }
+
   Future<void> _openRoomById(
     String roomId, {
     String? roomName,
@@ -1270,9 +1363,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         unreadCount: room.unread,
         muted: room.muted,
         pinnedGroup: room.preference.pinned,
-        onTap: () => _openRoom(room),
-        onLongPress: () =>
-            _conversationActions(room, _conversationAnchor(room.id)),
+        onTap: widget.previewOnly ? null : () => _openRoom(room),
+        onLongPress: widget.previewOnly
+            ? null
+            : () => _conversationActions(room, _conversationAnchor(room.id)),
       ),
     );
     _conversationRows[room.id] =
@@ -1300,6 +1394,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
 
   Future<void> _conversationActions(_RoomSnapshot snapshot,
       [Rect? anchor]) async {
+    if (widget.previewOnly) return;
     final action = await showConversationActionSheet(
       context,
       pinned: snapshot.preference.pinned,
@@ -1307,7 +1402,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       anchor: anchor,
       onAction: (_) {},
     );
-    if (!mounted || action == null) return;
+    if (!mounted || widget.previewOnly || action == null) return;
     var confirmedDelete = false;
     if (action == ConversationAction.delete) {
       confirmedDelete = await showCupertinoDialog<bool>(
@@ -1418,34 +1513,36 @@ class _MatrixHomePageState extends State<MatrixHomePage>
           CupertinoButton(
             key: const Key('messages-search'),
             padding: EdgeInsets.zero,
-            onPressed: () => Navigator.push(
-                context,
-                MotionPageRoute(
-                    builder: (_) => GlobalSearchPage(
-                          contactActions: ContactActions(
-                            onMessage: widget.onMessage,
-                            onVoice: widget.onVoice,
-                            onVideo: widget.onVideo,
-                          ),
-                          api: widget.api,
-                          matrix: widget.matrix,
-                          identityCache: _identityCache,
-                          // 房间打开复用消息列表既有的 RoomLease/RoomPage 生命周期
-                          // （含 anchor 定位），搜索页不复制一套开会话实现；
-                          // 网络姿态由 RoomOpeningPolicy 按 source=search 决定
-                          // （离线优先：本地已知的会话不再等待同步）。
-                          onOpenRoom: (room, {anchorEventId}) => _openRoomById(
-                              room.roomId,
-                              roomName: room.displayName,
-                              anchorEventId: anchorEventId,
-                              source: RoomOpenSource.search),
-                        ))),
+            onPressed: widget.previewOnly
+                ? null
+                : () => Navigator.push(
+                    context,
+                    MotionPageRoute(
+                        builder: (_) => GlobalSearchPage(
+                              contactActions: ContactActions(
+                                onMessage: widget.onMessage,
+                                onVoice: widget.onVoice,
+                                onVideo: widget.onVideo,
+                              ),
+                              api: widget.api,
+                              matrix: widget.matrix,
+                              identityCache: _identityCache,
+                              // 房间打开复用消息列表既有的 RoomLease/RoomPage 生命周期
+                              // （含 anchor 定位），搜索页不复制一套开会话实现；
+                              // 网络姿态由 RoomOpeningPolicy 按 source=search 决定
+                              // （离线优先：本地已知的会话不再等待同步）。
+                              onOpenRoom: (room, {anchorEventId}) =>
+                                  _openRoomById(room.roomId,
+                                      roomName: room.displayName,
+                                      anchorEventId: anchorEventId,
+                                      source: RoomOpenSource.search),
+                            ))),
             child: const Icon(CupertinoIcons.search, size: 22),
           ),
           CupertinoButton(
             key: const Key('messages-more'),
             padding: EdgeInsets.zero,
-            onPressed: _showMore,
+            onPressed: widget.previewOnly ? null : _showMore,
             child: const Icon(ChangliaoIcons.more, size: 22),
           ),
         ]),
@@ -1455,7 +1552,20 @@ class _MatrixHomePageState extends State<MatrixHomePage>
           final invites = _pendingInviteRooms;
           final body = rooms.isEmpty && foldedRooms.isEmpty && invites.isEmpty
               ? (!_hasClientSnapshot || _unresolvedRoomCount > 0
-                  ? const SizedBox.expand()
+                  ? Center(
+                      child: _localSnapshotFailed
+                          ? Column(mainAxisSize: MainAxisSize.min, children: [
+                              const Text('本机会话暂时无法读取'),
+                              CupertinoButton(
+                                  onPressed: () {
+                                    setState(
+                                        () => _localSnapshotFailed = false);
+                                    unawaited(_refreshClientSnapshot(
+                                        immediate: true));
+                                  },
+                                  child: const Text('重试读取')),
+                            ])
+                          : const Text('正在读取本机会话…'))
                   : const _MessagesEmptyState())
               : ListView.separated(
                   padding: EdgeInsets.zero,
@@ -1483,8 +1593,12 @@ class _MatrixHomePageState extends State<MatrixHomePage>
                         child: PendingGroupInviteTile(
                           roomId: invite.id,
                           roomName: invite.name.trim(),
-                          onAccept: () => _acceptGroupInvite(invite),
-                          onDecline: () => _declineGroupInvite(invite),
+                          onAccept: widget.previewOnly
+                              ? null
+                              : () => _acceptGroupInvite(invite),
+                          onDecline: widget.previewOnly
+                              ? null
+                              : () => _declineGroupInvite(invite),
                         ),
                       );
                     }
@@ -1501,22 +1615,24 @@ class _MatrixHomePageState extends State<MatrixHomePage>
                               context, WeChatColors.lightSurface),
                           child: Icon(CupertinoIcons.tray_full, size: 25),
                         ),
-                        onTap: () => Navigator.push<void>(
-                          context,
-                          MotionPageRoute(
-                            builder: (_) => _FoldedGroupChatsPage(
-                              hasPendingMention:
-                                  widget.matrix.hasPendingMentions,
-                              rooms: foldedRooms,
-                              avatarMedia: widget.matrix,
-                              memberAvatar: _snapshotMemberAvatar,
-                              onOpen: (room) {
-                                Navigator.pop(context);
-                                _openRoom(room);
-                              },
-                            ),
-                          ),
-                        ),
+                        onTap: widget.previewOnly
+                            ? null
+                            : () => Navigator.push<void>(
+                                  context,
+                                  MotionPageRoute(
+                                    builder: (_) => _FoldedGroupChatsPage(
+                                      hasPendingMention:
+                                          widget.matrix.hasPendingMentions,
+                                      rooms: foldedRooms,
+                                      avatarMedia: widget.matrix,
+                                      memberAvatar: _snapshotMemberAvatar,
+                                      onOpen: (room) {
+                                        Navigator.pop(context);
+                                        _openRoom(room);
+                                      },
+                                    ),
+                                  ),
+                                ),
                       );
                     }
                     var roomIndex = adjustedIndex;

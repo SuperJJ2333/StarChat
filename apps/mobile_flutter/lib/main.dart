@@ -254,34 +254,50 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         }
       },
     );
+    MatrixHomeHandoff? startupHandoff;
+    MatrixHomeHandoff? currentStartupHandoff() {
+      if (!session.canShowCachedMessages) {
+        startupHandoff?.retire();
+        return null;
+      }
+      if (startupHandoff?.isCurrent != true) {
+        startupHandoff = MatrixHomeHandoff(
+            api: api,
+            matrix: matrix,
+            eligible: () => session.canShowCachedMessages);
+      }
+      return startupHandoff;
+    }
+
+    session.addListener(() => startupHandoff?.invalidateIfUnavailable());
     final gate = SessionGate(
       controller: session,
-      cachedMessagesBuilder: (_) => CupertinoTabScaffold(
-        tabBar: CupertinoTabBar(
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(ChangliaoIcons.messagesFilled),
-              label: '消息',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(ChangliaoIcons.contacts),
-              label: '通讯录',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(ChangliaoIcons.discover),
-              label: '发现',
-            ),
-            BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
-          ],
-        ),
-        tabBuilder: (_, index) => MatrixHomePage(
+      cachedMessagesBuilder: (_) => Column(children: [
+        Expanded(
+            child: MatrixHomePage(
           api: api,
           matrix: matrix,
           themeController: themeController,
           onCreateGroup: () {},
           previewOnly: true,
-        ),
-      ),
+          startupHandoff: currentStartupHandoff(),
+        )),
+        // A fixed tab shell preserves the familiar layout without exposing
+        // navigation or creating four independent previews during restoration.
+        ExcludeSemantics(
+            child: IgnorePointer(
+                child: CupertinoTabBar(
+          items: const [
+            BottomNavigationBarItem(
+                icon: Icon(ChangliaoIcons.messagesFilled), label: '消息'),
+            BottomNavigationBarItem(
+                icon: Icon(ChangliaoIcons.contacts), label: '通讯录'),
+            BottomNavigationBarItem(
+                icon: Icon(ChangliaoIcons.discover), label: '发现'),
+            BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
+          ],
+        ))),
+      ]),
       unauthenticatedBuilder: (_) => AuthenticationFlow(
         api: api,
         onLogin: login.login,
@@ -307,6 +323,8 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
           spool: diagnosticsSpool,
           spoolScope: api.diagnosticSpoolScope,
           child: AppHome(
+            key: ValueKey((matrix, api.sessionEpoch)),
+            startupHandoff: currentStartupHandoff(),
             api: api,
             matrix: matrix,
             onLogout: () async {

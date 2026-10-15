@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
@@ -78,6 +80,37 @@ void main() {
             ],
           ));
     }
+  });
+
+  testWidgets('ready Matrix cache paints before optional profile storage',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.chatListLoad);
+    await tester
+        .pumpWidget(_home(api, _matrix('alice'), performanceTrace: trace));
+    await tester.pump();
+    await tester.pump();
+    expect(paths.released, isFalse);
+    expect(records, hasLength(1));
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.cacheLoadStarted,
+          PerformanceStage.cacheLoadDone,
+          PerformanceStage.contentReady,
+        ]));
+    expect(find.text('Public peer'), findsOneWidget);
+    expect(requests, isEmpty);
+    paths.release();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(find.text('Cached alice remark'), findsOneWidget);
+    expect(requests, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets(
@@ -214,6 +247,7 @@ void main() {
 
 Widget _home(BusinessApiClient api, MatrixSdkE2eeClient matrix,
         {ProfileRepository? identities,
+        PerformanceTrace? performanceTrace,
         Future<MatrixConversationSnapshot> Function()? snapshotLoader}) =>
     CupertinoApp(
       home: MatrixHomePage(
@@ -223,6 +257,7 @@ Widget _home(BusinessApiClient api, MatrixSdkE2eeClient matrix,
         onCreateGroup: () {},
         previewOnly: true,
         identityCache: identities,
+        performanceTrace: performanceTrace,
         snapshotLoader: snapshotLoader ??
             () async => MatrixConversationSnapshot(
                     vaultRoomId: null,

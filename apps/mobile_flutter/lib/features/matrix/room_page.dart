@@ -1521,7 +1521,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           controller?.scheduleRefresh();
         },
       );
-      if (!mounted) {
+      if (!mounted || _disposing || widget.roomLease.canceled) {
         timeline.dispose();
         return;
       }
@@ -1570,7 +1570,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
       final revisionBeforeInitialRefresh = _timelineRevision.value;
       await controller!.refresh();
-      if (!mounted || _disposing) return;
+      if (!mounted || _disposing || widget.roomLease.canceled) return;
       // The constructor already owns its initial snapshot. An unchanged first
       // refresh need not publish, but the page must replace its empty subtree.
       if (_timelineRevision.value == revisionBeforeInitialRefresh) {
@@ -1598,10 +1598,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         _prefetchHistory();
       });
     } catch (_) {
+      if (!mounted || _disposing || widget.roomLease.canceled) return;
       widget.performanceTrace?.finish(result: PerformanceResult.failed);
       if (mounted) {
         setState(() {
-          errorMessage = '会话加载失败，请检查网络后重试';
+          errorMessage = '本机消息暂时无法读取';
         });
       }
       return;
@@ -6321,9 +6322,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       behavior: HitTestBehavior.translucent,
       onTap: _dismissComposerExtensions,
       child: errorMessage != null
-          ? Center(child: Text(errorMessage!))
+          ? Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(errorMessage!),
+              if (controller == null && !widget.roomLease.canceled)
+                CupertinoButton(
+                    onPressed: () {
+                      if (_disposing ||
+                          widget.roomLease.canceled ||
+                          errorMessage == null) {
+                        return;
+                      }
+                      setState(() => errorMessage = null);
+                      unawaited(_trackMatrixOperation(_load()));
+                    },
+                    child: const Text('重试读取')),
+            ]))
           : messages.isEmpty
-              ? const SizedBox.expand()
+              ? Center(child: Text(controller == null ? '正在读取本机消息…' : '暂无消息'))
               : NotificationListener<ScrollNotification>(
                   onNotification: _onTimelineScrollNotification,
                   child: AnchoredTimelineList(

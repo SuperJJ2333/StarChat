@@ -99,6 +99,7 @@ class _LifecycleRoom extends Room {
               })));
   void Function()? update;
   Timeline? realTimeline;
+  Completer<Timeline>? heldTimeline;
   bool direct = true;
   Future<Event?>? pendingAnnouncement;
   @override
@@ -120,7 +121,9 @@ class _LifecycleRoom extends Room {
     String? eventContextId,
   }) async {
     update = onUpdate;
-    return realTimeline ?? timeline;
+    return heldTimeline == null
+        ? realTimeline ?? timeline
+        : await heldTimeline!.future;
   }
 }
 
@@ -201,6 +204,66 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+
+  testWidgets(
+      'pending local history explains wait then paints bounded recent rows',
+      (tester) async {
+    final client = _LifecycleClient();
+    client.localRoom.heldTimeline = Completer<Timeline>();
+    final lease = await _mountLifecycleRoom(tester, client);
+    expect(find.text('正在读取本机消息…'), findsOneWidget);
+    client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final page = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(page.controller.messages.length, 40);
+    expect(find.text('正在读取本机消息…'), findsNothing);
+    expect(find.textContaining('row 1199'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retired lease cannot publish pending local timeline',
+      (tester) async {
+    final client = _RetiredMentionClient();
+    client.localRoom.heldTimeline = Completer<Timeline>();
+    final lease = await _mountLifecycleRoom(tester, client);
+    unawaited(lease.cancel());
+    client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final page = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(page.controller, isNull);
+    expect(page.errorMessage, isNull);
+    expect(find.textContaining('row 1199'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('failed initial history can retry without reopening the room',
+      (tester) async {
+    final client = _LifecycleClient();
+    client.localRoom.heldTimeline = Completer<Timeline>();
+    final lease = await _mountLifecycleRoom(tester, client);
+    client.localRoom.heldTimeline!
+        .completeError(StateError('local read failed'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('本机消息暂时无法读取'), findsOneWidget);
+    client.localRoom.heldTimeline = null;
+    await tester.tap(find.text('重试读取'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('row 1199'), findsOneWidget);
+    expect(find.text('本机消息暂时无法读取'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('deferred mention bootstrap retries after a timeline update',
       (tester) async {

@@ -85,7 +85,8 @@ import 'features/matrix/direct_room_coordination_storage.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/app_resume_performance_observer.dart';
 import 'features/matrix/matrix_sync_recovery_controller.dart';
-import 'features/matrix/matrix_home_page.dart' show MatrixHomePage;
+import 'features/matrix/matrix_home_page.dart'
+    show MatrixHomePage, MatrixHomeHandoff;
 import 'features/matrix/room_page.dart';
 import 'features/matrix/room_route_frame_probe.dart';
 import 'features/matrix/pending_conversation_page.dart';
@@ -204,6 +205,7 @@ final class AppHome extends StatefulWidget {
     this.profileRepositoryFactory,
     this.syncWatchdogFactory,
     this.localFrameRecorder,
+    this.startupHandoff,
   });
 
   final BusinessApiClient api;
@@ -218,6 +220,7 @@ final class AppHome extends StatefulWidget {
   final MatrixSyncWatchdog Function(SyncWatchdogTarget target)?
       syncWatchdogFactory;
   final PerformanceTraceRecorder? localFrameRecorder;
+  final MatrixHomeHandoff? startupHandoff;
 
   @override
   State<AppHome> createState() => _AppHomeState();
@@ -2931,6 +2934,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _closeHomeResources() async {
     if (!_matrixReady) return;
     _matrixReady = false;
+    widget.startupHandoff?.retire();
+    if (mounted && !_disposed) setState(() {});
     Future<void> stop(FutureOr<void> Function() operation) async {
       try {
         await operation();
@@ -3117,6 +3122,45 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
+  Widget _buildMessagesTab() {
+    if (!_matrixReady) {
+      final handoff = widget.startupHandoff;
+      if (handoff?.read(widget.api, widget.matrix) != null) {
+        return MatrixHomePage(
+          key: const ValueKey('home-cached-messages'),
+          api: widget.api,
+          matrix: widget.matrix,
+          themeController: widget.themeController,
+          onCreateGroup: () {},
+          previewOnly: true,
+          identityCache: _chatIdentityCache,
+          startupHandoff: handoff,
+        );
+      }
+      return const _HomeWarmupPane(
+          key: ValueKey('home-matrix-warmup'), message: '正在连接，稍候即可查看消息');
+    }
+    // Separate live identity guarantees all live initState subscriptions and
+    // background work start, even when the fallback was visible before attach.
+    return MatrixHomePage(
+      key: const ValueKey('home-live-messages'),
+      startupHandoff: widget.startupHandoff,
+      api: widget.api,
+      matrix: widget.matrix,
+      themeController: widget.themeController,
+      onCreateGroup: _createGroupChat,
+      onMessage: _openMessage,
+      onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+      onVideo: (contact) => _openCall(contact, CallMediaType.video),
+      reminderService: reminderService,
+      identityCache: _chatIdentityCache,
+      onUnreadChanged: () => unawaited(_refreshUnreadCount()),
+      // 消息列表不再自建 RoomLease/RoomPage：统一交给
+      // AppHome 的房间导航协调器（同一 roomId 只有一个页面）。
+      onOpenRoom: _openManagedRoomRequest,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Stack(
         children: [
@@ -3169,28 +3213,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             ),
             tabBuilder: (_, index) => CupertinoTabView(
               builder: (_) => switch (index) {
-                0 => !_matrixReady
-                    ? const _HomeWarmupPane(
-                        key: ValueKey('home-matrix-warmup'),
-                        message: '正在连接，稍候即可查看消息',
-                      )
-                    : MatrixHomePage(
-                        api: widget.api,
-                        matrix: widget.matrix,
-                        themeController: widget.themeController,
-                        onCreateGroup: _createGroupChat,
-                        onMessage: _openMessage,
-                        onVoice: (contact) =>
-                            _openCall(contact, CallMediaType.audio),
-                        onVideo: (contact) =>
-                            _openCall(contact, CallMediaType.video),
-                        reminderService: reminderService,
-                        identityCache: _chatIdentityCache,
-                        onUnreadChanged: () => unawaited(_refreshUnreadCount()),
-                        // 消息列表不再自建 RoomLease/RoomPage：统一交给
-                        // AppHome 的房间导航协调器（同一 roomId 只有一个页面）。
-                        onOpenRoom: _openManagedRoomRequest,
-                      ),
+                0 => widget.startupHandoff == null
+                    ? _buildMessagesTab()
+                    : ListenableBuilder(
+                        listenable: widget.startupHandoff!,
+                        builder: (_, __) => _buildMessagesTab()),
                 1 => _chatIdentityCache == null
                     ? const _HomeWarmupPane(
                         key: ValueKey('home-contacts-warmup'),

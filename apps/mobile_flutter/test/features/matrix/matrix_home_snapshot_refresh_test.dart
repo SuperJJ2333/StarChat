@@ -17,19 +17,103 @@ import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_snapshot_refresh_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
+import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('preview disables search more and conversation actions',
+      (tester) async {
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(
+        matrix: matrix, snapshotLoader: () async => _snapshot('preview-safe')));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const Key('messages-search')))
+            .onPressed,
+        isNull);
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const Key('messages-more')))
+            .onPressed,
+        isNull);
+    final row = tester.widget<ConversationListTile>(
+        find.byKey(const ValueKey<String>('conversation-!preview-safe:test')));
+    expect(row.onTap, isNull);
+    expect(row.onLongPress, isNull);
+    await tester.longPress(find.text('preview-safe'));
+    await tester.pump();
+    expect(find.text('删除该聊天'), findsNothing);
+    expect(find.text('置顶聊天'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('preview folded groups cannot navigate to an actionable route',
+      (tester) async {
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        snapshotLoader: () async => _snapshot('folded', folded: true)));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<ConversationListTile>(
+                find.byKey(const Key('folded-group-chats')))
+            .onTap,
+        isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('held initial local snapshot has meaningful loading content',
+      (tester) async {
+    final held = Completer<MatrixConversationSnapshot>();
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    await tester
+        .pumpWidget(_home(matrix: matrix, snapshotLoader: () => held.future));
+    await tester.pump();
+    expect(find.text('正在读取本机会话…'), findsOneWidget);
+    held.complete(_snapshot('local-ready'));
+    await tester.pumpAndSettle();
+    expect(find.text('local-ready'), findsOneWidget);
+    expect(find.text('正在读取本机会话…'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('failed local snapshot offers a local-only retry',
+      (tester) async {
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    var reads = 0;
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        snapshotLoader: () async {
+          if (++reads == 1) throw StateError('synthetic local read failed');
+          return _snapshot('retry-ready');
+        }));
+    await tester.pumpAndSettle();
+    expect(find.text('本机会话暂时无法读取'), findsOneWidget);
+    await tester.tap(find.text('重试读取'));
+    await tester.pumpAndSettle();
+    expect(find.text('retry-ready'), findsOneWidget);
+    expect(reads, 2);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('local cached preview repair refreshes rows without remote sync',
       (tester) async {
     final client = _NoNetworkClient();
     final matrix = MatrixSdkE2eeClient(client,
         homeserver: Uri.parse('https://matrix.example'));
     var loads = 0;
-    await tester.pumpWidget(_home(matrix: matrix, previewOnly: false,
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        previewOnly: false,
         snapshotLoader: () async => _snapshot('local${++loads}')));
     await tester.pumpAndSettle();
     final before = loads;
@@ -44,7 +128,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 40));
     expect(afterRepair, before + 1,
         reason: 'local preview repair must refresh cached list independently');
-    expect(loads, afterRepair, reason: 'retired page must ignore local updates');
+    expect(loads, afterRepair,
+        reason: 'retired page must ignore local updates');
     expect(tester.takeException(), isNull);
   });
   testWidgets('real push and pop animations defer nonurgent home snapshots',
@@ -485,7 +570,8 @@ Future<BusinessApiClient> _supportApi() async {
           headers: const {'content-type': 'application/json; charset=utf-8'})));
 }
 
-MatrixConversationSnapshot _snapshot(String id) => MatrixConversationSnapshot(
+MatrixConversationSnapshot _snapshot(String id, {bool folded = false}) =>
+    MatrixConversationSnapshot(
       vaultRoomId: null,
       reminderRoomId: null,
       rooms: [
@@ -497,7 +583,7 @@ MatrixConversationSnapshot _snapshot(String id) => MatrixConversationSnapshot(
           directPeerId: null,
           members: const [],
           lastEvent: null,
-          preference: const ConversationPreference(),
+          preference: ConversationPreference(muted: folded, folded: folded),
           notificationCount: 0,
           notificationsEnabled: true,
           name: id,

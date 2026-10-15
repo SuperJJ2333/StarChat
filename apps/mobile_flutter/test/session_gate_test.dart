@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
@@ -63,7 +64,83 @@ Widget appFor(SessionBootstrapController controller,
       ),
     );
 
+final class _HeldGateBusiness extends GateBusiness {
+  _HeldGateBusiness() : super(BusinessSessionRestore.authenticated);
+  final release = Completer<BusinessSessionRestore>();
+  @override
+  Future<BusinessSessionRestore> restoreSession() => release.future;
+}
+
 void main() {
+  testWidgets('eligible cached list scrolls while remote restore is pending',
+      (tester) async {
+    final business = _HeldGateBusiness();
+    final controller = SessionBootstrapController(
+        business: business, matrix: GateMatrix(true));
+    addTearDown(controller.dispose);
+    final restoring = controller.bootstrap();
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    await tester.pumpWidget(CupertinoApp(
+        home: SessionGate(
+      controller: controller,
+      cachedMessagesBuilder: (_) => ListView.builder(
+          controller: scroll,
+          itemCount: 60,
+          itemExtent: 70,
+          itemBuilder: (_, i) => Text('cached $i')),
+      unauthenticatedBuilder: (_) => const Text('LOGIN'),
+      authenticatedBuilder: (_) => const Text('HOME'),
+    )));
+    await tester.pump();
+    expect(controller.canShowCachedMessages, isTrue);
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(scroll.offset, greaterThan(100));
+    business.release.complete(BusinessSessionRestore.absent);
+    await restoring;
+    await tester.pump();
+    expect(find.text('cached 0', skipOffstage: false), findsNothing,
+        reason: 'revocation must remove the cached tree in this frame');
+    expect(find.byType(ListView, skipOffstage: false), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('revocation removes the cached subtree without a fade-out frame',
+      (tester) async {
+    final business = _HeldGateBusiness();
+    final controller = SessionBootstrapController(
+        business: business, matrix: GateMatrix(true));
+    addTearDown(controller.dispose);
+    final restoring = controller.bootstrap();
+    await tester.pumpWidget(CupertinoApp(
+        home: SessionGate(
+      controller: controller,
+      cachedMessagesBuilder: (_) => const Text('PRIVATE CACHE'),
+      unauthenticatedBuilder: (_) => const Text('LOGIN'),
+      authenticatedBuilder: (_) => const Text('HOME'),
+    )));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('PRIVATE CACHE'), findsOneWidget);
+    business.release.complete(BusinessSessionRestore.absent);
+    await restoring;
+    await tester.pump();
+    expect(find.text('PRIVATE CACHE', skipOffstage: false), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('session startup without eligible cache explains local wait',
+      (tester) async {
+    final controller = SessionBootstrapController(
+        business: GateBusiness(BusinessSessionRestore.absent),
+        matrix: GateMatrix(false));
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(appFor(controller));
+    expect(find.text('正在恢复本机会话…'), findsOneWidget);
+    expect(find.text('HOME'), findsNothing);
+  });
+
   testWidgets('retained identity recovery requires a visible confirmation',
       (tester) async {
     final matrix = GateMatrix(false);

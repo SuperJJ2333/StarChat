@@ -17,6 +17,9 @@ final class SessionGate extends StatefulWidget {
   final SessionBootstrapController controller;
   final WidgetBuilder unauthenticatedBuilder;
   final WidgetBuilder authenticatedBuilder;
+
+  /// This builder must expose only local, read-only presentation. Scrolling is
+  /// allowed while the controller's existing identity eligibility is true.
   final WidgetBuilder? cachedMessagesBuilder;
   final Future<void> Function()? onConfirmNewDeviceRecovery;
 
@@ -150,101 +153,99 @@ final class _SessionGateState extends State<SessionGate>
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      child: switch (state.status) {
-        SessionBootstrapStatus.loading =>
-          widget.controller.canShowCachedMessages &&
-                  widget.cachedMessagesBuilder != null
-              ? IgnorePointer(child: widget.cachedMessagesBuilder!(context))
-              : const _SessionLoadingPage(),
-        SessionBootstrapStatus.authenticated => _AuthenticatedLayer(
-            offline: false,
-            onRetry: widget.controller.bootstrap,
-            child: widget.authenticatedBuilder(context),
-          ),
-        SessionBootstrapStatus.offlineAuthenticated => _AuthenticatedLayer(
-            offline: true,
-            onRetry: widget.controller.bootstrap,
-            child: widget.authenticatedBuilder(context),
-          ),
-        SessionBootstrapStatus.unauthenticated =>
-          widget.unauthenticatedBuilder(context),
-        SessionBootstrapStatus.recoveryRequired => CupertinoPageScaffold(
-            navigationBar: const CupertinoNavigationBar(middle: Text('恢复聊天身份')),
-            child: SafeArea(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(CupertinoIcons.lock_shield, size: 42),
-                      const SizedBox(height: 16),
-                      const Text('本机聊天身份无法验证', textAlign: TextAlign.center),
-                      const SizedBox(height: 12),
-                      const Text('旧聊天数据将保留', textAlign: TextAlign.center),
-                      const SizedBox(height: 8),
-                      const Text('建立新设备后，部分旧消息可能无法解密；其他设备可能因单设备登录规则退出。',
-                          textAlign: TextAlign.center),
-                      if (_recoveryError != null) ...[
-                        const SizedBox(height: 12),
-                        Text(_recoveryError!, textAlign: TextAlign.center),
-                      ],
-                      const SizedBox(height: 20),
-                      if (_recoveryDeferred) ...[
-                        const Text('旧数据已保留，您可以稍后继续恢复。'),
-                        CupertinoButton(
-                          onPressed: () =>
-                              setState(() => _recoveryDeferred = false),
-                          child: const Text('继续恢复'),
-                        ),
-                      ] else ...[
-                        if (widget.onConfirmNewDeviceRecovery != null)
-                          CupertinoButton.filled(
-                            onPressed: _recoveryBusy
-                                ? null
-                                : _confirmNewDeviceRecovery,
-                            child: const Text('保留旧库并建立新设备'),
-                          ),
-                        CupertinoButton(
-                          onPressed: _recoveryBusy
-                              ? null
-                              : () => setState(() => _recoveryDeferred = true),
-                          child: const Text('暂不恢复'),
-                        ),
-                      ],
-                      CupertinoButton(
-                        onPressed:
-                            _recoveryBusy ? null : widget.controller.bootstrap,
-                        child: const Text('重试原身份'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        SessionBootstrapStatus.fatalError => CupertinoPageScaffold(
-            child: SafeArea(
-              child: Center(
+    // Authentication boundaries replace the old subtree immediately. A fading
+    // outgoing account view must not remain visible or actionable after revoke.
+    return switch (state.status) {
+      SessionBootstrapStatus.loading =>
+        widget.controller.canShowCachedMessages &&
+                widget.cachedMessagesBuilder != null
+            ? widget.cachedMessagesBuilder!(context)
+            : const _SessionLoadingPage(),
+      SessionBootstrapStatus.authenticated => _AuthenticatedLayer(
+          offline: false,
+          onRetry: widget.controller.bootstrap,
+          child: widget.authenticatedBuilder(context),
+        ),
+      SessionBootstrapStatus.offlineAuthenticated => _AuthenticatedLayer(
+          offline: true,
+          onRetry: widget.controller.bootstrap,
+          child: widget.authenticatedBuilder(context),
+        ),
+      SessionBootstrapStatus.unauthenticated =>
+        widget.unauthenticatedBuilder(context),
+      SessionBootstrapStatus.recoveryRequired => CupertinoPageScaffold(
+          navigationBar: const CupertinoNavigationBar(middle: Text('恢复聊天身份')),
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(state.message ?? '无法恢复登录状态'),
+                    const Icon(CupertinoIcons.lock_shield, size: 42),
+                    const SizedBox(height: 16),
+                    const Text('本机聊天身份无法验证', textAlign: TextAlign.center),
                     const SizedBox(height: 12),
-                    ModernActionButton(
-                      icon: CupertinoIcons.refresh,
-                      label: '重试',
-                      onPressed: widget.controller.bootstrap,
+                    const Text('旧聊天数据将保留', textAlign: TextAlign.center),
+                    const SizedBox(height: 8),
+                    const Text('建立新设备后，部分旧消息可能无法解密；其他设备可能因单设备登录规则退出。',
+                        textAlign: TextAlign.center),
+                    if (_recoveryError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(_recoveryError!, textAlign: TextAlign.center),
+                    ],
+                    const SizedBox(height: 20),
+                    if (_recoveryDeferred) ...[
+                      const Text('旧数据已保留，您可以稍后继续恢复。'),
+                      CupertinoButton(
+                        onPressed: () =>
+                            setState(() => _recoveryDeferred = false),
+                        child: const Text('继续恢复'),
+                      ),
+                    ] else ...[
+                      if (widget.onConfirmNewDeviceRecovery != null)
+                        CupertinoButton.filled(
+                          onPressed:
+                              _recoveryBusy ? null : _confirmNewDeviceRecovery,
+                          child: const Text('保留旧库并建立新设备'),
+                        ),
+                      CupertinoButton(
+                        onPressed: _recoveryBusy
+                            ? null
+                            : () => setState(() => _recoveryDeferred = true),
+                        child: const Text('暂不恢复'),
+                      ),
+                    ],
+                    CupertinoButton(
+                      onPressed:
+                          _recoveryBusy ? null : widget.controller.bootstrap,
+                      child: const Text('重试原身份'),
                     ),
                   ],
                 ),
               ),
             ),
           ),
-      },
-    );
+        ),
+      SessionBootstrapStatus.fatalError => CupertinoPageScaffold(
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(state.message ?? '无法恢复登录状态'),
+                  const SizedBox(height: 12),
+                  ModernActionButton(
+                    icon: CupertinoIcons.refresh,
+                    label: '重试',
+                    onPressed: widget.controller.bootstrap,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+    };
   }
 }
 
@@ -288,7 +289,7 @@ final class _SessionLoadingPage extends StatelessWidget {
   Widget build(BuildContext context) => const CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(middle: Text('消息')),
         child: SafeArea(
-          child: SizedBox.expand(),
+          child: Center(child: Text('正在恢复本机会话…')),
         ),
       );
 }
