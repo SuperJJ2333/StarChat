@@ -37,6 +37,9 @@ test('local outgoing preview survives failure/retry and one ACK maps the same ro
   assert.ok(spinner);
   assert.equal(spinner.hidden,false);
   click(root,'fail'); assert.ok(control(root,'retry'));
+  const card=walk(root).find(node=>node.tagName==='figure');
+  assert.ok(control(card,'retry'),'retry belongs to its message row');
+  assert.ok(control(card,'cancel'),'cancel belongs to its message row');
   assert.equal(spinner.hidden,true);
   click(root,'retry'); assert.equal(root.dataset.transactionId,identity);
   assert.equal(spinner.hidden,false);

@@ -12,10 +12,10 @@ export function mobileExperienceDemo(definition) {
   const status=element('p','p-mobile-experience__status');
   status.setAttribute('role','status');
   const actions=element('div','p-mobile-experience__actions');
-  const action=(id,label,callback)=>{
+  const action=(id,label,callback,container=actions)=>{
     const node=button('p-mobile-experience__action',label);
     node.textContent=label; node.dataset.control=id;
-    node.addEventListener('click',callback); actions.append(node);
+    node.addEventListener('click',callback); container.append(node);
   };
   root.append(content,status,actions);
   if (definition.state==='notification-permission') {
@@ -58,20 +58,22 @@ export function mobileExperienceDemo(definition) {
     preview.setAttribute('alt','已选视频的本地首帧');
     const spinner=element('span','p-mobile-experience__spinner');
     spinner.dataset.control='progress'; spinner.setAttribute('aria-hidden','true');
-    const progress=element('figcaption'); card.append(preview,spinner,progress); content.append(card);
+    const progress=element('figcaption');
+    const rowActions=element('div','p-mobile-experience__actions');
+    card.append(preview,spinner,progress,rowActions); content.append(card);
     const draw=phase=>{
-      root.dataset.phase=phase; actions.replaceChildren();
+      root.dataset.phase=phase; actions.replaceChildren(); rowActions.replaceChildren();
       const labels={preparing:'正在准备视频…',uploading:'正在发送 · 48%',failed:'发送失败',sent:'已发送',cancelled:'已取消'};
       progress.textContent=labels[phase];
       spinner.hidden=!['preparing','uploading'].includes(phase);
       card.setAttribute('aria-busy',String(['preparing','uploading'].includes(phase)));
       status.textContent=phase==='failed'?'预览已保留，可以重试或取消。':'';
-      if (phase==='failed') action('retry','重试',()=>draw('uploading'));
+      if (phase==='failed') action('retry','重试',()=>draw('uploading'),rowActions);
       if (['preparing','uploading'].includes(phase)) {
         action('complete','模拟上传与确认完成',()=>draw('sent'));
         action('fail','模拟网络中断',()=>draw('failed'));
       }
-      if (!['sent','cancelled'].includes(phase)) action('cancel','取消发送',()=>draw('cancelled'));
+      if (!['sent','cancelled'].includes(phase)) action('cancel','取消发送',()=>draw('cancelled'),rowActions);
     };
     draw('preparing'); return root;
   }
