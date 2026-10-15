@@ -13,3 +13,8 @@ def test_unsigned_pipeline_uses_current_source_version_at_every_handoff_boundary
     assert workflow.count(f"ChatFlow-{version}-build{build}-unsigned") == 4
     assert "--no-codesign" in workflow
     assert "altool --upload-app" not in workflow
+
+def test_unsigned_handoff_runs_production_ios_notification_bridge():
+    workflow = (ROOT / '.github/workflows/ios-enterprise-package.yml').read_text(encoding='utf-8')
+    simulator = workflow.split('  simulator:',1)[1]
+    assert 'integration_test/ios_conversation_notification_native_test.dart' in simulator

@@ -269,6 +269,7 @@ jobs:
           import json, os, pathlib, signal, subprocess, sys, time
           folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'simulator-evidence'
           targets = [
+              'integration_test/ios_conversation_notification_native_test.dart',
               'integration_test/ios_timeline_storage_migration_native_test.dart',
               'integration_test/sqlcipher_readonly_native_test.dart',
               'integration_test/ios_keychain_archive_native_test.dart',
