@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-15 iOS0.4.46+2215待签名IPA已构建
+
+候选a24e40cb/CI38735034870两job成功；21原生测试/2权限hook通过，59包装专项通过，共享移动证据按输入一致复用。完整arm64 IPA34966220B，SHA137e4477…2713d7，本地验包及Downloads/primary delivery副本一致。用户确认沿用HY9Q7Q35S5/com.liuhetong.liuhetongMobile生产推送身份，生产Sygnal配置及11隔离契约通过；真实APNs到达、最终回签权益和旧数据覆盖升级待验，未发布。见[任务](tasks/2026-10-15-ios2215-signing-handoff.md)与[检查](../verification/2026-10-15-ios2215-signing-handoff.md)。
+
 ## 2026-10-15 链上观察原因传递与有界重试已发布
 
 06:20:08+08完成API/Worker/观察器切换，后台原因文案同步；倒退/冲突/总时限原因保留到事故邮件和日志，完整重试最多3次且保留原始90秒预算/高水位，同高度及高度时间矛盾立即失败。147专项、58集成、16前端、36回退状态通过；最终镜像/兼容回退门禁和私有备份隔离恢复通过。06:28后验10连续OK、6stable MATCHED，3服务healthy/零重启，57其他容器保持。全仓verify因缺.env未完成，额外全后端回归36%时中止，不宣称整仓通过。源代码在im-reliability工作树；见[报告](../verification/2026-10-15-chain-observer-reasons-retry.md)和[任务](tasks/2026-10-15-chain-observer-reasons-retry.md)。
