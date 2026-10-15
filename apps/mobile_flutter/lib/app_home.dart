@@ -46,6 +46,7 @@ import 'core/notification/notification_preferences.dart';
 import 'core/notification/notification_system_bootstrapper.dart';
 import 'core/notification/notification_usage_recorder.dart';
 import 'core/notification/system_notification_presenter.dart';
+import 'core/notification/contextual_notification_permission.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/finance/wallet_entry_snapshot_store.dart';
 import 'features/ledger/ledger_page_snapshot_store.dart';
@@ -1121,57 +1122,55 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
-  /// PRD §33：登录完成后上下文式申请通知权限，绝不在冷启动首屏弹。
-  ///
-  /// 注意：Android 13+ 的 areNotificationsEnabled() 在首次申请前就返回
-  /// "未启用"（系统不暴露"未决定"态），不能以状态查询作为是否引导的前置
-  /// 条件——只要本机没引导过就弹说明框，再触发系统权限申请。
+  /// Ask only while the signed-in home is foreground and no call owns the UI.
   Future<void> _primeNotificationPermission() async {
     final coordinator = _notificationCoordinator;
     if (coordinator == null || !mounted) return;
     final recorder = const SharedPreferencesNotificationUsageRecorder();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      // v2：0.3.27 的引导实现有缺陷（Android 13+ 从未真正申请过权限），
-      // 升级到本版的设备需要重新引导一次；已授权设备自动跳过。
-      if (prefs.getBool('notification.permission_prompted_v2') == true) return;
-      await prefs.setBool('notification.permission_prompted_v2', true);
-      final status =
-          await coordinator.systemNotifications.authorizationStatus();
-      // 已授权（Android 12 及以下安装即启用）无需打扰。
-      if (status == NotificationAuthorizationStatus.granted) return;
-      if (!mounted) return;
-      unawaited(recorder.count(NotificationUsageEvents.permissionPrompted));
-      final allow = await showCupertinoDialog<bool>(
-        context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
-          title: const Text('开启通知'),
-          content: const Text('开启通知后，可以及时收到好友消息和通话邀请。'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('暂不开启'),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('开启通知'),
-            ),
-          ],
-        ),
-      );
-      if (allow != true) {
-        unawaited(recorder.count(NotificationUsageEvents.permissionDenied));
-        return;
-      }
-      final granted =
-          await coordinator.systemNotifications.requestAuthorization();
-      unawaited(recorder.count(granted
-          ? NotificationUsageEvents.permissionGranted
-          : NotificationUsageEvents.permissionDenied));
-    } catch (_) {
-      // 权限引导失败静默，不打扰主流程。
-    }
+    final outcome = await ContextualNotificationPermission.forPresenter(
+      coordinator.systemNotifications,
+    ).request(
+      canPresent: () =>
+          mounted &&
+          !_disposed &&
+          appResumed &&
+          !callUi.hasActiveCall &&
+          (ModalRoute.of(context)?.isCurrent ?? false),
+      explain: () async {
+        unawaited(recorder.count(NotificationUsageEvents.permissionPrompted));
+        return showCupertinoDialog<bool>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('开启通知'),
+            content: const Text('开启通知后，可以及时收到好友消息和通话邀请。'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('暂不开启'),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('开启通知'),
+              ),
+            ],
+          ),
+        );
+      },
+      openSettings: openSystemNotificationSettings,
+    );
+    final event = switch (outcome) {
+      NotificationPermissionOutcome.granted =>
+        NotificationUsageEvents.permissionGranted,
+      NotificationPermissionOutcome.denied =>
+        NotificationUsageEvents.permissionDenied,
+      NotificationPermissionOutcome.deferred =>
+        NotificationUsageEvents.permissionDeferred,
+      NotificationPermissionOutcome.error =>
+        NotificationUsageEvents.permissionError,
+      _ => null,
+    };
+    if (event != null) unawaited(recorder.count(event));
   }
 
   DateTime? _lastUpdateCheckAt;
@@ -1244,6 +1243,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 回前台：重新检查通知权限（用户可能刚在系统设置中开启/关闭），
       // 记入诊断；设置页打开时亦会自行刷新。
       unawaited(_refreshNotificationPermissionState());
+      unawaited(_primeNotificationPermission());
       // 对齐一次桌面角标（PRD §36 reconcile）+ 静默刷新好友资料
       //（BUG 1：好友头像/昵称变化无需重启即可见）。
       unawaited(_notificationCoordinator?.refreshLauncherBadge());

@@ -34,4 +34,6 @@ abstract final class NotificationUsageEvents {
   static const permissionPrompted = 'notification_permission_prompted';
   static const permissionGranted = 'notification_permission_granted';
   static const permissionDenied = 'notification_permission_denied';
+  static const permissionDeferred = 'notification_permission_deferred';
+  static const permissionError = 'notification_permission_error';
 }

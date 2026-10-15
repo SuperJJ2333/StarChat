@@ -19,8 +19,10 @@ final class SystemCallPermissionGateway implements CallPermissionGateway {
     ];
     try {
       final statuses = await requests.request();
-      final granted = statuses.values
-          .every((status) => status.isGranted || status.isLimited);
+      final granted = requests.every((permission) {
+        final status = statuses[permission];
+        return status != null && (status.isGranted || status.isLimited);
+      });
       return granted;
     } catch (_) {
       // 权限服务异常按拒绝处理：绝不在无麦克风权限时继续通话。

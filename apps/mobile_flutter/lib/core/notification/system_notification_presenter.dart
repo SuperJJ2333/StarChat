@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../ui/foundation/avatar_cache.dart';
 import 'notification_decision.dart';
@@ -10,7 +11,56 @@ import 'notification_avatar.dart';
 import 'notification_diagnostics.dart';
 
 /// 通知权限状态（PRD §34/§56 权限降级展示用）。
-enum NotificationAuthorizationStatus { undetermined, granted, denied }
+enum NotificationAuthorizationStatus {
+  undetermined,
+  granted,
+  denied,
+  provisional,
+  ephemeral,
+  unavailable
+}
+
+/// Native authorization and presentation options are independent on Darwin.
+final class NotificationPermissionState {
+  const NotificationPermissionState(this.status,
+      {this.alertEnabled, this.soundEnabled, this.badgeEnabled});
+  final NotificationAuthorizationStatus status;
+  final bool? alertEnabled, soundEnabled, badgeEnabled;
+  bool get authorized =>
+      status == NotificationAuthorizationStatus.granted ||
+      status == NotificationAuthorizationStatus.provisional ||
+      status == NotificationAuthorizationStatus.ephemeral;
+}
+
+/// Optional capability keeps existing presenters and test fakes compatible.
+abstract interface class DetailedNotificationPermissionPresenter {
+  Future<NotificationPermissionState> permissionState();
+}
+
+Future<NotificationPermissionState> readNotificationPermissionState(
+    SystemNotificationPresenter presenter) async {
+  if (presenter is DetailedNotificationPermissionPresenter) {
+    return (presenter as DetailedNotificationPermissionPresenter)
+        .permissionState();
+  }
+  return NotificationPermissionState(await presenter.authorizationStatus());
+}
+
+Future<bool> openSystemNotificationSettings() async {
+  try {
+    final channel = MethodChannel(defaultTargetPlatform == TargetPlatform.iOS
+        ? 'chatflow/apns'
+        : 'chatflow/notification');
+    if (await channel.invokeMethod<bool>('openNotificationSettings') == true) {
+      return true;
+    }
+  } catch (_) {/* Fall back to app settings. */}
+  try {
+    return await openAppSettings();
+  } catch (_) {
+    return false;
+  }
+}
 
 /// 系统通知点击统一分发（纯函数，可测）。
 ///
@@ -149,6 +199,7 @@ ChannelSpec channelSpecFor(SystemNotificationChannel channel) =>
 final class FlutterLocalSystemNotificationPresenter
     implements
         SystemNotificationPresenter,
+        DetailedNotificationPermissionPresenter,
         NotificationAvatarPresenter,
         DeliveredConversationNotificationPresenter {
   FlutterLocalSystemNotificationPresenter({
@@ -257,7 +308,11 @@ final class FlutterLocalSystemNotificationPresenter
     await plugin.initialize(
       const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestSoundPermission: false,
+          requestBadgePermission: false,
+        ),
       ),
       onDidReceiveNotificationResponse: (response) {
         final roomId = response.payload;
@@ -312,44 +367,75 @@ final class FlutterLocalSystemNotificationPresenter
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
-      return await android.requestNotificationsPermission() ?? false;
+      final result = await android.requestNotificationsPermission();
+      if (result == null) {
+        throw PlatformException(code: 'notification_permission_unavailable');
+      }
+      return result;
     }
     final ios = plugin.resolvePlatformSpecificImplementation<
         IOSFlutterLocalNotificationsPlugin>();
     if (ios != null) {
-      return await ios.requestPermissions() ?? false;
+      final result = await ios.requestPermissions();
+      if (result == null) {
+        throw PlatformException(code: 'notification_permission_unavailable');
+      }
+      return result;
     }
-    return false;
+    throw PlatformException(code: 'notification_permission_unavailable');
   }
 
   @override
   Future<NotificationAuthorizationStatus> authorizationStatus() async {
+    return (await permissionState()).status;
+  }
+
+  @override
+  Future<NotificationPermissionState> permissionState() async {
     try {
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        final settings = await const MethodChannel('chatflow/apns')
+            .invokeMapMethod<String, dynamic>('getNotificationSettings');
+        if (settings == null) {
+          return const NotificationPermissionState(
+              NotificationAuthorizationStatus.unavailable);
+        }
+        final status = switch (settings['authorizationStatus']) {
+          'notDetermined' => NotificationAuthorizationStatus.undetermined,
+          'authorized' => NotificationAuthorizationStatus.granted,
+          'denied' => NotificationAuthorizationStatus.denied,
+          'provisional' => NotificationAuthorizationStatus.provisional,
+          'ephemeral' => NotificationAuthorizationStatus.ephemeral,
+          _ => NotificationAuthorizationStatus.unavailable,
+        };
+        return NotificationPermissionState(status,
+            alertEnabled: settings['alertEnabled'] as bool?,
+            soundEnabled: settings['soundEnabled'] as bool?,
+            badgeEnabled: settings['badgeEnabled'] as bool?);
+      }
       final android = plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
       if (android != null) {
         final enabled = await android.areNotificationsEnabled();
-        return enabled == true
-            ? NotificationAuthorizationStatus.granted
-            : NotificationAuthorizationStatus.denied;
-      }
-      final ios = plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
-      if (ios != null) {
-        final permissions = await ios.checkPermissions();
-        if (permissions == null) {
-          return NotificationAuthorizationStatus.undetermined;
+        if (enabled == null) {
+          return const NotificationPermissionState(
+              NotificationAuthorizationStatus.unavailable);
         }
-        return permissions.isEnabled
+        final permission =
+            enabled ? null : await Permission.notification.status;
+        return NotificationPermissionState(enabled
             ? NotificationAuthorizationStatus.granted
-            : NotificationAuthorizationStatus.denied;
+            : permission!.isPermanentlyDenied || permission.isRestricted
+                ? NotificationAuthorizationStatus.denied
+                : NotificationAuthorizationStatus.undetermined);
       }
     } catch (error) {
-      // 查询失败按未确定处理，不影响主流程；留下诊断以便定位层级。
+      // An unavailable API must not be mistaken for an unasked permission.
       diagnostics.record(NotificationDiagStage.permission,
           'status query failed: ${error.runtimeType}');
     }
-    return NotificationAuthorizationStatus.undetermined;
+    return const NotificationPermissionState(
+        NotificationAuthorizationStatus.unavailable);
   }
 
   @override

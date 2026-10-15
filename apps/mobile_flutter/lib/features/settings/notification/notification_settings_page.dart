@@ -11,6 +11,7 @@ import '../../../core/notification/notification_coordinator.dart';
 import '../../../core/notification/notification_diagnostics.dart';
 import '../../../core/notification/notification_preferences.dart';
 import '../../../core/notification/system_notification_presenter.dart';
+import '../../../core/notification/contextual_notification_permission.dart';
 import '../../../ui/components/wechat_gradient_divider.dart';
 import '../../../ui/components/wechat_scaffold.dart';
 import '../../../ui/foundation/wechat_tokens.dart';
@@ -52,8 +53,10 @@ final class NotificationSettingsPage extends StatefulWidget {
 final class _NotificationSettingsPageState
     extends State<NotificationSettingsPage> with WidgetsBindingObserver {
   NotificationPreferenceValues _values = const NotificationPreferenceValues();
-  NotificationAuthorizationStatus _permission =
-      NotificationAuthorizationStatus.undetermined;
+  NotificationPermissionState _permission = const NotificationPermissionState(
+      NotificationAuthorizationStatus.unavailable);
+  bool _requestingPermission = false;
+  String? _permissionError;
 
   @override
   void initState() {
@@ -79,13 +82,15 @@ final class _NotificationSettingsPageState
   Future<void> _load() async {
     final store = const SharedPreferencesNotificationPreferenceStore();
     final values = await store.load();
-    NotificationAuthorizationStatus permission =
-        NotificationAuthorizationStatus.undetermined;
+    NotificationPermissionState permission = const NotificationPermissionState(
+        NotificationAuthorizationStatus.unavailable);
     try {
-      permission =
-          await widget.coordinator!.systemNotifications.authorizationStatus();
-      NotificationDiagnostics.shared.record(
-          NotificationDiagStage.permission, 'status: ${permission.name}');
+      final presenter = widget.coordinator?.systemNotifications;
+      if (presenter != null) {
+        permission = await readNotificationPermissionState(presenter);
+      }
+      NotificationDiagnostics.shared.record(NotificationDiagStage.permission,
+          'status: ${permission.status.name}');
     } catch (_) {}
     if (!mounted) return;
     setState(() {
@@ -111,8 +116,11 @@ final class _NotificationSettingsPageState
           child: ListView(
             padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
             children: [
-              if (_permission == NotificationAuthorizationStatus.denied)
-                _permissionWarning(context), // BUG-40（D7 默认开）：同会话语音连播开关。
+              if (!_permission.authorized ||
+                  _permission.alertEnabled == false ||
+                  _permission.soundEnabled == false ||
+                  _permission.badgeEnabled == false)
+                _permissionWarning(context),
               ListenableBuilder(
                   listenable: voiceAutoPlayPreferences,
                   builder: (context, _) => _switchTile(
@@ -120,7 +128,6 @@ final class _NotificationSettingsPageState
                       voiceAutoPlayPreferences.autoPlayNext,
                       (v) => unawaited(
                           voiceAutoPlayPreferences.setAutoPlayNext(v)))),
-
               _section(context, notificationSettingsNewMessagesSection, [
                 _switchTile(
                     '消息通知',
@@ -214,26 +221,77 @@ final class _NotificationSettingsPageState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '系统通知已关闭',
+            Text(
+              switch (_permission.status) {
+                NotificationAuthorizationStatus.undetermined => '开启系统通知',
+                NotificationAuthorizationStatus.unavailable => '通知权限暂时无法检查',
+                NotificationAuthorizationStatus.denied => '系统通知已关闭',
+                _ => '系统通知提醒未完全开启',
+              },
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
-            const Text('你可能无法及时收到新消息。', style: TextStyle(fontSize: 13)),
+            Text(
+                _permission.authorized
+                    ? '横幅：${_permission.alertEnabled == true ? '开启' : '关闭'} · 声音：${_permission.soundEnabled == true ? '开启' : '关闭'} · 角标：${_permission.badgeEnabled == true ? '开启' : '关闭'}'
+                    : '你可能无法及时收到新消息。',
+                style: const TextStyle(fontSize: 13)),
+            if (_permissionError != null)
+              Text(_permissionError!, style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 10),
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: _openSystemSettings,
-              child: const Text(
-                '前往系统设置',
-                style: TextStyle(fontSize: 14, color: WeChatColors.socialLink),
+              onPressed: _requestingPermission ? null : _requestPermission,
+              child: Text(
+                switch (_permission.status) {
+                  NotificationAuthorizationStatus.undetermined => '开启通知',
+                  NotificationAuthorizationStatus.unavailable => '重新检查',
+                  _ => '前往系统设置',
+                },
+                style: const TextStyle(
+                    fontSize: 14, color: WeChatColors.socialLink),
               ),
             ),
           ],
         ),
       );
 
+  Future<void> _requestPermission() async {
+    final presenter = widget.coordinator?.systemNotifications;
+    if (presenter == null) {
+      await _openSystemSettings();
+      return;
+    }
+    setState(() {
+      _requestingPermission = true;
+      _permissionError = null;
+    });
+    final outcome = _permission.authorized
+        ? (await openSystemNotificationSettings()
+            ? NotificationPermissionOutcome.settingsOpened
+            : NotificationPermissionOutcome.error)
+        : await ContextualNotificationPermission.forPresenter(presenter)
+            .request(
+            canPresent: () =>
+                mounted &&
+                WidgetsBinding.instance.lifecycleState ==
+                    AppLifecycleState.resumed,
+            explain: () async => true,
+            openSettings: openSystemNotificationSettings,
+            explicit: true,
+          );
+    if (!mounted) return;
+    setState(() {
+      _requestingPermission = false;
+      if (outcome == NotificationPermissionOutcome.error) {
+        _permissionError = '暂时无法检查或打开通知权限，请重试。';
+      }
+    });
+    await _load();
+  }
+
   Future<void> _openSystemSettings() async {
+    if (await openSystemNotificationSettings()) return;
     // Android：原生直达本应用通知设置（Android 13+ 二次拒绝后系统弹窗
     // 不再出现，必须引导去系统设置）；iOS：app-settings: 深链。
     try {
