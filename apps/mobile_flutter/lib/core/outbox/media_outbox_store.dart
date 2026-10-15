@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -87,6 +88,8 @@ final class MediaOutboxTask {
         digest = row['digest'] as String?,
         stage = MediaOutboxStage.values.byName(row['stage']! as String),
         attempts = row['attempts']! as int,
+        createdAt =
+            DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int? ?? 0),
         failure = row['failure'] as String?,
         eventId = row['event_id'] as String?,
         nextRetryAt = row['next_retry_at'] == null
@@ -99,6 +102,7 @@ final class MediaOutboxTask {
   final int length, attempts;
   final String? digest, failure, eventId;
   final DateTime? nextRetryAt;
+  final DateTime createdAt;
   final MediaOutboxStage stage;
   bool get terminal =>
       stage == MediaOutboxStage.sent || stage == MediaOutboxStage.canceled;
@@ -154,6 +158,8 @@ final class SqliteMediaOutboxStore {
         _seal = seal ?? PendingMediaDirectory.seal,
         _factory = factory ?? localMetadataDatabaseFactory;
   final MediaOutboxOwner owner;
+  final _changes = ValueNotifier<int>(0);
+  ValueListenable<int> get changes => _changes;
   final Future<Directory> Function() _directory;
   final Future<int> Function() _availableBytes;
   final Future<void> Function(String scope, String? sourceId) _seal;
@@ -173,6 +179,11 @@ final class SqliteMediaOutboxStore {
   static final _metadataTails = <String, Future<void>>{};
   static final _preparations = <(String, String), Future<MediaOutboxTask>>{};
   (String, String) _sourceKey(String txid) => (_root!.absolute.path, txid);
+
+  /// Logical cancellation of a still-owned source. This does not release its
+  /// writer pin or preparation slot; only physical settlement can do that.
+  bool isPreparationCanceled(String txid) =>
+      _root != null && _canceledSources.contains(_sourceKey(txid));
   static const chunkBytes = 64 * 1024;
   static const reserveBytes = 16 * 1024 * 1024;
   static const maxPending = 128;
@@ -511,6 +522,7 @@ final class SqliteMediaOutboxStore {
         Object? preparationFailure;
         void Function()? releasePreparation;
         try {
+          _changes.value++;
           await checkpoint?.call('intent');
           // At most two actual preparations across stores. Waiting requests
           // already have durable intent; the short metadata transaction is free.
@@ -685,6 +697,7 @@ final class SqliteMediaOutboxStore {
     if (updated && stage == MediaOutboxStage.canceled) {
       _canceledSources.add(_sourceKey(txid));
     }
+    if (updated) _changes.value++;
     return updated;
   }
 

@@ -7883,9 +7883,9 @@ final class MatrixSdkE2eeClient
     return session.coordinator.enqueue(job, onAccepted: video._markAdmitted);
   }
 
-  /// Atomically accepts several deferred gallery handles. No media-library
-  /// callback is invoked here; each is resolved only when its owner job gains
-  /// a bounded preparation slot.
+  /// Admits independent durable gallery sources before atomically accepting
+  /// their surviving coordinator jobs. One source failure does not reject its
+  /// siblings; original resolution still uses bounded preparation slots.
   Future<List<MatrixOutgoingWorkJob>> _enqueueVideoFiles({
     required List<MatrixOutgoingVideoFileRequest> requests,
     required _OutgoingSession session,
@@ -7915,11 +7915,29 @@ final class MatrixSdkE2eeClient
     if (durable != null) {
       final intents = <_DurableOutgoingIntent>[];
       final jobs = <MatrixOutgoingWorkJob>[];
+      final acceptedVideos = <MatrixOutgoingVideoFile>[];
       try {
-        for (final request in frozen) {
-          final intent = await _persistVideoIntent(request.jobId, request.video,
-              request.targetRoomIds, session, durable);
-          intents.add(intent);
+        final preparedIntents = await Future.wait<_DurableOutgoingIntent?>([
+          for (final request in frozen)
+            () async {
+              try {
+                final intent = await _awaitVideoIntent(request.jobId,
+                    request.video, request.targetRoomIds, session, durable);
+                if (intent == null) return null;
+                intents.add(intent);
+                return intent;
+              } catch (_) {
+                // The existing preparation path records this request's failure
+                // and releases its holds. Other accepted sources remain valid.
+                return null;
+              }
+            }(),
+        ]);
+        for (var index = 0; index < frozen.length; index++) {
+          final request = frozen[index];
+          final intent = preparedIntents[index];
+          if (intent == null) continue;
+          acceptedVideos.add(request.video);
           jobs.add(_buildDurableMediaJob(
               jobId: request.jobId,
               sourceId: request.video.id,
@@ -7930,9 +7948,10 @@ final class MatrixSdkE2eeClient
               video: request.video));
         }
         _ensureOutgoingSessionCurrent(session);
+        if (jobs.isEmpty) return const [];
         return await session.coordinator.enqueueBatch(jobs, onAccepted: () {
-          for (final request in frozen) {
-            request.video._markAdmitted();
+          for (final video in acceptedVideos) {
+            video._markAdmitted();
           }
         });
       } catch (_) {
@@ -7962,6 +7981,48 @@ final class MatrixSdkE2eeClient
     });
   }
 
+  Future<_DurableOutgoingIntent?> _awaitVideoIntent(
+      String jobId,
+      MatrixOutgoingVideoFile video,
+      List<String> targets,
+      _OutgoingSession session,
+      MediaOutboxRecoveryService durable) async {
+    final stopped = Completer<void>();
+    void checkCancellation() {
+      if (stopped.isCompleted) return;
+      if (!durable.active ||
+          List.generate(targets.length, (i) => 'outgoing-$jobId-0-$i')
+              .any(durable.store.isPreparationCanceled)) {
+        stopped.complete();
+      }
+    }
+
+    durable.addListener(checkCancellation);
+    checkCancellation();
+    try {
+      if (stopped.isCompleted) return null;
+      // Stop only this batch's logical wait. The original preparation still
+      // owns its slot, writer pin and foreground holds until it really settles.
+      // Future.any observes a late failure; a late success releases its intent
+      // through the same rejection path rather than orphaning queued sources.
+      final preparation =
+          _persistVideoIntent(jobId, video, targets, session, durable)
+              .then<_DurableOutgoingIntent?>((intent) async {
+        if (stopped.isCompleted) {
+          await intent.reject();
+          return null;
+        }
+        return intent;
+      });
+      return await Future.any([
+        preparation,
+        stopped.future.then<_DurableOutgoingIntent?>((_) => null),
+      ]);
+    } finally {
+      durable.removeListener(checkCancellation);
+    }
+  }
+
   Future<_DurableOutgoingIntent> _persistVideoIntent(
       String jobId,
       MatrixOutgoingVideoFile video,
@@ -7979,7 +8040,15 @@ final class MatrixSdkE2eeClient
             ? await durable.persistResolvedFile(
                 txid: txid,
                 roomId: targets[i],
-                resolve: video._sourceForPreparation,
+                resolve: () async {
+                  try {
+                    return await video._sourceForPreparation();
+                  } on StateError {
+                    throw const MediaOutboxException('source-missing');
+                  } on ArgumentError {
+                    throw const MediaOutboxException('source-missing');
+                  }
+                },
                 mimeType: 'video/mp4',
                 filename: video.filename)
             : await durable.persistFile(

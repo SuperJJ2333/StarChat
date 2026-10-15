@@ -13,6 +13,50 @@ import '../media/media_test_fixtures.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'durable outgoing preview persists despite an immediate seed and is owner scoped',
+      () async {
+    final disk = <String, Uint8List>{};
+    RoomImagePreviewCache cache(String account) => RoomImagePreviewCache(
+        accountId: account,
+        roomId: 'outgoing-room',
+        read: (key) async => disk[key],
+        write: (key, bytes) async => disk[key] = bytes);
+    final bytes = mediaTestPng();
+    final first = cache('alice');
+    first.seed('stable-txid', bytes);
+    await first.persistOutgoing('outbox:generation-a:stable-txid', bytes);
+    first.dispose();
+    final reopened = cache('alice');
+    expect(await reopened.readCached('outbox:generation-a:stable-txid'), bytes);
+    expect(
+        await reopened.readCached('outbox:generation-b:stable-txid'), isNull);
+    final foreign = cache('bob');
+    expect(await foreign.readCached('outbox:generation-a:stable-txid'), isNull);
+    final before = disk.length;
+    await reopened.persistOutgoing(
+        'large', Uint8List(roomImagePrewarmMaxBytes + 1));
+    expect(disk.length, before);
+    reopened.dispose();
+    foreign.dispose();
+  });
+
+  test(
+      'optional outgoing preview storage failure preserves immediate local paint',
+      () async {
+    final bytes = mediaTestPng();
+    final cache = RoomImagePreviewCache(
+        accountId: 'a',
+        roomId: 'r',
+        read: (_) async => null,
+        write: (_, __) async => throw StateError('locked'));
+    await cache.persistOutgoing('outbox:owner:txid', bytes);
+    expect(cache.get('outbox:owner:txid'), bytes);
+    cache.dispose();
+    await cache.persistOutgoing('late', bytes);
+    expect(cache.get('late'), isNull);
+  });
+
   test('GIF static first frame persists and reentry does not reload original',
       () async {
     final disk = <String, Uint8List>{};
@@ -389,6 +433,67 @@ void main() {
       b.load('e', () async => Uint8List(1))
     ]);
     expect(peak, 1);
+  });
+
+  test('completed writer cannot release a newer queued writer', () async {
+    final gates = List.generate(3, (_) => Completer<void>());
+    final entered = <int>[];
+    final cache = RoomImagePreviewCache(
+        accountId: 'queue',
+        roomId: 'room',
+        read: (_) async => null,
+        write: (_, bytes) async {
+          entered.add(bytes.single);
+          await gates[bytes.single].future;
+        });
+    final first = cache.persistOutgoing('first', Uint8List.fromList([0]));
+    final second = cache.persistOutgoing('second', Uint8List.fromList([1]));
+    await Future<void>.delayed(Duration.zero);
+    expect(entered, [0]);
+    gates[0].complete();
+    await first;
+    await Future<void>.delayed(Duration.zero);
+    final third = cache.persistOutgoing('third', Uint8List.fromList([2]));
+    await Future<void>.delayed(Duration.zero);
+    expect(entered, [0, 1]);
+    gates[1].complete();
+    await second;
+    await Future<void>.delayed(Duration.zero);
+    expect(entered, [0, 1, 2]);
+    gates[2].complete();
+    await third;
+    cache.dispose();
+  });
+
+  test('queued outgoing writes retain disposal and memory epoch fences',
+      () async {
+    final gate = Completer<void>();
+    var rejectedWrites = 0;
+    final blocker = RoomImagePreviewCache(
+        accountId: 'blocker',
+        roomId: 'room',
+        read: (_) async => null,
+        write: (_, __) => gate.future);
+    RoomImagePreviewCache waiting(String account) => RoomImagePreviewCache(
+        accountId: account,
+        roomId: 'room',
+        read: (_) async => null,
+        write: (_, __) async {
+          rejectedWrites++;
+        });
+    final disposed = waiting('disposed');
+    final cleared = waiting('cleared');
+    final first = blocker.persistOutgoing('first', Uint8List(1));
+    await Future<void>.delayed(Duration.zero);
+    final second = disposed.persistOutgoing('second', Uint8List(1));
+    final third = cleared.persistOutgoing('third', Uint8List(1));
+    disposed.dispose();
+    sharedMediaMemoryBudget.clear();
+    gate.complete();
+    await Future.wait([first, second, third]);
+    expect(rejectedWrites, 0);
+    blocker.dispose();
+    cleared.dispose();
   });
 
   test('concurrent requests share source and disposed sessions cannot publish',

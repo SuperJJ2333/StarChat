@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -7,6 +9,9 @@ import 'package:matrix/matrix.dart' show SQfLiteEncryptionHelper;
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:liuhetong_mobile/core/outbox/media_outbox_store.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/matrix/emoji_preview_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 
 /// Must run on the actual Android/iOS candidate. No mocked channel/factory,
 /// credentials, Matrix session, network, or media library permission required.
@@ -26,6 +31,10 @@ void main() {
       expect(result['preparedAsFile'], isTrue);
       expect(result['bytes'], [1, 2, 3, 4]);
       expect(result['sourceDeleted'], isTrue);
+      expect(result['createdAtPreserved'], isTrue);
+      expect(result['previewRecovered'], isTrue);
+      expect(result['foreignPreviewMissing'], isTrue);
+      expect(result['previewBounded'], isTrue);
       expect(result['cipherAvailable'], isTrue);
       expect(result['marker'], 7);
       expect(result['wrongKeyRejected'], isTrue);
@@ -49,6 +58,10 @@ Future<Map<String, Object?>> _nativeColdOrder(
     throw StateError('Synthetic native scope escaped pending root');
   }
   await scope.create();
+  final previewNamespace = 'native-outgoing-preview:${owner.scope}';
+  final previewKey =
+      'emoji.preview.key.v1.${sha256.convert(utf8.encode(previewNamespace))}';
+  final keys = FlutterSecureKeyValueStore();
   var store = SqliteMediaOutboxStore(owner: owner);
   final cipherFactory =
       createDatabaseFactoryFfi(ffiInit: SQfLiteEncryptionHelper.ffiInit);
@@ -85,6 +98,30 @@ Future<Map<String, Object?>> _nativeColdOrder(
     store = SqliteMediaOutboxStore(owner: owner);
     final reopened = (await store.byTxid(task.txid))!;
     final bytes = await (await store.verifiedSource(reopened)).readAsBytes();
+    final previewId = 'outbox:${owner.scope}:${task.txid}';
+    final encodedPreview = Uint8List.fromList([9, 7, 5, 3]);
+    RoomImagePreviewCache previewCache(String account) {
+      final encrypted = EncryptedEmojiPreviewStore(previewNamespace,
+          keys: keys, directory: () async => scope);
+      return RoomImagePreviewCache(
+          accountId: account,
+          roomId: task.roomId,
+          read: encrypted.read,
+          write: encrypted.write);
+    }
+
+    final beforePreview = previewCache(owner.scope);
+    await beforePreview.persistOutgoing(previewId, encodedPreview);
+    await beforePreview.persistOutgoing(
+        'oversized', Uint8List(roomImagePrewarmMaxBytes + 1));
+    beforePreview.dispose();
+    final afterPreview = previewCache(owner.scope);
+    final recoveredPreview = await afterPreview.readCached(previewId);
+    final boundedPreview = await afterPreview.readCached('oversized');
+    final foreignPreview = previewCache('foreign-synthetic-owner');
+    final foreignBytes = await foreignPreview.readCached(previewId);
+    afterPreview.dispose();
+    foreignPreview.dispose();
     await openCipher();
     var wrongKeyRejected = false;
     Database? wrongKey;
@@ -117,6 +154,11 @@ Future<Map<String, Object?>> _nativeColdOrder(
       'preparedAsFile': reopened.prepared && reopened.asFile,
       'bytes': bytes.toList(),
       'sourceDeleted': !await before.exists(),
+      'createdAtPreserved': reopened.createdAt == task.createdAt,
+      'previewRecovered': recoveredPreview != null &&
+          base64Encode(recoveredPreview) == base64Encode(encodedPreview),
+      'foreignPreviewMissing': foreignBytes == null,
+      'previewBounded': boundedPreview == null,
       'cipherAvailable': cipherVersion.isNotEmpty,
       'marker': marker,
       'wrongKeyRejected': wrongKeyRejected,
@@ -126,6 +168,7 @@ Future<Map<String, Object?>> _nativeColdOrder(
   } finally {
     await cipher?.close();
     await store.close();
+    await keys.delete(previewKey);
     if (await scope.exists()) await scope.delete(recursive: true);
   }
 }

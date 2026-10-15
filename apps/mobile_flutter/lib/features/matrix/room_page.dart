@@ -40,7 +40,7 @@ import '../../core/business_api_client.dart';
 import '../../core/outbox/outbox_message.dart';
 import '../../core/outbox/media_outbox_store.dart';
 import '../../core/outbox/media_outbox_recovery_service.dart';
-import 'media_outbox_pending_view.dart';
+import 'media_outbox_timeline.dart';
 import 'media_transfer_budget.dart';
 import '../../core/outbox/outbox_room_sender_registry.dart';
 import '../../core/outbox/persistent_outbox_manager.dart';
@@ -1005,6 +1005,46 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   RoomOutboxSender? _outboxSender;
   PersistentOutboxManager? _observedOutbox;
 
+  MediaOutboxTimeline? _mediaTimeline;
+
+  void _bindMediaTimeline() {
+    final service = MediaOutboxRecoveryService.shared;
+    if (identical(_mediaTimeline?.service, service) &&
+        identical(_mediaTimeline?.controller, controller) &&
+        _mediaTimeline != null) {
+      return;
+    }
+    _mediaTimeline?.dispose();
+    _mediaTimeline = null;
+    controller?.clearMediaProjection();
+    if (service == null ||
+        !service.active ||
+        controller == null ||
+        service.store.owner.accountId != roomInfo.currentUserId) {
+      return;
+    }
+    final lease = widget.roomLease;
+    _mediaTimeline = MediaOutboxTimeline(
+        service: service,
+        roomId: roomInfo.id,
+        controller: controller!,
+        isCurrent: () =>
+            mounted &&
+            !_disposing &&
+            !lease.canceled &&
+            identical(widget.roomLease, lease) &&
+            identical(MediaOutboxRecoveryService.shared, service))
+      ..addListener(_mediaTimelineChanged);
+  }
+
+  void _mediaTimelineChanged() {
+    if (!mounted || _disposing) return;
+    _timelineRevision.value++;
+    if (_mediaTimeline?.error != null) {
+      _showMediaMessage('附件记录暂不可读取，请稍后重试');
+    }
+  }
+
   void _outboxChanged() {
     if (!mounted || _disposing || widget.roomLease.canceled) return;
     unawaited(controller?.reconcileOutboxStatuses().catchError((Object _) {}));
@@ -1126,6 +1166,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    MediaOutboxRecoveryService.current.addListener(_bindMediaTimeline);
     MaintenanceActivity.instance.install();
     MaintenanceActivity.instance.pulse(_maintenanceReason('entry'));
     voiceRecording.addListener(_onMaintenanceRecordingChanged);
@@ -1504,6 +1545,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         outboxCorrelationFor: widget.outboxCorrelationFor,
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
+      _bindMediaTimeline();
       _observedOutbox = _outbox;
       _observedOutbox?.addListener(_outboxChanged);
       // 调度器只有在房间已打开时才允许派发持久化行；句柄随页面销毁注销。
@@ -2059,7 +2101,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final timeline = controller;
     if (timeline == null) return;
     try {
-      await timeline.retry(message.id);
+      final media = _mediaTimeline;
+      if (media?.tasks.containsKey(message.stableId) == true) {
+        await media!.retry(message.stableId);
+      } else {
+        await timeline.retry(message.id);
+      }
     } catch (_) {
       _showMediaMessage('重发失败，请稍后再试');
     }
@@ -2362,7 +2409,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// First-frame cache hits still need a key for recall eviction.
   Uint8List? _peekVideoPoster(String messageId) {
-    final bytes = videoPosterPipeline.peek(messageId);
+    final message = controller?.findMessage(messageId);
+    final outgoing =
+        message?.isOwn == true ? _outgoingPreview(message!.stableId) : null;
+    final bytes = outgoing ?? videoPosterPipeline.peek(messageId);
     if (bytes != null) {
       _posterKeys.putIfAbsent(
           messageId, () => videoPosterPipeline.keyFor(messageId));
@@ -2378,7 +2428,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 内存 → 会话磁盘 → 服务端 poster（小图附件）→ 本机持久封面缓存
   /// → 本地已存在视频文件的抽帧 → 占位图。
   Future<Uint8List?> _loadVideoPoster(String messageId) async {
-    if (!mounted) return null;
+    if (!mounted || widget.roomLease.canceled) return null;
+    final message = controller?.findMessage(messageId);
+    if (message?.isOwn == true) {
+      final outgoing = _outgoingPreview(message!.stableId) ??
+          await _readOutgoingPreview(message.stableId);
+      if (outgoing != null) return outgoing;
+    }
     // 会话缓存键沿用既有键形状（账号|房间|媒体|版本|规格）。
     _posterKeys.putIfAbsent(
         messageId, () => videoPosterPipeline.keyFor(messageId));
@@ -2504,6 +2560,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Uint8List? _cachedImagePreview(RoomMessageViewModel message) {
     try {
       if (widget.roomLease.canceled) return null;
+      final outgoing =
+          message.isOwn ? _outgoingPreview(message.stableId) : null;
+      if (outgoing != null && !isGifBytes(outgoing)) return outgoing;
       if (_isAnimatedImage(message)) {
         final bytes =
             roomImagePreviewCache.get(_firstFramePreviewId(message)) ??
@@ -2524,6 +2583,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<Uint8List?> _readCachedImagePreview(RoomMessageViewModel message,
       {int? maxBytes}) async {
+    if (message.isOwn) {
+      final outgoing = await _readOutgoingPreview(message.stableId);
+      if (outgoing != null &&
+          !isGifBytes(outgoing) &&
+          (maxBytes == null || outgoing.length <= maxBytes)) {
+        return outgoing;
+      }
+    }
     if (_isAnimatedImage(message)) {
       final bytes =
           await roomImagePreviewCache.readCached(_firstFramePreviewId(message));
@@ -2679,48 +2746,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       composerPanel = ComposerPanel.none;
       mediaMessage = null;
     });
-    // 大视频发送前警告：相册视频走后台队列自动压缩，压缩结果在转码后
-    // 才能确定；超限会在消息上显示红色感叹号。体积明显过大时先征询，
-    // 避免“静默发送→失败”的体验。
-    for (final photo in result.photos) {
-      if (!photo.isVideo) continue;
-      var sourceBytes = 0;
-      try {
-        final source = await photo.localVideoFile?.call();
-        sourceBytes = await source?.length() ?? 0;
-      } catch (_) {}
-      final durationMs = photo.duration?.inMilliseconds ?? 0;
-      // 与转码预算同源的粗估：aggressive 档约按 20MB 预算反推码率；
-      // 超过 60 秒或源文件超过 200MB 时大概率压缩后仍超限。
-      final risky = sourceBytes > 200 * 1024 * 1024 ||
-          (durationMs > 60 * 1000 && sourceBytes > 20 * 1024 * 1024);
-      if (risky && mounted) {
-        final proceed = await showCupertinoDialog<bool>(
-          context: context,
-          builder: (dialogContext) => CupertinoAlertDialog(
-            title: const Text('视频体积较大'),
-            content: const Text('该视频时长或体积较大，将自动压缩后发送；'
-                '\n压缩后仍可能超过 20MB 上限导致发送失败。'
-                '\n建议裁剪或选择较短的视频。'),
-            actions: [
-              CupertinoDialogAction(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('取消')),
-              CupertinoDialogAction(
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('仍要发送')),
-            ],
-          ),
-        );
-        if (proceed != true) {
-          if (mounted) {
-            setState(() => composerPanel = ComposerPanel.none);
-          }
-          return;
-        }
-      }
-    }
     final sends = <Future<void>>[];
     final galleryVideos = <MatrixOutgoingVideoFileRequest>[];
     for (final photo in result.photos) {
@@ -2735,15 +2760,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             'gallery-video-${DateTime.now().microsecondsSinceEpoch}-${galleryVideos.length}';
         // 登记本机产物：发送后点开优先本地回读——弱网下大视频回下载
         // 超时是发送方“视频加载失败”的主因（产物保留未删除）。
-        unawaited(videoSource().then((file) {
-          if (file == null) return;
-          SentVideoLocalRegistry.shared.register(jobId: jobId, file: file);
-        }).catchError((_) {}));
+        final txid = 'outgoing-$jobId-0-0';
+        _seedSelectedMediaPreview(txid, photo);
+        timeline.projectPreparingMedia(
+            txid: txid, kind: RoomMessageKind.video, mimeType: 'video/mp4');
         galleryVideos.add(MatrixOutgoingVideoFileRequest(
           jobId: jobId,
           video: MatrixOutgoingVideoFile(
             id: photo.id,
-            resolveSource: videoSource,
+            resolveSource: () async {
+              final file = await videoSource();
+              if (file != null && !matrix.canceled) {
+                SentVideoLocalRegistry.shared
+                    .register(jobId: jobId, file: file);
+              }
+              return file;
+            },
             filename: 'video.mp4',
             body: '[视频消息]',
             deleteSourceWhenDone: false,
@@ -2753,24 +2785,28 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ));
         continue;
       }
-      sends.add(
-        timeline.sendText(
-          photo.isVideo ? '[视频消息]' : '[图片消息]',
+      final txid =
+          'gallery-image-${DateTime.now().microsecondsSinceEpoch}-${sends.length}';
+      _seedSelectedMediaPreview(txid, photo);
+      timeline.projectPreparingMedia(
+          txid: txid,
           kind: photo.isVideo ? RoomMessageKind.video : RoomMessageKind.image,
-          mimeType: photo.mimeType,
-          send: (transactionId) =>
-              _sendDurableGallery(transactionId, photo, targetRoomId),
-        ),
-      );
+          mimeType: photo.mimeType);
+      sends.add(_sendDurableGallery(txid, photo, targetRoomId)
+          .then<void>((_) {}, onError: (Object _) {
+        timeline.failPreparingMedia(txid);
+      }));
     }
     if (galleryVideos.isNotEmpty) {
       try {
         await matrix.enqueueVideoFiles(requests: galleryVideos);
         if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
           await timeline.showLatest();
-          _showMediaMessage('正在发送');
         }
       } on MatrixOutgoingWorkCapacityException {
+        for (final request in galleryVideos) {
+          timeline.failPreparingMedia('outgoing-${request.jobId}-0-0');
+        }
         if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
           _showMediaMessage('当前视频任务较多，请稍后重新选择');
         }
@@ -2788,6 +2824,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         }
       }
     }
+    for (final request in galleryVideos) {
+      final txid = 'outgoing-${request.jobId}-0-0';
+      final task = await MediaOutboxRecoveryService.shared?.store.byTxid(txid);
+      if (task == null || task.stage == MediaOutboxStage.failed) {
+        timeline.failPreparingMedia(txid);
+      }
+    }
     try {
       await Future.wait(sends);
     } catch (_) {
@@ -2795,6 +2838,81 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         _showMediaMessage('部分媒体发送准备失败，请重试');
       }
     }
+  }
+
+  String? _outgoingPreviewId(String txid) {
+    final service = _mediaTimeline?.service;
+    if (service == null || !service.active || widget.roomLease.canceled) {
+      return null;
+    }
+    return 'outbox:${service.store.owner.scope}:$txid';
+  }
+
+  void _seedSelectedMediaPreview(String txid, GalleryPhoto photo) {
+    final service = MediaOutboxRecoveryService.shared;
+    final lease = widget.roomLease;
+    final previewId = _outgoingPreviewId(txid);
+    bool current() =>
+        mounted &&
+        !_disposing &&
+        !lease.canceled &&
+        identical(widget.roomLease, lease) &&
+        service != null &&
+        service.active &&
+        identical(MediaOutboxRecoveryService.shared, service);
+    final selected = photo.thumbnail;
+    if (current() &&
+        selected.isNotEmpty &&
+        selected.length <= roomImagePrewarmMaxBytes &&
+        !isGifBytes(selected)) {
+      roomImagePreviewCache.seed(txid, selected);
+      if (previewId != null) {
+        unawaited(roomImagePreviewCache.persistOutgoing(previewId, selected));
+      }
+    }
+    unawaited(() async {
+      try {
+        var bytes = selected;
+        if (bytes.isEmpty) {
+          bytes = await photo.loadThumbnail?.call() ?? Uint8List(0);
+        }
+        if (bytes.isEmpty && photo.isVideo) {
+          bytes = await photo.posterBytes?.call() ??
+              await photo.firstFrame?.call() ??
+              Uint8List(0);
+        }
+        if (!current() || bytes.isEmpty) return;
+        // Edited images may expose original-sized bytes as thumbnail. Normalize
+        // only in the existing serial decoder; never decode a video original.
+        if (bytes.length > roomImagePrewarmMaxBytes || isGifBytes(bytes)) {
+          bytes = await createEmojiPreview(bytes);
+        }
+        if (!current() || bytes.length > roomImagePrewarmMaxBytes) return;
+        roomImagePreviewCache.seed(txid, bytes);
+        if (current()) {
+          _rowCache.remove(txid);
+          _timelineRevision.value++;
+        }
+        if (previewId != null) {
+          await roomImagePreviewCache.persistOutgoing(previewId, bytes);
+        }
+      } catch (_) {/* An optional preview must never reject the upload. */}
+    }());
+  }
+
+  Uint8List? _outgoingPreview(String txid) {
+    if (widget.roomLease.canceled) return null;
+    final id = _outgoingPreviewId(txid);
+    if (id == null) return null;
+    return roomImagePreviewCache.get(txid) ?? roomImagePreviewCache.get(id);
+  }
+
+  Future<Uint8List?> _readOutgoingPreview(String txid) async {
+    final id = _outgoingPreviewId(txid);
+    if (id == null) return null;
+    final bytes = await roomImagePreviewCache.readCached(id);
+    if (!mounted || _disposing || id != _outgoingPreviewId(txid)) return null;
+    return bytes;
   }
 
   Future<String> _cacheSentImage(
@@ -2812,16 +2930,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final service = _requireMediaOutbox();
     final release = service.holdForeground(txid);
     try {
-      final task = await sharedMediaTransferBudget.run(
-          mediaUploadPlan(maxGalleryImageBytes,
-              mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType),
-          () => service.persistPreparedBytes(
-              txid: txid,
-              roomId: targetRoomId,
-              mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType,
-              filename: photo.isVideo ? 'video.mp4' : 'image',
-              prepared: photo.isVideo,
-              load: () async {
+      final task = await service.persistPreparedBytes(
+          txid: txid,
+          roomId: targetRoomId,
+          mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType,
+          filename: photo.isVideo ? 'video.mp4' : 'image',
+          prepared: photo.isVideo,
+          load: () => sharedMediaTransferBudget.run(
+                  mediaUploadPlan(maxGalleryImageBytes,
+                      mimeType: photo.isVideo ? 'video/mp4' : photo.mimeType),
+                  () async {
                 if (photo.isVideo) return photo.compressedBytes();
                 if ((await photo.originalSizeBytes?.call() ?? 0) >
                     maxGalleryImageBytes) {
@@ -4548,6 +4666,98 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         matrixDisplayName: _member(message.senderId).displayName,
       );
 
+  Widget _mediaMessageControls(RoomMessageViewModel message) {
+    if (!message.isOwn) return const SizedBox.shrink();
+    final task = _mediaTimeline?.tasks[message.stableId];
+    if (task != null) {
+      return task.terminal ? const SizedBox.shrink() : _mediaTaskControls(task);
+    }
+    if (message.kind != RoomMessageKind.image &&
+        message.kind != RoomMessageKind.video) {
+      return const SizedBox.shrink();
+    }
+    if (message.deliveryState == RoomDeliveryState.sending) {
+      return const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text('正在获取附件',
+              style:
+                  TextStyle(fontSize: 12, color: CupertinoColors.systemGrey)));
+    }
+    if (message.deliveryState != RoomDeliveryState.failed) {
+      return const SizedBox.shrink();
+    }
+    return Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+      CupertinoButton(
+          onPressed: () => unawaited(_pickAndSendImages()),
+          child: const Text('重新选择附件')),
+      CupertinoButton(
+          onPressed: () => controller?.discardMediaProjection(message.stableId),
+          child: const Text('取消此附件')),
+    ]);
+  }
+
+  Widget _mediaTaskControls(MediaOutboxTask task) {
+    final retry = task.stage == MediaOutboxStage.failed ||
+        task.stage == MediaOutboxStage.ackUnknown;
+    final label = switch (task.stage) {
+      MediaOutboxStage.preparing => '正在获取附件',
+      MediaOutboxStage.queued => '等待上传',
+      MediaOutboxStage.sending => '正在上传并等待确认',
+      MediaOutboxStage.ackUnknown => '尚未确认送达，重试沿用原消息编号',
+      MediaOutboxStage.failed =>
+        MediaOutboxException(task.failure ?? 'send-rejected').userMessage,
+      _ => '',
+    };
+    return Padding(
+        padding: const EdgeInsets.only(left: 48, right: 48, bottom: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            if (!retry) const CupertinoActivityIndicator(radius: 6),
+            const SizedBox(width: 5),
+            Flexible(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontSize: 12, color: CupertinoColors.systemGrey))),
+          ]),
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            if (retry)
+              CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  onPressed: () => unawaited(_trackAction(() async {
+                        try {
+                          await _mediaTimeline?.retry(task.txid);
+                        } catch (_) {
+                          if (mounted && !_disposing) {
+                            _showMediaMessage('附件未能发送，请稍后重试或重新选择');
+                          }
+                        }
+                      })),
+                  child: const Text('重试此附件', style: TextStyle(fontSize: 12))),
+            CupertinoButton(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                onPressed: () => unawaited(_trackAction(() async {
+                      final currentStage =
+                          _mediaTimeline?.tasks[task.txid]?.stage;
+                      try {
+                        await _mediaTimeline?.cancel(task.txid);
+                      } catch (_) {
+                        if (mounted && !_disposing) {
+                          _showMediaMessage('取消未能保存，请重试');
+                        }
+                        return;
+                      }
+                      if (mounted &&
+                          !_disposing &&
+                          (currentStage == MediaOutboxStage.sending ||
+                              currentStage == MediaOutboxStage.ackUnknown)) {
+                        _showMediaMessage('已停止后续重试；已经提交的消息仍可能送达');
+                      }
+                    })),
+                child: const Text('取消此附件', style: TextStyle(fontSize: 12))),
+          ]),
+        ]));
+  }
+
   Widget _messageRow(RoomMessageViewModel message, DateTime? previousTime) {
     PerformanceMetrics.instance.increment(PerformanceCounter.messageRowBuild);
     final displayName = _senderDisplayName(message);
@@ -4809,6 +5019,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 : MessageDirection.incoming,
             state: deliveryState,
           ),
+        _mediaMessageControls(message),
         if (message.replyToEventId != null)
           Align(
             alignment:
@@ -5458,6 +5669,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .removeListener(_onTimelineScrollActivityChanged);
     widget.navigationRequests?.removeListener(_onNavigationRequest);
     controller?.removeListener(_changed);
+    MediaOutboxRecoveryService.current.removeListener(_bindMediaTimeline);
+    _mediaTimeline?.dispose();
     _observedOutbox?.removeListener(_outboxChanged);
     _observedOutbox = null;
     controller?.dispose();
@@ -5949,7 +6162,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     DateTime?,
     RoomMessageViewModel?,
     ReplyMessageStatus,
-    Widget
+    Widget,
+    (MediaOutboxStage?, String?)
   )>{};
 
   List<RoomMessageViewModel> _visibleMessages() {
@@ -6018,6 +6232,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ? const ReplyMessageResolution.loading()
         : _replyResolution(message.replyToEventId!);
     final cached = _rowCache[message.stableId];
+    final mediaTask = _mediaTimeline?.tasks[message.stableId];
+    final mediaPresentation = (mediaTask?.stage, mediaTask?.failure);
     final sameReply = cached?.$3 == null
         ? reply == null
         : reply != null && cached!.$3!.samePresentation(reply);
@@ -6025,6 +6241,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         identical(cached.$1, message) &&
         cached.$2 == previous &&
         cached.$4 == resolution.status &&
+        cached.$6 == mediaPresentation &&
         sameReply) {
       return cached.$5;
     }
@@ -6076,7 +6293,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               _messageRow(message, previous),
             ])));
     _rowCache[message.stableId] =
-        (message, previous, reply, resolution.status, row);
+        (message, previous, reply, resolution.status, row, mediaPresentation);
     return row;
   }
 
@@ -6238,15 +6455,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     builder: (_, __, ___) => _buildTimeline(),
                   ),
                 ),
-                ValueListenableBuilder<MediaOutboxRecoveryService?>(
-                  valueListenable: MediaOutboxRecoveryService.current,
-                  builder: (context, service, _) => service == null ||
-                          service.store.owner.accountId !=
-                              roomInfo.currentUserId
-                      ? const SizedBox.shrink()
-                      : MediaOutboxPendingView(
-                          service: service, roomId: roomInfo.id),
-                ),
                 if (mediaMessage != null)
                   AnimatedOpacity(
                     opacity: mediaMessageVisible ? 1 : 0,
@@ -6314,38 +6522,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     onCancel: () => setState(selection.exit),
                   )
                 else ...[
-                  // BUG-35：视频发送工作胶囊（转码百分比/上传中/失败可重试），
-                  // 覆盖相册与拍摄两条路径；进度由后台协调器驱动。
-                  ListenableBuilder(
-                      listenable:
-                          (widget.roomLease as MatrixOutgoingProgressView)
-                              .outgoingProgress,
-                      builder: (context, _) {
-                        final summary =
-                            (widget.roomLease as MatrixOutgoingVideoWorkView)
-                                .videoWorkSummaryForRoom(roomInfo.id);
-                        if (!summary.busy && summary.failed == 0) {
-                          return const SizedBox.shrink();
-                        }
-                        return Padding(
-                          key:
-                              const Key('video-automatic-compression-progress'),
-                          padding: const EdgeInsets.all(8),
-                          child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const CupertinoActivityIndicator(radius: 7),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                    child: Text(summary.label,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                            fontSize: 13,
-                                            color:
-                                                CupertinoColors.systemGrey))),
-                              ]),
-                        );
-                      }),
                   if (widget.readOnly)
                     const Padding(
                       key: Key('room-read-only-notice'),

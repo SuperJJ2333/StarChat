@@ -21,7 +21,9 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
       DateTime Function()? now,
       this.failureReason,
       this.checkpoint})
-      : _now = now ?? DateTime.now;
+      : _now = now ?? DateTime.now {
+    store.changes.addListener(_changed);
+  }
   final SqliteMediaOutboxStore store;
   final bool Function() isCurrentOwner;
   final Future<bool> Function(MediaOutboxTask task) authorize;
@@ -448,6 +450,7 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
 
   void suspend() {
     _active = false;
+    _changed();
     _retry?.cancel();
     _retry = null;
     _retryDue = null;
@@ -470,6 +473,7 @@ final class MediaOutboxRecoveryService extends ChangeNotifier {
   void dispose() {
     suspend();
     _disposed = true;
+    store.changes.removeListener(_changed);
     super.dispose();
   }
 }

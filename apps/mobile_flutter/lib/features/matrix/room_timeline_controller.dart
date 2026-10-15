@@ -11,6 +11,7 @@ import '../../core/chat_diagnostics.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
 import '../../core/outbox/outbox_message.dart';
+import '../../core/outbox/media_outbox_store.dart';
 import '../../core/outbox/server_retry_policy.dart';
 import '../../core/outbox/persistent_outbox_manager.dart';
 import '../../core/performance_metrics.dart';
@@ -1016,6 +1017,117 @@ final class RoomTimelineController extends ChangeNotifier
     unawaited(_drainWaitingNetwork());
   }
 
+  final _mediaEchoes = <String, RoomMessageViewModel>{};
+  final _canceledMedia = <String>{};
+  final _mediaProjectionIds = <String>{};
+
+  bool hasConfirmedMediaEcho(MediaOutboxTask task) => _sourceSnapshot.any((m) =>
+      m.deliveryState == RoomDeliveryState.sent &&
+      !m.isSdkLocalEcho &&
+      (m.stableId == task.txid ||
+          (task.eventId != null && m.id == task.eventId)));
+
+  void clearMediaProjection() {
+    if (_disposed) return;
+    for (final id in _mediaProjectionIds) {
+      _localEchoes.remove(id);
+    }
+    _mediaEchoes.clear();
+    _mediaProjectionIds.clear();
+    _echoRevision++;
+    unawaited(refresh());
+  }
+
+  /// Projects durable media identities without creating another transport.
+  void projectMediaTasks(Iterable<MediaOutboxTask> tasks) {
+    if (_disposed) return;
+    _mediaEchoes.clear();
+    for (final task in tasks) {
+      if (outboxRoomId != null && task.roomId != outboxRoomId) continue;
+      _mediaProjectionIds.add(task.txid);
+      if (task.stage == MediaOutboxStage.canceled) {
+        _canceledMedia.add(task.txid);
+        _localEchoes.remove(task.txid);
+        _senders.remove(task.txid);
+        _waitingNetworkIds.remove(task.txid);
+        continue;
+      }
+      if (task.eventId != null) _eventTransactions[task.eventId!] = task.txid;
+      _mediaEchoes[task.txid] = RoomMessageViewModel(
+        id: task.eventId ?? task.txid,
+        transactionId: task.txid,
+        senderId: '',
+        isOwn: true,
+        text: task.filename,
+        timestamp: _localEchoes[task.txid]?.timestamp ?? task.createdAt,
+        mimeType: task.mimeType,
+        kind: task.asFile
+            ? RoomMessageKind.file
+            : task.mimeType.startsWith('image/')
+                ? RoomMessageKind.image
+                : task.mimeType.startsWith('video/')
+                    ? RoomMessageKind.video
+                    : task.mimeType.startsWith('audio/')
+                        ? RoomMessageKind.voice
+                        : RoomMessageKind.file,
+        deliveryState: switch (task.stage) {
+          MediaOutboxStage.failed => RoomDeliveryState.failed,
+          MediaOutboxStage.ackUnknown => RoomDeliveryState.waitingNetwork,
+          MediaOutboxStage.sent => RoomDeliveryState.sent,
+          _ => RoomDeliveryState.sending,
+        },
+        imageWidth: task.width,
+        imageHeight: task.height,
+        videoDuration: task.durationMs == null
+            ? null
+            : Duration(milliseconds: task.durationMs!),
+      );
+    }
+    _echoRevision++;
+    unawaited(refresh());
+  }
+
+  /// A gallery video can wait for a cloud original before its coordinator is
+  /// admitted. Its stable transaction is already known and is only projected.
+  void projectPreparingMedia(
+      {required String txid,
+      required RoomMessageKind kind,
+      required String mimeType}) {
+    if (_disposed) return;
+    _mediaProjectionIds.add(txid);
+    _restoreLatest();
+    _localEchoes[txid] = RoomMessageViewModel(
+        id: txid,
+        transactionId: txid,
+        senderId: '',
+        text: kind == RoomMessageKind.video ? '[视频消息]' : '[图片消息]',
+        isOwn: true,
+        deliveryState: RoomDeliveryState.sending,
+        timestamp: _nextLocalTimestamp(),
+        kind: kind,
+        mimeType: mimeType);
+    _echoRevision++;
+    unawaited(refresh());
+  }
+
+  void discardMediaProjection(String txid) {
+    if (_disposed) return;
+    _canceledMedia.add(txid);
+    _localEchoes.remove(txid);
+    _mediaEchoes.remove(txid);
+    _echoRevision++;
+    unawaited(refresh());
+  }
+
+  void failPreparingMedia(String txid) {
+    final local = _localEchoes[txid];
+    if (_disposed || local == null || _canceledMedia.contains(txid)) return;
+    _localEchoes[txid] =
+        local.copyWith(deliveryState: RoomDeliveryState.failed);
+    _echoRevision++;
+    unawaited(refresh());
+  }
+
   List<RoomMessageViewModel> _snapshot() {
     final snapshot = adapter.snapshot();
     // Legacy adapters may return fresh models/lists. Compare before allocating
@@ -1049,20 +1161,29 @@ final class RoomTimelineController extends ChangeNotifier
       if (alias != null && alias != message.transactionId) {
         message = message.copyWith(transactionId: alias);
       }
+      // A canceled coordinator item may publish a late local failure. Hide
+      // that projection while still admitting a real, already-submitted echo.
+      if (_canceledMedia.contains(message.stableId) &&
+          (message.deliveryState != RoomDeliveryState.sent ||
+              message.isSdkLocalEcho)) {
+        continue;
+      }
       final localKey =
           _localEchoes.containsKey(message.stableId) ? message.stableId : alias;
-      final local = _localEchoes[localKey];
+      final local = _mediaEchoes[message.stableId] ?? _localEchoes[localKey];
       if (local != null) {
         final confirmed = message.deliveryState == RoomDeliveryState.sent &&
             !message.isSdkLocalEcho;
-        _eventTransactions[message.id] = localKey!;
+        final transaction = local.transactionId!;
+        _eventTransactions[message.id] = transaction;
         message = message.copyWith(
-            transactionId: localKey,
+            transactionId: local.transactionId,
             timestamp: confirmed ? message.timestamp : local.timestamp,
             deliveryState:
                 confirmed ? RoomDeliveryState.sent : local.deliveryState);
         if (confirmed) {
-          _localEchoes.remove(localKey);
+          _localEchoes.remove(local.transactionId);
+          _mediaEchoes.remove(local.transactionId);
         } else {
           pending.add(message);
           continue;
@@ -1075,7 +1196,11 @@ final class RoomTimelineController extends ChangeNotifier
     // later incoming rows must not move a failed send to the end on refresh.
     for (final local in [
       ...pending,
-      if (!hasLaterWindow) ..._localEchoes.values
+      if (!hasLaterWindow)
+        ...{
+          ..._localEchoes,
+          ..._mediaEchoes,
+        }.values.where((m) => !_canceledMedia.contains(m.stableId))
     ]) {
       if (seen.contains(local.stableId)) continue;
       final index =

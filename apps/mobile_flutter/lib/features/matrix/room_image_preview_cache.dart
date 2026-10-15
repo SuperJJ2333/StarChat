@@ -104,7 +104,7 @@ final class RoomImagePreviewCache {
   // The existing store initializes a secure-storage key on first write. Keep
   // different room instances from racing key creation or quota sweeps. Reads
   // and source requests remain independent; only durable writes are serialized.
-  static Future<void> _writes = Future<void>.value();
+  static Future<void>? _writes;
   static final _sessionMemory = MediaMemoryCache(
       maxEntries: 256,
       maxBytes: 32 * 1024 * 1024,
@@ -144,12 +144,21 @@ final class RoomImagePreviewCache {
     // Include the AES-GCM nonce/tag overhead so one legacy original cannot
     // exceed the entire quota by itself.
     if (bytes.length > 64 * 1024 * 1024 - 28) return Future<void>.value();
-    final work = _writes.then((_) async {
+    final work = (_writes ?? Future<void>.value()).then((_) async {
       if (!_disposed && _memory?.generation == generation) {
         await _write(key, bytes);
       }
     });
-    _writes = work.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    late final Future<void> tail;
+    void release() {
+      if (identical(_writes, tail)) _writes = null;
+    }
+
+    // Retain only active work. A completed chain need not retain its originating
+    // event-loop zone after every account/room writer has gone idle.
+    tail = work.then<void>((_) => release(),
+        onError: (Object _, StackTrace __) => release());
+    _writes = tail;
     return work;
   }
 
@@ -234,6 +243,25 @@ final class RoomImagePreviewCache {
     }, onError: (Object _, StackTrace __) {
       // The optional local preview can be evicted/reloaded after worker error.
     }));
+  }
+
+  /// A durable outbox txid is stable across restart. Only bounded static
+  /// thumbnails are admitted by the caller; ordinary transient seeds stay RAM-only.
+  Future<void> persistOutgoing(String txid, Uint8List bytes) async {
+    final memory = _memory;
+    if (_disposed ||
+        memory == null ||
+        bytes.isEmpty ||
+        bytes.length > roomImagePrewarmMaxBytes) {
+      return;
+    }
+    final generation = memory.generation;
+    seed(txid, bytes);
+    try {
+      await _persist(_key(txid), bytes, generation);
+    } catch (_) {
+      // A preview is optional; original persistence/upload remains independent.
+    }
   }
 
   Future<Uint8List> load(String eventId, Future<Uint8List> Function() source) {
