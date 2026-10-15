@@ -1,6 +1,17 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-10-16-mobile-experience": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "additionalFlutter": ["apps/mobile_flutter/lib/app_home.dart", "apps/mobile_flutter/lib/session_gate.dart", "apps/mobile_flutter/lib/ui/chat/emoji_resource_glyph.dart"],
+      "html": "frontend/src/screens/mobile-experience.js",
+      "demos": ["chat-experience-cached-start", "chat-experience-recent-history", "chat-experience-static-emoji", "chat-experience-outgoing-media", "chat-experience-notification-permission"],
+      "components": ["RoomPage", "SessionGate", "EmojiResourceGlyph", "AppHome"],
+      "props": ["preview", "transactionId", "permissionStatus"],
+      "states": ["cached", "loading", "offline", "static", "playing", "preparing", "uploading", "failed", "sent", "cancelled", "deferred", "denied", "granted"],
+      "tokens": ["WeChatSpacing.md = --space-md", "WeChatSpacing.lg = --space-lg", "WeChatTypography.caption = --type-caption-size", "WeChatRadius.card = --radius-card", "WeChatColors.textSecondary = --color-text-secondary"],
+      "behavior": "Cached content remains visible while optional work loads. Local media previews retain transaction identity across retry and completion. Super emoji starts static and plays on demand. Permission deferral remains requestable; denied users have a settings route. HTML uses synthetic transitions and does not claim real upload or APNs delivery."
+    },
     "2026-10-05-notification-call-avatar": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/call_page.dart",
       "html": "frontend/src/screens/calls.js",
@@ -2452,7 +2463,7 @@
     }
   },
   "screens": {
-    "expectedCount": 535
+    "expectedCount": 540
   },
   "adminCompletion20260910": {
     "html": [

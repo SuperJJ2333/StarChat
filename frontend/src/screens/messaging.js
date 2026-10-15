@@ -4,6 +4,7 @@ import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
 import { renderMediaVideoPreview } from "./media-video-preview.js";
 import { notificationAvatarDemo } from "./notification-avatar.js";
+import { mobileExperienceDemo } from "./mobile-experience.js";
 
 function conversationTile(conversation, options = {}) {
   const tile = element("article", "c-conversation-row");
@@ -728,7 +729,8 @@ export function renderScreen(definition) {
       root = pageRoot(definition, [navigation("消息"), element("div", "p-feedback-center")]);
       root.querySelector(".p-feedback-center").append(component("app-action-sheet", { title: "新建会话", options: "发起群聊,添加朋友,扫一扫", variant: "fit" }));
     } else root = messageInbox(definition);
-  } else if (definition.page === "forward") root = forwardBackground(definition);
+  } else if (definition.page === "experience") root = mobileExperienceDemo(definition);
+  else if (definition.page === "forward") root = forwardBackground(definition);
   else root = chatScreen(definition);
   return createDeviceScreen(definition, root);
 }
