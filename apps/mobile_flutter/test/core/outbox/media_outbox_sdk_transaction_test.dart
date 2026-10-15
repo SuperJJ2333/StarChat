@@ -19,7 +19,10 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 class _SdkClient extends Client {
   _SdkClient(http.Client httpClient)
       : super('synthetic-outbox',
-            httpClient: httpClient, sendTimelineEventTimeout: Duration.zero) {
+            httpClient: httpClient,
+            // Zero can still retry within the SDK's current clock tick. This
+            // fixture exercises durable recovery after SDK retry has expired.
+            sendTimelineEventTimeout: const Duration(microseconds: -1)) {
     homeserver = Uri.parse('https://synthetic.invalid');
     accessToken = 'synthetic-fixture-token';
   }
@@ -150,6 +153,13 @@ void main() {
             now: () => clock);
         await expectLater(
             before.dispatch(task), throwsA(isA<SocketException>()));
+        final awaitingAck = (await store.byTxid(task.txid))!;
+        expect(awaitingAck.stage, MediaOutboxStage.ackUnknown);
+        expect(awaitingAck.eventId, isNull);
+        expect(awaitingAck.prepared, isTrue);
+        expect(awaitingAck.asFile, !video);
+        expect(await (await store.verifiedSource(awaitingAck)).length(),
+            task.length);
         before.dispose();
         await store.close();
         store = open();

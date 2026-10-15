@@ -4,6 +4,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:liuhetong_mobile/features/matrix/image_picker_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/media_index.dart';
 import '../media/media_test_fixtures.dart';
 import 'package:liuhetong_mobile/ui/chat/contain_image_bubble.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
@@ -92,25 +94,28 @@ Future<void> _tick(WidgetTester tester, [int count = 20]) async {
   }
 }
 
-Future<T> _io<T>(WidgetTester tester, Future<T> Function() action) async {
+Future<T> _io<T>(WidgetTester tester, Future<T> Function() action,
+    {int maxTicks = 100}) async {
   var done = false;
   T? result;
   Object? failure;
+  StackTrace? failureStack;
   await tester.runAsync(() async {
-    unawaited(action().then((value) {
+    unawaited(Future<T>.sync(action).then((value) {
       result = value;
       done = true;
-    }, onError: (Object error) {
+    }, onError: (Object error, StackTrace stack) {
       failure = error;
+      failureStack = stack;
       done = true;
     }));
   });
-  for (var i = 0; i < 100 && !done; i++) {
+  for (var i = 0; i < maxTicks && !done; i++) {
     await _tick(tester, 1);
   }
   expect(done, isTrue,
       reason: 'I/O must settle while widget microtasks advance');
-  if (failure != null) throw failure!;
+  if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
   return result as T;
 }
 
@@ -121,6 +126,8 @@ final class _Harness {
   late MatrixSdkE2eeClient matrix;
   late MatrixRoomLease lease;
   late BusinessApiClient api;
+  late MediaIndex index;
+  final previousIndex = MediaIndex.shared;
   final client = _Client();
   final ack = Completer<String>();
   final sent = <String>[];
@@ -128,6 +135,7 @@ final class _Harness {
   bool current = true;
   bool failAdmission = false;
   int admissionsToReject = 0;
+  bool _closed = false;
   Future<void> start(WidgetTester tester, {bool restored = false}) async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
@@ -142,6 +150,13 @@ final class _Harness {
       final created = await fixtures.createTemp('p');
       root = Directory(await created.resolveSymbolicLinks());
       PathProviderPlatform.instance = _Paths(root.path);
+      index = MediaIndex(
+          databasePath: '${root.path}/synthetic-media-index.db',
+          factory: databaseFactoryFfiNoIsolate);
+      MediaIndex.overrideShared(index);
+      // Settle lazy opening under this fixture's ownership before any page
+      // lookup can retain a process-shared handle in its temporary directory.
+      await index.entriesForAccount(client.userID!);
       store = SqliteMediaOutboxStore(
           owner: MediaOutboxOwner(
               accountId: client.userID!,
@@ -187,6 +202,7 @@ final class _Harness {
         baseUri: Uri.parse('https://business.test'),
         sessionStore: SecureSessionStore(),
         client: MockClient((_) async => http.Response('{}', 404)));
+    addTearDown(() => close(tester));
     await show(tester);
   }
 
@@ -214,38 +230,45 @@ final class _Harness {
   }
 
   Future<void> close(WidgetTester tester) async {
+    if (_closed) return;
+    _closed = true;
     if (!ack.isCompleted) ack.complete(r'$event');
-    await _tick(tester);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await _tick(tester);
-    MediaOutboxRecoveryService.shared = null;
-    var suspended = false;
-    await tester.runAsync(() async {
-      unawaited(matrix.suspend().then((_) => suspended = true));
-    });
-    for (var i = 0; i < 500 && !suspended; i++) {
-      await _tick(tester, 1);
-    }
-    expect(suspended, isTrue);
-    service.dispose();
-    var closed = false;
-    await tester.runAsync(() async {
-      unawaited(() async {
-        await store.close();
-        await client.dispose();
+    try {
+      await tester.pumpWidget(const SizedBox.shrink());
+      MediaOutboxRecoveryService.shared = null;
+      try {
+        // Unmount stops new page requests. Join the lease's coalesced mention
+        // ingest while Matrix access is valid, then await its bound page drain
+        // before the account-wide suspension revokes queued client operations.
+        await _io<void>(tester, lease.ingestMentions);
+        await _io<void>(tester, lease.cancel, maxTicks: 500);
+        await _io<void>(tester, matrix.suspend, maxTicks: 500);
+      } finally {
+        try {
+          // close waits real transport flights and physical preparation writes;
+          // disposing the notifier alone does not drain either resource.
+          await _io<void>(tester, service.close, maxTicks: 500);
+        } finally {
+          service.dispose();
+          try {
+            await _io<void>(tester, client.dispose);
+          } finally {
+            await _io<void>(tester, index.close);
+            await _io<void>(tester, MediaCache.closeQuotaIndexes);
+          }
+        }
+      }
+      await _io<void>(tester, () async {
         await root.delete(recursive: true);
-        closed = true;
-      }());
-    });
-    for (var i = 0; i < 100 && !closed; i++) {
-      await _tick(tester, 1);
+      });
+    } finally {
+      MediaIndex.overrideShared(previousIndex);
+      PathProviderPlatform.instance = paths;
+      RoomImagePreviewCache.clearSessionMemory();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+              const MethodChannel('com.llfbandit.record/messages'), null);
     }
-    expect(closed, isTrue);
-    PathProviderPlatform.instance = paths;
-    RoomImagePreviewCache.clearSessionMemory();
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-            const MethodChannel('com.llfbandit.record/messages'), null);
   }
 }
 

@@ -58,8 +58,7 @@ void main() {
     final store = ManualOperationStore(api);
     await store.initialize();
 
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await flow.openBinding(tester);
 
@@ -75,8 +74,7 @@ void main() {
     // 关键回归：被拒地址不得锁死输入框，也不得留下无法放弃的草稿。
     final addressField = tester.widget<CupertinoTextField>(
         find.byKey(const Key('manual-binding-address')));
-    expect(addressField.enabled, isTrue,
-        reason: '被他人登记的地址必须能删除并重新输入');
+    expect(addressField.enabled, isTrue, reason: '被他人登记的地址必须能删除并重新输入');
     expect(await store.read('binding'), isNull,
         reason: '终局失败的登记草稿必须清除，否则会一直重放同一个被拒地址');
 
@@ -102,8 +100,7 @@ void main() {
     final store = ManualOperationStore(api);
     await store.initialize();
 
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await flow.openBinding(tester);
     await tester.enterText(
@@ -121,20 +118,20 @@ void main() {
   });
 
   testWidgets('已绑定用户有显式「更改绑定」按钮并展示 30 天限制', (tester) async {
+    final nextRebindAt =
+        DateTime.now().toUtc().add(const Duration(days: 30)).toIso8601String();
     final api = await flow.client(
         (request) async => flow.json(request.url.path.endsWith('/binding')
             ? {
                 ...fixtures.binding,
-                'next_rebind_at': '2026-10-15T06:30:00+00:00',
+                'next_rebind_at': nextRebindAt,
               }
             : {}));
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('manual-wallet-rebind')), findsOneWidget);
-    expect(find.text('更改绑定'), findsOneWidget,
-        reason: '入口必须有文字，不能只有一个铅笔图标');
+    expect(find.text('更改绑定'), findsOneWidget, reason: '入口必须有文字，不能只有一个铅笔图标');
     expect(find.textContaining('下次可改绑'), findsOneWidget,
         reason: '30 天限制必须可见（含具体时间）');
 
@@ -154,8 +151,7 @@ void main() {
       }
       return flow.json({});
     }, capabilities: {'user_auth_mode': 'address_only'});
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await flow.openBinding(tester);
 
