@@ -35,10 +35,10 @@ Files: ui/chat/emoji_resource_glyph.dart, super_emoji_message.dart, shared_emoji
 
 ### Task 3: Durable optimistic outgoing media
 Files: room_page.dart, room_timeline_controller.dart, media_outbox_pending_view.dart, media_outbox_store/recovery/sender and outgoing video models as needed; unit/widget/native integration tests.
-- [ ] RED selected image/video thumbnail missing at send and restart task discoverability.
-- [ ] Add stable preview identity and phase projection; reuse gallery thumb/poster immediately; native extract only if missing. Persist bounded encrypted previews with durable tasks and restore rows; same txid/event mapping.
-- [ ] Replace pending bar only once retry/cancel/restart are available inside rows; no blank normal-path previews; distinct acquiring/upload/ACK states and preserved ordering.
-- [ ] Verify delayed preparation, offline, ACK race, cancel, restart, account switch and capacity; review.
+- [x] RED selected image/video thumbnail missing at send and restart task discoverability.
+- [x] Add stable preview identity and phase projection; reuse gallery thumb/poster immediately; native extract only if missing. Persist bounded encrypted previews with durable tasks and restore rows; same txid/event mapping.
+- [x] Replace pending bar only once retry/cancel/restart are available inside rows; no blank normal-path previews; distinct acquiring/upload/ACK states and preserved ordering.
+- [x] Verify delayed preparation, offline, ACK race, cancel, restart, account switch and capacity; review.
 
 ### Task 4: Startup and history first paint
 Files: main.dart, session_gate.dart, installation_startup_gate.dart, session bootstrap only within existing auth contract; room_page/timeline/Matrix local storage hooks as evidence requires; performance traces and tests.
