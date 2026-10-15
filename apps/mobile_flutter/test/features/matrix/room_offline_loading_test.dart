@@ -1034,8 +1034,14 @@ void main() {
     final client = _OfflineClient();
     client.localRoom.failTimeline = true;
     await _mount(tester, client);
-    expect(find.text('会话加载失败，请检查网络后重试'), findsOneWidget);
+    expect(find.text('本机消息暂时无法读取'), findsOneWidget);
     expect(client.localRoom.localTimeline.readAttempts, 0);
+    client.localRoom.failTimeline = false;
+    await tester.tap(find.text('重试读取'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('本机消息暂时无法读取'), findsNothing);
+    expect(find.text('cached offline message'), findsOneWidget);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
     await tester.pump();
   });
