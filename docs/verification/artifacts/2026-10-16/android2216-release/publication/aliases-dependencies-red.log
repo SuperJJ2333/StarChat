@@ -1,0 +1,71 @@
+test_actual_2216_builder_aliases_preserve_all_rows (test_package_gate.PackageGate.test_actual_2216_builder_aliases_preserve_all_rows) ... ERROR
+test_actual_aliases_do_not_allow_failed_extra_or_missing_phase (test_package_gate.PackageGate.test_actual_aliases_do_not_allow_failed_extra_or_missing_phase) ... ok
+test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) ... 
+  test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/modules/settings/service.py') ... FAIL
+  test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/modules/settings/models.py') ... FAIL
+  test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/modules/audit/models.py') ... FAIL
+  test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/core/database.py') ... FAIL
+test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) ... FAIL
+
+======================================================================
+ERROR: test_actual_2216_builder_aliases_preserve_all_rows (test_package_gate.PackageGate.test_actual_2216_builder_aliases_preserve_all_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\test_package_gate.py", line 105, in test_actual_2216_builder_aliases_preserve_all_rows
+    self.assertEqual(module().validate_steps(self.steps), 5)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\package_release.py", line 85, in validate_steps
+    fail(bool(set(names) & aliases), 'missing required build phase')
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\package_release.py", line 26, in fail
+    raise ValueError(message)
+ValueError: missing required build phase
+
+======================================================================
+FAIL: test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/modules/settings/service.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\test_permanent_guards.py", line 28, in test_preflight_rejects_live_settings_dependency_drift_or_absence
+    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'settings_dependencies'):
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/modules/settings/models.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\test_permanent_guards.py", line 28, in test_preflight_rejects_live_settings_dependency_drift_or_absence
+    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'settings_dependencies'):
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/modules/audit/models.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\test_permanent_guards.py", line 28, in test_preflight_rejects_live_settings_dependency_drift_or_absence
+    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'settings_dependencies'):
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence) (key='app/core/database.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\test_permanent_guards.py", line 28, in test_preflight_rejects_live_settings_dependency_drift_or_absence
+    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'settings_dependencies'):
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_preflight_rejects_live_settings_dependency_drift_or_absence (test_permanent_guards.PermanentGuardBoundaries.test_preflight_rejects_live_settings_dependency_drift_or_absence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\docs\verification\artifacts\2026-10-16\android2216-release\publication\test_permanent_guards.py", line 31, in test_preflight_rejects_live_settings_dependency_drift_or_absence
+    with self.assertRaisesRegex(ValueError, 'settings_dependencies'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.194s
+
+FAILED (failures=5, errors=1)

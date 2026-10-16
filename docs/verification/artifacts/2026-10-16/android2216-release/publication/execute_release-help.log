@@ -1,0 +1,18 @@
+usage: execute_release.py [-h] --package PACKAGE --operation-id OPERATION_ID
+                          [--review REVIEW] [--execute]
+                          {preflight,runtime,upload,assemble,hk-install,cdn-install,cdn-check,hk-switch,publish,inspect,audit}
+
+Explicit, reviewed, one-phase-at-a-time publication. Default is local plan
+only. This file is preparation code. No remote action runs at import or
+without --execute and a review bound to the exact package and operation
+identifier.
+
+positional arguments:
+  {preflight,runtime,upload,assemble,hk-install,cdn-install,cdn-check,hk-switch,publish,inspect,audit}
+
+options:
+  -h, --help            show this help message and exit
+  --package PACKAGE
+  --operation-id OPERATION_ID
+  --review REVIEW
+  --execute

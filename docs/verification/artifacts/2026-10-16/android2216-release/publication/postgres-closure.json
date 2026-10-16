@@ -1,0 +1,67 @@
+{
+  "status": "EXACT_TRANSACTION_SOURCE_CLOSURE_REUSED_NOT_RERUN",
+  "reference_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+  "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/postgres-closure.json",
+  "reference_closure_sha256": "9983e911112f7976ed2b415e0f5eae8dae222c7dc4899d3a0ad3fce1ff89052b",
+  "old_module_git_sha256": "8d4a20399a96ff3207863c2a9227741f948785b43fde65fc81dd69438f2d55f1",
+  "new_module_source_sha256": "da42de0b0b249624fd657f0f67422c9eaea12eab0350eb33a449250b09a1a2ae",
+  "transaction_source_sha256": "2a58136b46b4330f4695dd1f65506d8e4216b0fc06d3a3a0b0dacaa29e400742",
+  "transaction_utf8_exact": true,
+  "normalized_full_module_exact": true,
+  "normalization": {
+    "replacements": {
+      "2215": "2216",
+      "2214": "2215",
+      "2213": "2215",
+      "0.4.46": "0.4.47",
+      "0.4.45": "0.4.46",
+      "0.4.44": "0.4.46"
+    },
+    "notes_before": "修复图片和视频发送失败问题，提升媒体发送稳定性。",
+    "notes_after": "优化启动和聊天记录加载，完善图片、视频及 GIF 发送预览，恢复超级表情自动播放，改进权限提示体验。"
+  },
+  "pg_test_source_only_module_version_trace_labels_differ": true,
+  "historical_log_git_sha256": "e28db34430af9fb20a2f25136490b59254c9ba69612cfce5d033322fa084c966",
+  "historical_result": "6 passed in 8.16s",
+  "new_pg_execution": false,
+  "dependencies": {
+    "services/business-api/app/modules/settings/service.py": {
+      "historical_sha256": "f658cba280c4f6356836876f69546962d186f0ee1b4870f6a9d4f4c26fd54332",
+      "current_root_git_sha256": "f658cba280c4f6356836876f69546962d186f0ee1b4870f6a9d4f4c26fd54332",
+      "live_selected_file_sha256": "f658cba280c4f6356836876f69546962d186f0ee1b4870f6a9d4f4c26fd54332",
+      "equal": true
+    },
+    "services/business-api/app/modules/settings/models.py": {
+      "historical_sha256": "4787c3d98dacce976517206ae77eefe1f3ecd036141eb556a268dd852a1ca027",
+      "current_root_git_sha256": "4787c3d98dacce976517206ae77eefe1f3ecd036141eb556a268dd852a1ca027",
+      "live_selected_file_sha256": "4787c3d98dacce976517206ae77eefe1f3ecd036141eb556a268dd852a1ca027",
+      "equal": true
+    },
+    "services/business-api/app/modules/audit/models.py": {
+      "historical_sha256": "1a8893c2651ae714feac31fd359e93364054537e68873e8b2cbf385659223e4f",
+      "current_root_git_sha256": "1a8893c2651ae714feac31fd359e93364054537e68873e8b2cbf385659223e4f",
+      "live_selected_file_sha256": "1a8893c2651ae714feac31fd359e93364054537e68873e8b2cbf385659223e4f",
+      "equal": true
+    },
+    "services/business-api/app/core/database.py": {
+      "historical_sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+      "current_root_git_sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+      "live_selected_file_sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5",
+      "equal": true
+    }
+  },
+  "current_api_image": "sha256:b1316787e2a1bce10f8b9c3aaaf333e11822b8f36f4b939025b3abeb5e99ffc6",
+  "api_image_unchanged": false,
+  "schema": [
+    "0095_wallet_source_alerts"
+  ],
+  "cases": [
+    "three keys plus three audits commit together",
+    "iOS CAS drift refuses without write",
+    "readback failure rolls back values/audits",
+    "used trace refuses without write",
+    "concurrent admin set waits for transaction",
+    "concurrent admin set_many waits for transaction"
+  ],
+  "limits": "Source/dependency closure reuses historical isolated PG six cases, not a current PG/DB restore run. Current API image differs; only selected four actual file hashes and schema equality are asserted. New target/baseline and builder aliases use fresh offline tests. No claim of new APK, live transaction or ORM/runtime image equivalence."
+}

@@ -1,0 +1,20 @@
+{
+  "freeze_current.py": {
+    "reference_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/baseline/freeze_current.py",
+    "reference_sha256": "526e1669963f7fb9045f0604fde07c44530e53d1ecb4ae71709fbc874b19494d",
+    "candidate_sha256": "526e1669963f7fb9045f0604fde07c44530e53d1ecb4ae71709fbc874b19494d"
+  },
+  "hk-projection-source.py": {
+    "reference_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/baseline/hk-projection-source.py",
+    "reference_sha256": "d5d455cea2684f90dbfb23797240da1193493be72ee567e0721f9a1e6757d5a6",
+    "candidate_sha256": "dbe7b7460af729698c9870dcf8a4bb4e2df2d8050f37beae8d2c7f0b1bdbd453"
+  },
+  "sg-projection-source.py": {
+    "reference_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "reference_path": "docs/verification/artifacts/2026-10-12/android2215-release/baseline/sg-projection-source.py",
+    "reference_sha256": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9",
+    "candidate_sha256": "13c7078272106c827e1d3397e344a77bf176394ad95c2e44c152d6860484dfd9"
+  }
+}

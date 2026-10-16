@@ -1,0 +1,7 @@
+* text eol=lf
+*.log -whitespace
+*.diff -whitespace
+baseline/*.json -text -diff
+baseline/hk-snapshot/** -text -diff
+payload/hk-snapshot/** -text -diff
+payload/*.json -text -diff

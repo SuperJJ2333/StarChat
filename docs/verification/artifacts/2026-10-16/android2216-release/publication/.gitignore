@@ -1,0 +1,4 @@
+test-scratch/
+__pycache__/
+payload/__pycache__/
+git-export/

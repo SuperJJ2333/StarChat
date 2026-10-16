@@ -1,0 +1,12 @@
+{
+  "app_latest_version": "0.4.46",
+  "app_latest_build": "2215",
+  "app_min_supported_build": "3",
+  "app_update_notes": "修复图片和视频发送失败问题，提升媒体发送稳定性。",
+  "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+  "app_ios_latest_version": "0.4.46",
+  "app_ios_latest_build": "2215",
+  "app_ios_min_supported_build": "3",
+  "app_ios_update_notes": "修复大历史会话快速上滑跳转、弱网新消息换位和语音首次播放问题，优化聊天记录加载与交互性能。",
+  "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1"
+}

@@ -1,0 +1,22 @@
+{
+  "kind": "hk",
+  "started": "2026-10-16T10:36:30.147340+08:00",
+  "ended": "2026-10-16T10:36:34.146358+08:00",
+  "exit_code": 0,
+  "projection_source_sha256": "dbe7b7460af729698c9870dcf8a4bb4e2df2d8050f37beae8d2c7f0b1bdbd453",
+  "checked_at_utc": "2026-10-16T02:36:33.090654+00:00",
+  "summary": {
+    "android": "0.4.46+2215",
+    "ios": "0.4.46+2215",
+    "schema": [
+      "0095_wallet_source_alerts"
+    ],
+    "aliases": {
+      "latest-arm32.apk": "ChatFlow-0.3.36-arm32.apk",
+      "latest-x86_64.apk": "ChatFlow-0.3.36-x86_64.apk",
+      "latest-arm64.apk": "ChatFlow-0.4.46-build2215-arm64.apk"
+    },
+    "target_exists": false,
+    "containers": 35
+  }
+}

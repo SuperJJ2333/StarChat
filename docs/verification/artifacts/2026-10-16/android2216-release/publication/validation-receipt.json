@@ -1,0 +1,42 @@
+{
+  "completed_at_utc": "2026-10-16T02:46:29.146185+00:00",
+  "scope": "publication preparation only",
+  "reference_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+  "version_red": {
+    "tests": 32,
+    "exit_code": 1,
+    "failures": 1,
+    "errors": 15
+  },
+  "version_green": {
+    "tests": 32,
+    "exit_code": 0,
+    "test_seconds": 9.748
+  },
+  "aliases_dependencies_red": {
+    "cases": 3,
+    "exit_code": 1,
+    "failing_subassertions": 5,
+    "errors": 1
+  },
+  "all_boundaries_green": {
+    "tests": 35,
+    "exit_code": 0,
+    "test_seconds": 13.101
+  },
+  "python_ast_files": 16,
+  "cli_help": {
+    "package_release.py": 0,
+    "execute_release.py": 0
+  },
+  "historical_pg_reused": true,
+  "new_pg_execution": false,
+  "remote_readonly_calls": {
+    "hk": 1,
+    "sg": 1
+  },
+  "production_mutations": 0,
+  "builds_or_devices": 0,
+  "real_package_created": false,
+  "review_approval_created": false
+}
