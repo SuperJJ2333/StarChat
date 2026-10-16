@@ -53,7 +53,7 @@ final class EmojiResourceGlyph extends StatefulWidget {
   final String asset;
   final double size;
 
-  /// Picker tiles keep autoplay; message rows opt into explicit playback.
+  /// Defaults to visible autoplay. Explicit tap playback is an opt-in mode.
   final bool playOnTap;
   final EmojiResourceStore? store;
   final SharedEmojiPlayerPool? pool;

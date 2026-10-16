@@ -48,11 +48,14 @@ test('local outgoing preview survives failure/retry and one ACK maps the same ro
   assert.equal(root.dataset.phase,'sent');
   assert.equal(walk(root).some(node=>node.textContent.includes('待发附件')),false);
 });
-test('super emoji begins static and playback is an explicit reversible action',async()=>{
+test('super emoji autoplays while visible and resumes after leaving or backgrounding',async()=>{
   const root=await render('static-emoji');
-  assert.equal(root.dataset.phase,'static');
-  click(root,'play'); assert.equal(root.dataset.phase,'playing');
-  click(root,'stop'); assert.equal(root.dataset.phase,'static');
+  assert.equal(root.dataset.phase,'playing');
+  assert.equal(control(root,'play'),undefined);
+  click(root,'leave'); assert.equal(root.dataset.phase,'paused');
+  click(root,'return'); assert.equal(root.dataset.phase,'playing');
+  click(root,'background'); assert.equal(root.dataset.phase,'paused');
+  click(root,'resume'); assert.equal(root.dataset.phase,'playing');
 });
 test('deferred notification permission remains requestable without claiming granted',async()=>{
   const root=await render('notification-permission');

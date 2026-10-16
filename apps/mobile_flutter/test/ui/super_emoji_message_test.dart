@@ -11,8 +11,12 @@ import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 
 final class _PendingSupportPaths extends PathProviderPlatform {
   final pending = Completer<String?>();
+  int requests = 0;
   @override
-  Future<String?> getApplicationSupportPath() => pending.future;
+  Future<String?> getApplicationSupportPath() {
+    requests++;
+    return pending.future;
+  }
 }
 
 FluentEmoji _emoji(String name) =>
@@ -27,7 +31,7 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 void main() {
   // Run before any other animated glyph initializes the process-wide store.
   testWidgets(
-      'single super emoji immediately shows 96px static vector until tap',
+      'single super emoji shows fallback while autoplay loads without a tap',
       (tester) async {
     final previous = PathProviderPlatform.instance;
     final paths = _PendingSupportPaths();
@@ -46,8 +50,9 @@ void main() {
     expect(find.byType(Image), findsNothing);
     expect(find.byType(SharedEmojiImage), findsNothing);
 
-    await tester.tap(glyph);
-    await tester.pump();
+    // Resource loading must begin without a user gesture. The visible fallback
+    // remains usable while the local directory or download is unavailable.
+    expect(paths.requests, 1);
     paths.pending.completeError(StateError('support directory offline'));
     await tester.pump();
     await tester.pump();
@@ -83,8 +88,7 @@ void main() {
     expect(rects.every((rect) => rect.left >= 0 && rect.right <= 360), isTrue);
   });
 
-  testWidgets(
-      'legacy multiple super emojis remain static and retain row metadata',
+  testWidgets('legacy multiple super emojis retain fallback and row metadata',
       (tester) async {
     await _pump(
       tester,

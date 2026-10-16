@@ -41,14 +41,18 @@ export function mobileExperienceDemo(definition) {
   if (definition.state==='static-emoji') {
     const emoji=element('span','p-mobile-experience__emoji','😄');
     emoji.setAttribute('role','img'); emoji.setAttribute('aria-label','开心表情'); content.append(emoji);
-    const draw=playing=>{
-      root.dataset.phase=playing?'playing':'static';
+    const draw=reason=>{
+      const playing=reason==='visible';
+      root.dataset.phase=playing?'playing':'paused';
       emoji.dataset.playing=String(playing);
-      status.textContent=playing?'点击停止播放':'表情静态预览 · 点击播放';
+      status.textContent=playing?'可见时自动播放；加载期间保留静态预览。':'离屏或后台暂停，返回后自动播放。';
       actions.replaceChildren();
-      action(playing?'stop':'play',playing?'停止播放':'播放表情',()=>draw(!playing));
+      if (playing) {
+        action('leave','模拟滚出屏幕',()=>draw('offscreen'));
+        action('background','模拟进入后台',()=>draw('background'));
+      } else action(reason==='offscreen'?'return':'resume','模拟返回可见区域',()=>draw('visible'));
     };
-    draw(false); return root;
+    draw('visible'); return root;
   }
   if (definition.state==='outgoing-media') {
     root.dataset.transactionId='demo-local-1';

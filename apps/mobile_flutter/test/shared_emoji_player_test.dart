@@ -91,7 +91,7 @@ class HeldSecondCodec implements EmojiFrameCodec {
 
 void main() {
   testWidgets(
-      'chat glyph does not subscribe until tap and stops on another tap',
+      'opt-in tap glyph does not subscribe until tap and stops on another tap',
       (tester) async {
     final parent = Directory(
         '../../docs/verification/artifacts/2026-10-16/mobile-experience-2216/fixtures');
@@ -132,6 +132,75 @@ void main() {
     await tester.tap(find.byType(EmojiResourceGlyph));
     await tester.pump();
     expect(pool.diagnostics['subscribers'], 0);
+    await tester.pumpWidget(const SizedBox());
+    pool.dispose();
+    image.dispose();
+    store.dispose();
+    maintenance.dispose();
+    await tester.runAsync(() => directory.delete(recursive: true));
+  });
+  testWidgets('default glyphs autoplay, share frames and resume without taps',
+      (tester) async {
+    final parent = Directory(
+        '../../docs/verification/artifacts/2026-10-16/super-emoji-autoplay/fixtures');
+    final directory = (await tester.runAsync(() async {
+      await parent.create(recursive: true);
+      return parent.createTemp('autoplay-');
+    }))!;
+    final maintenance = MaintenanceActivity();
+    final store = EmojiResourceStore(
+        directory: directory,
+        manifest: EmojiResourceManifest.parse(emojiManifestJson,
+            expectedDigest: emojiManifestDigest),
+        maintenance: maintenance);
+    await tester.runAsync(
+        () => store.accept('joy', File('assets/emoji/joy.webp').openRead()));
+    final image = await tinyImage();
+    final pool =
+        SharedEmojiPlayerPool(loader: (_, __) async => FakeCodec(image));
+    Widget scene(bool visible) => MediaQuery(
+        data: const MediaQueryData(size: Size(800, 600)),
+        child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: TickerMode(
+                enabled: visible,
+                child: Center(
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (var i = 0; i < 2; i++)
+                    EmojiResourceGlyph(
+                        asset: 'assets/emoji/joy.webp',
+                        size: 96,
+                        store: store,
+                        pool: pool),
+                ])))));
+    await tester.pumpWidget(scene(true));
+    await tester.pump();
+    await tester.pump();
+    expect(pool.diagnostics['activeEntries'], 1);
+    expect(pool.diagnostics['subscribers'], 2);
+    final started = pool.diagnostics['framesEmitted'] as int;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(pool.diagnostics['framesEmitted'], greaterThan(started));
+    await tester.pumpWidget(scene(false));
+    await tester.pump();
+    expect(pool.diagnostics['activeEntries'], 0);
+    final paused = pool.diagnostics['framesEmitted'];
+    await tester.pump(const Duration(seconds: 1));
+    expect(pool.diagnostics['framesEmitted'], paused);
+    await tester.pumpWidget(scene(true));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(pool.diagnostics['framesEmitted'], greaterThan(paused as int));
+    pool.didChangeAppLifecycleState(AppLifecycleState.paused);
+    expect(pool.diagnostics['totalFrameBytes'], 0);
+    expect(pool.diagnostics['activeEntries'], 0);
+    final background = pool.diagnostics['framesEmitted'];
+    await tester.pump(const Duration(seconds: 1));
+    expect(pool.diagnostics['framesEmitted'], background);
+    pool.didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(pool.diagnostics['framesEmitted'], greaterThan(background as int));
     await tester.pumpWidget(const SizedBox());
     pool.dispose();
     image.dispose();

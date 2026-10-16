@@ -7,6 +7,9 @@
 **Tech Stack:** Flutter3.44.9/Dart3.12.2, Android native APIs, Swift/iOS16+, Matrix local fork, HTML catalog.
 **Spec:** ../specs/2026-10-16-mobile-experience-2216-design.md
 
+## User-approved follow-up: visible super emoji autoplay (2026-10-16)
+The latest user request supersedes Task2's static-by-default choice for message rows. Restore default visible autoplay without removing immediate SVG/Unicode fallback or existing shared bounded decoding, offscreen/background suspension and pressure cleanup. Keep the explicit tap mode available to other callers. Own a separate task/evidence record; reproduce the no-tap resource request regression, verify frame progression and lifecycle, synchronize the HTML demo, review specification then quality, rebuild/install the preserved-data Android Debug candidate and report measured memory limits. Do not present the old unsigned IPA as containing this fix.
+
 ## Global Constraints
 - Preserve account isolation, E2EE, installation continuity, authentication, stable txid and durable recovery. No unapproved authentication bypass, no DB destructive migration.
 - Candidate0.4.47+2216 subject to build preflight; preserve installed Debug package/signature and data. Debug APK follows conventional rebuild/signing workflow.
