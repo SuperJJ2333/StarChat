@@ -412,6 +412,7 @@ final class RoomTimelineController extends ChangeNotifier
   RoomTimelineController(this.adapter,
       {this.canSendNow,
       this.canDispatchNow,
+      this.isSourceActive,
       this.outboxRoomId,
       bool windowed = false,
       NetworkStateManager? networkStateManager,
@@ -485,6 +486,11 @@ final class RoomTimelineController extends ChangeNotifier
 
   /// Optional recovery readiness; permission is still checked independently.
   final bool Function()? canDispatchNow;
+
+  /// The lease can retire before its page/controller is disposed. Queued source
+  /// reads must not enter a retired capability during that interval.
+  final bool Function()? isSourceActive;
+  bool get _sourceActive => !_disposed && (isSourceActive?.call() ?? true);
 
   Future<void> resumePendingDispatch() async {
     if (_disposed || !(canDispatchNow?.call() ?? true)) return;
@@ -1274,7 +1280,7 @@ final class RoomTimelineController extends ChangeNotifier
   /// SDK bursts share one scheduled frame. Background/no-frame delivery still
   /// publishes within 50 ms. Explicit local operations call refresh directly.
   void scheduleRefresh() {
-    if (_disposed || _refreshFrame != null) return;
+    if (!_sourceActive || _refreshFrame != null) return;
     void flush() {
       final frame = _refreshFrame;
       _refreshFrame = null;
@@ -1283,7 +1289,7 @@ final class RoomTimelineController extends ChangeNotifier
       }
       _refreshDeadline?.cancel();
       _refreshDeadline = null;
-      if (!_disposed) unawaited(refresh());
+      if (_sourceActive) unawaited(refresh());
     }
 
     _refreshFrame =
@@ -1314,7 +1320,7 @@ final class RoomTimelineController extends ChangeNotifier
   }
 
   Future<void> refresh() async {
-    if (_disposed) return;
+    if (!_sourceActive) return;
     // A direct operation (send acknowledgment, history or navigation) consumes
     // the same latest source as a queued SDK burst. Do not project it again on
     // the next frame; events arriving after this synchronous read can schedule

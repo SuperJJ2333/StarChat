@@ -329,6 +329,55 @@ void main() {
     }
   });
 
+  for (final race in ['insert', 'replace', 'redact', 'evict', 'history', 'owner', 'dispose']) {
+    test('cached hydration respects retained identity and lifecycle: $race', () async {
+      final encryption = _HeldEncryption();
+      final client = _DecryptClient(encryption);
+      final room = Room(id: '!resident:synthetic', client: client);
+      room.setState(Event.fromJson({..._row(99), 'type': EventTypes.Encryption,
+        'state_key': '', 'content': {'algorithm': AlgorithmTypes.megolmV1AesSha2}}, room));
+      final encrypted = Event.fromJson({..._row(1), 'type': EventTypes.Encrypted,
+        'content': {'msgtype': MessageTypes.BadEncrypted, 'session_id': 'synthetic-session'}}, room);
+      final timeline = Timeline(room: room, chunk: TimelineChunk(events: [encrypted]));
+      var active = true;
+      try {
+        final pending = timeline.hydrateCachedEvents([encrypted], isActive: () => active);
+        await encryption.entered.future;
+        switch (race) {
+          case 'insert':
+            timeline.events.insert(0, Event.fromJson(_row(2), room));
+          case 'replace':
+            timeline.events[0] = Event.fromJson(_row(1), room);
+          case 'redact':
+            encrypted.setRedactionEvent(Event.fromJson({..._row(3), 'type': EventTypes.Redaction}, room));
+          case 'evict':
+            timeline.events.clear();
+          case 'history':
+            room.invalidateHistoryFragment();
+          case 'owner':
+            active = false;
+          case 'dispose':
+            timeline.cancelSubscriptions();
+        }
+        final before = timeline.events.toList();
+        final revision = timeline.presentationRevision;
+        encryption.released.complete(Event.fromJson(_row(1), room));
+        await pending;
+        if (race == 'insert') {
+          expect(timeline.events.map((e) => e.eventId), ['saved-2', 'saved-1']);
+          expect(timeline.events.last.type, EventTypes.Message);
+          expect(timeline.presentationRevision, greaterThan(revision));
+        } else {
+          expect(timeline.events, before);
+          expect(timeline.presentationRevision, revision);
+        }
+      } finally {
+        timeline.cancelSubscriptions();
+        await client.dispose();
+      }
+    });
+  }
+
   for (final cancel in [false, true]) {
     test(
         'late key decryption preserves identity after insertion; cancel=$cancel',

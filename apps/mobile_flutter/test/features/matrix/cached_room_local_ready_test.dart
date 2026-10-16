@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:matrix/encryption.dart';
+import 'package:olm/olm.dart' as olm;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
@@ -18,6 +21,15 @@ class _Client extends Client {
   Room? getRoomById(String roomId) => roomId == room.id ? room : null;
 }
 
+class _EncryptedClient extends _Client {
+  _EncryptedClient(super.store);
+  late final crypto = Encryption(client: this);
+  @override
+  Encryption get encryption => crypto;
+  @override
+  bool get encryptionEnabled => true;
+}
+
 class _Room extends Room {
   _Room({required super.client}) : super(id: '!cached:synthetic.test');
   final postLoadEntered = Completer<void>();
@@ -33,6 +45,102 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(SQfLiteEncryptionHelper.ffiInit);
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('retained cached forty decrypt with local keys and no broadcast',
+      () async {
+    await olm.init();
+    final factory =
+        createDatabaseFactoryFfi(ffiInit: SQfLiteEncryptionHelper.ffiInit);
+    final sql = await factory.openDatabase(inMemoryDatabasePath);
+    final db = MatrixSdkDatabase('cached-encrypted',
+        database: sql, sqfliteFactory: factory);
+    await db.open();
+    final client = _EncryptedClient(db)
+      ..accessToken = 'synthetic-token'
+      ..homeserver = Uri.parse('https://synthetic.test');
+    final room = client.room;
+    room.setState(Event(
+        room: room,
+        eventId: 'encryption',
+        senderId: client.userID,
+        originServerTs: DateTime.utc(2026),
+        type: EventTypes.Encryption,
+        stateKey: '',
+        content: {'algorithm': AlgorithmTypes.megolmV1AesSha2}));
+    final outbound = olm.OutboundGroupSession()..create();
+    final sessionId = outbound.session_id();
+    await client.crypto.keyManager
+        .setInboundGroupSession(room.id, sessionId, 'synthetic-sender', {
+      'algorithm': AlgorithmTypes.megolmV1AesSha2,
+      'session_key': outbound.session_key(),
+    });
+    expect(await db.getInboundGroupSession(room.id, sessionId), isNotNull,
+        reason: 'the valid local key must be persisted, not only in memory');
+    client.crypto.keyManager.clearInboundGroupSessions();
+    for (var i = 0; i < 40; i++) {
+      await db.storeEventUpdate(
+          EventUpdate(
+              roomID: room.id,
+              type: EventUpdateType.timeline,
+              content: {
+                'event_id': 'encrypted-$i',
+                'type': EventTypes.Encrypted,
+                'sender': client.userID,
+                'origin_server_ts': 1000 + i,
+                'content': {
+                  'algorithm': AlgorithmTypes.megolmV1AesSha2,
+                  'session_id': sessionId,
+                  'sender_key': 'synthetic-sender',
+                  'msgtype': MessageTypes.BadEncrypted,
+                  'can_request_session': true,
+                  'ciphertext': outbound.encrypt(jsonEncode({
+                    'room_id': room.id,
+                    'type': EventTypes.Message,
+                    'content': {
+                      'msgtype': MessageTypes.Text,
+                      'body': 'decrypted $i'
+                    }
+                  })),
+                },
+              }),
+          client);
+    }
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://synthetic.test'),
+        readContinuityMetadata: (_) async =>
+            const MatrixClientContinuityMetadata(
+                isLoggedIn: false,
+                userId: '@cached:synthetic.test',
+                deviceId: null,
+                ed25519Fingerprint: 'synthetic',
+                databaseGeneration: 'synthetic'));
+    final lease = await owner.openRoomLease(room.id);
+    final hydrated = Completer<void>();
+    var broadcasts = 0;
+    final events = client.onEvent.stream.listen((_) => broadcasts++);
+    final keys = room.onSessionKeyReceived.stream.listen((_) => broadcasts++);
+    final timeline = await lease.openLogicalRoomTimeline(
+        cachedFirst: true, onHydrated: hydrated.complete, onUpdate: () {});
+    try {
+      await room.postLoadEntered.future;
+      expect(timeline.snapshot(), isEmpty);
+      room.releasePostLoad.complete();
+      await hydrated.future.timeout(const Duration(seconds: 10));
+      expect(broadcasts, 0);
+      expect(timeline.snapshot(), hasLength(40));
+      expect(timeline.snapshot().first.text, 'decrypted 0',
+          reason: 'oldest ten are outside SDK default thirty');
+      expect(timeline.snapshot().last.text, 'decrypted 39');
+    } finally {
+      timeline.dispose();
+      await lease.cancel();
+      await events.cancel();
+      await keys.cancel();
+      outbound.free();
+      await client.dispose();
+      await db.close();
+    }
+  });
 
   for (final retire in [false, true]) {
     test('SQLCipher cached head precedes SDK postLoad; retire=$retire',

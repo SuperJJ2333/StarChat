@@ -2053,6 +2053,7 @@ final class MatrixRoomLease
               generation != room.historyGeneration) {
             throw StateError('Matrix cached timeline lease revoked');
           }
+          final cachedEvents = List<Event>.of(events);
           final timeline = Timeline(
               room: room,
               chunk: TimelineChunk(events: events),
@@ -2067,9 +2068,18 @@ final class MatrixRoomLease
             Timeline? hydrated;
             try {
               hydrated = await room.getTimeline(onUpdate: onUpdate);
-              // Keep the subscribed local timeline and its reading fragment.
-              // SDK hydration publishes decrypt/member changes through the same
-              // room streams; replacing it here would lose a scrolled anchor.
+              // SDK getTimeline decrypts its own default thirty rows. Retry the
+              // captured forty in the retained subscription, including its tail.
+              await timeline.hydrateCachedEvents(cachedEvents,
+                  isActive: () =>
+                      !capability._disposed &&
+                      !canceled &&
+                      !owner._accessRevoked &&
+                      identical(owner._client, client) &&
+                      identical(_room, room) &&
+                      identity ==
+                          (client.userID, client.deviceID, client.homeserver) &&
+                      generation == room.historyGeneration);
               await _enableSdkResidentWindow(timeline);
               capability._ensureActive();
               if (generation != room.historyGeneration) {

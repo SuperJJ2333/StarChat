@@ -1551,6 +1551,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _load() async {
+    final lease = widget.roomLease;
+    bool sourceActive() =>
+        mounted &&
+        !_disposing &&
+        identical(widget.roomLease, lease) &&
+        !lease.canceled;
     try {
       widget.performanceTrace?.mark(PerformanceStage.timelineLocalStarted);
       final accountId = roomInfo.currentUserId;
@@ -1571,6 +1577,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         anchorEventId: widget.navigationRequests?.value.anchorEventId ??
             widget.initialAnchorEventId,
         onUpdate: () {
+          if (!sourceActive()) return;
           _scheduleRoomMetadataRefresh();
           controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
           controller?.scheduleRefresh();
@@ -1583,6 +1590,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _logicalTimeline = timeline;
       controller = RoomTimelineController(
         onSourceRefreshed: _recordGlobalSearchIndex,
+        isSourceActive: sourceActive,
         windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
         // 发送必失败，消息进入本地 failed 状态）。拉黑状态取自业务 API
@@ -6473,6 +6481,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final selected = selection.selectedIds.toList()..sort();
     final stamp = (
       _rowPresentationRevision,
+      _canDispatch,
       contactsByMatrixId,
       ownProfile,
       peer,

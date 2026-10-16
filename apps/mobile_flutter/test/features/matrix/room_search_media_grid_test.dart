@@ -246,6 +246,9 @@ void main() {
             ...client.room.live.single.toJson(),
             'event_id': '\$current-neighbor'
           }, client.room));
+          await db.storeEventUpdate(EventUpdate(roomID: client.room.id,
+              type: EventUpdateType.timeline,
+              content: client.room.live.last.toJson()), client);
           client.room.lookupIds.clear();
         }
         if (scenario == 'visible grid') {
@@ -259,6 +262,19 @@ void main() {
                 client);
           }
           client.room.lookupIds.clear();
+        }
+        if (!current) {
+          // Keep the historical target outside the real cached forty-row head.
+          // A fake optional getTimeline([]) no longer defines page residency.
+          for (var i = 0; i < 40; i++) {
+            await db.storeEventUpdate(EventUpdate(roomID: client.room.id,
+              type: EventUpdateType.timeline, content: {
+                'event_id': 'recent-text-$i', 'sender': '@peer:matrix.test',
+                'origin_server_ts': DateTime.now().millisecondsSinceEpoch + i,
+                'type': EventTypes.Message,
+                'content': {'msgtype': MessageTypes.Text, 'body': 'recent text $i'},
+              }), client);
+          }
         }
         if (late || scenario == 'visible grid') {
           client.room.lookupGate = Completer<void>();

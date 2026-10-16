@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart' show changliaoCallMessageType;
+import 'package:liuhetong_mobile/ui/chat/wechat_call_bubble.dart';
+import 'package:liuhetong_mobile/features/finance/finance_message_entry.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -164,6 +168,7 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
     WidgetTester tester, _LifecycleClient client,
     {bool pushRoute = false,
     ValueNotifier<bool>? dispatchReady,
+    ContactDetails? initialContact,
     List<String>? businessRequests,
     SharedPreferencesStorePlatform? preferences}) async {
   tester.view.physicalSize = const Size(360, 800);
@@ -199,6 +204,7 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
   final page = RoomPage(
       api: api,
       dispatchReady: dispatchReady,
+      initialContact: initialContact,
       roomLease: lease,
       roomName: 'Synthetic lifecycle',
       initialIdentityCache: ProfileRepository.forTesting(
@@ -226,6 +232,46 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+
+  testWidgets('cached finance and call readiness change while optional hydration is held', (tester) async {
+    final client = _CachedClient();
+    client.store.events = [Event(room: client.localRoom, eventId: 'finance', senderId: '@peer:lifecycle.test',
+      type: EventTypes.Message, originServerTs: DateTime.utc(2026, 10, 7),
+      content: {'msgtype': changliaoRedPacketMessageType, 'packet_id': 'packet-test', 'body': 'packet'}),
+      Event(room: client.localRoom, eventId: 'call', senderId: '@peer:lifecycle.test',
+        type: EventTypes.Message, originServerTs: DateTime.utc(2026, 10, 7),
+        content: {'msgtype': changliaoCallMessageType, 'body': 'call'}),
+    ];
+    client.localRoom.heldTimeline = Completer<Timeline>();
+    final ready = ValueNotifier(false);
+    final lease = await _mountLifecycleRoom(tester, client, dispatchReady: ready,
+      initialContact: const ContactDetails(userId: 'peer', username: 'peer', matrixUserId: '@peer:lifecycle.test'));
+    try {
+      final page = tester.state(find.byType(RoomPage)) as dynamic;
+      final controller = page.controller;
+      final scroll = tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList)).controller;
+      final offset = scroll.offset;
+      expect(find.byType(FinanceMessageEntry), findsNothing);
+      expect(tester.widget<WeChatCallBubble>(find.byType(WeChatCallBubble)).onRedial, isNull);
+      ready.value = true;
+      await tester.pump();
+      expect(find.byType(FinanceMessageEntry), findsOneWidget);
+      expect(tester.widget<WeChatCallBubble>(find.byType(WeChatCallBubble)).onRedial, isNotNull);
+      ready.value = false;
+      await tester.pump();
+      expect(find.byType(FinanceMessageEntry), findsNothing);
+      expect(find.text('状态未知'), findsOneWidget);
+      expect(tester.widget<WeChatCallBubble>(find.byType(WeChatCallBubble)).onRedial, isNull);
+      expect(identical(page.controller, controller), isTrue);
+      expect(scroll.offset, offset);
+      expect(controller.messages.map((RoomMessageViewModel m) => m.id), containsAll(['finance', 'call']));
+    } finally {
+      client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
+      await tester.pumpWidget(const SizedBox());
+      await lease.cancel();
+      ready.dispose();
+    }
+  });
 
   testWidgets('cached bubbles paint and scroll while full timeline is held',
       (tester) async {

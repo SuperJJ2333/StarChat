@@ -193,6 +193,25 @@ void main() {
     expect(controller.messages.single.id, 'background');
   });
 
+  testWidgets('retired source rejects queued and direct refresh before disposal', (tester) async {
+    final adapter = FakeTimelineAdapter();
+    var active = true;
+    final controller = RoomTimelineController(adapter, isSourceActive: () => active);
+    addTearDown(controller.dispose);
+    controller.scheduleRefresh();
+    final reads = adapter.snapshotReads;
+    active = false;
+    await tester.pump(const Duration(milliseconds: 60));
+    await controller.refresh();
+    controller.scheduleRefresh();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(adapter.snapshotReads, reads);
+    expect(adapter.disposed, 0, reason: 'the lease retires before the widget disposes');
+    active = true;
+    await controller.refresh();
+    expect(adapter.snapshotReads, greaterThan(reads));
+  });
+
   testWidgets('disposal cancels a queued burst without reading its source',
       (tester) async {
     final adapter = FakeTimelineAdapter();

@@ -957,6 +957,42 @@ class Timeline {
     }
   }
 
+  /// Retry local decryption for a captured bounded cache without replacing the
+  /// subscribed timeline or admitting events that have since left its window.
+  Future<void> hydrateCachedEvents(Iterable<Event> cachedEvents,
+      {required bool Function() isActive}) async {
+    final generation = room.historyGeneration;
+    final encryption = room.client.encryption;
+    if (!room.encrypted || !room.client.encryptionEnabled || encryption == null) {
+      return;
+    }
+    bool active() =>
+        !_pinnedDisposed && generation == room.historyGeneration && isActive();
+    var changed = false;
+    for (final original in cachedEvents) {
+      if (!active()) return;
+      if (original.type != EventTypes.Encrypted || original.redacted) continue;
+      if (!events.any((event) => identical(event, original))) continue;
+      // Use the normal local-key/replay validation path. Hydration only changes
+      // this presentation; it must not write a stale result after history clear.
+      final decrypted = await encryption.decryptRoomEvent(room.id, original);
+      if (!active()) return;
+      final index = events.indexWhere((event) =>
+          event.eventId == original.eventId && identical(event, original));
+      if (index < 0 ||
+          original.redacted ||
+          decrypted.type == EventTypes.Encrypted) {
+        continue;
+      }
+      events[index] = decrypted;
+      _presentationRevision++;
+      _rebuildAggregatedEvents();
+      onChange?.call(index);
+      changed = true;
+    }
+    if (changed && active()) onUpdate?.call();
+  }
+
   void _sessionKeyReceived(String sessionId) async {
     var decryptAtLeastOneEvent = false;
     Future<void> decryptFn() async {

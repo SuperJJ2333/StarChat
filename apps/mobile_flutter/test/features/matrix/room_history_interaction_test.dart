@@ -76,6 +76,7 @@ class _Gate {
 class _ObservedStore extends MatrixSdkDatabase {
   _ObservedStore(super.path,
       {required super.database, required super.sqfliteFactory});
+  final retainedCache = <String, _CountedEvents>{};
   int pageRows = 0;
   int individualReads = 0;
   int _readEpoch = 0;
@@ -106,6 +107,9 @@ class _ObservedStore extends MatrixSdkDatabase {
       if (stack != null) lastReadStack = stack;
     } else if (diagnoseReads) {
       debugPrint('PRIOR_QUERY_COMPLETION rows=${rows.length}');
+    }
+    if (start == 0 && !onlySending && limit == 40) {
+      return retainedCache[room.id] = _CountedEvents(rows);
     }
     return rows;
   }
@@ -208,17 +212,6 @@ class _InteractionRoom extends Room {
         onNewEvent: onNewEvent,
         onUpdate: onUpdate,
         eventContextId: eventContextId);
-    // These rows were persisted through the public database API, so eviction
-    // remains reloadable. N is independently asserted at the database boundary.
-    if (eventContextId == null) {
-      while (timeline.events.length < 1000 && timeline.canRequestHistory) {
-        final before = timeline.events.length;
-        timelinePhase = 'await refill from $before';
-        await timeline.requestHistory(
-            historyCount: (1000 - before).clamp(1, 256));
-        if (timeline.events.length == before) break;
-      }
-    }
     timelinePhase = 'observing source';
     final counted = _CountedEvents(timeline.chunk.events);
     timeline.chunk.events = counted;
@@ -364,9 +357,8 @@ class _Fixture {
           accountKey: client.userID, store: MemoryProfileStore()),
       onCreateGroup: () {},
     )));
-    // This fixture deliberately fills a 1000-row real SDK window before the
-    // page receives it. Each FFI completion may need another widget-clock
-    // turn; setup work is bounded by that fixed resident window, not N.
+    // Cached-first opens forty real persisted rows. Drive native completions
+    // and frames until that retained cache is visible, independent of N.
     const setupFrameBudget = 1000 + 2 * 256;
     for (var i = 0;
         i < setupFrameBudget &&
@@ -386,6 +378,20 @@ class _Fixture {
     }
     expect(find.byType(AnchoredTimelineList), findsOneWidget);
     return lease;
+  }
+
+  Future<void> warmResidentWindow(WidgetTester tester) async {
+    // Gesture tests need a genuine resident overlap. Load it through the active
+    // controller, not the separate optional SDK hydration timeline.
+    final controller = _controller(tester);
+    for (var page = 0; page < 16; page++) {
+      await _withBothClocks(tester, controller.loadHistory,
+          phase: 'resident gesture fixture page $page');
+    }
+    expect(store.retainedCache[a.id]!.length, inInclusiveRange(400, 1000));
+    expect(controller.messages.length, lessThanOrEqualTo(200));
+    await controller.showLatest();
+    await tester.pump();
   }
 
   Future<void> dispose(WidgetTester tester) async {
@@ -643,12 +649,12 @@ void main() {
                 phase: 'persisted count N=$n'),
             n);
         expect(
-            fixture.a.timelines.single.events.length, lessThanOrEqualTo(1000));
+            fixture.store.retainedCache[fixture.a.id]!.length, lessThanOrEqualTo(1000));
         expect(_controller(tester).messages.length, lessThanOrEqualTo(200));
-        fixture.a.resetReads();
+        fixture.store.retainedCache[fixture.a.id]!.reads = 0;
         fixture.store.resetCounts();
         await _controller(tester).refresh();
-        expect(fixture.a.sourceReads, 0,
+        expect(fixture.store.retainedCache[fixture.a.id]!.reads, 0,
             reason:
                 'unchanged refresh must reuse its revision, independent of N and resident K');
         expect(fixture.store.pageRows + fixture.store.individualReads, 0);
@@ -723,7 +729,7 @@ void main() {
           .inputFocusNode as FocusNode;
       focus.requestFocus();
       for (final inset in [0.0, 160.0, 320.0, 160.0, 0.0]) {
-        fixture.a.resetReads();
+        fixture.store.retainedCache[fixture.a.id]!.reads = 0;
         fixture.store.resetCounts();
         tester.view.viewInsets = FakeViewPadding(bottom: inset);
         input.value = const TextEditingValue(
@@ -738,7 +744,7 @@ void main() {
         expect(_list(tester).eventIds, before,
             reason:
                 'metric-only layout must preserve the admitted history window');
-        expect(fixture.a.sourceReads, 0,
+        expect(fixture.store.retainedCache[fixture.a.id]!.reads, 0,
             reason:
                 'keyboard and selection changes do not invalidate source presentation');
         expect(identical(controller.messages, modelsBefore), isTrue,
@@ -843,6 +849,7 @@ void main() {
     final fixture = (await tester.runAsync(() => _Fixture.create(10000)))!;
     try {
       await fixture.mount(tester, fixture.a);
+      await fixture.warmResidentWindow(tester);
       final controller = _controller(tester);
       final scroll = _list(tester).controller;
       scroll.jumpTo(scroll.position.maxScrollExtent - 40);
@@ -856,7 +863,7 @@ void main() {
           .startGesture(tester.getCenter(find.byType(AnchoredTimelineList)));
       await gesture.moveBy(const Offset(0, 24));
       await tester.pump();
-      await shift;
+      await _withBothClocks(tester, () => shift, phase: 'drag window shift');
       expect(_list(tester).eventIds, isNot(before),
           reason: 'a genuine window shift must occur');
       expect(scroll.position.activity, isA<DragScrollActivity>());
@@ -882,8 +889,10 @@ void main() {
     final fixture = (await tester.runAsync(() => _Fixture.create(10000)))!;
     try {
       await fixture.mount(tester, fixture.a);
+      await fixture.warmResidentWindow(tester);
       final controller = _controller(tester);
-      await controller.showEarlierWindow();
+      await _withBothClocks(tester, controller.showEarlierWindow,
+          phase: 'ballistic window shift');
       // Let the expanded lazy sliver publish its new dimensions before using
       // maxScrollExtent to position at the retained overlap.
       await tester.pump();
@@ -923,7 +932,8 @@ void main() {
       expect(idsBefore.indexOf(anchor.eventId), greaterThanOrEqualTo(100),
           reason: 'visible anchor must be in the retained 100-row overlap');
       expect(controller.hasEarlierWindow, isTrue);
-      await controller.showEarlierWindow();
+      await _withBothClocks(tester, controller.showEarlierWindow,
+          phase: 'ballistic window shift');
       await tester.pump();
       expect(_list(tester).eventIds, isNot(idsBefore));
       final idsAfter = _list(tester).eventIds;
