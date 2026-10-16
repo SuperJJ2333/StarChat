@@ -1,6 +1,17 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-10-16-interactive-cache-startup": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "additionalFlutter": ["apps/mobile_flutter/lib/main.dart", "apps/mobile_flutter/lib/app_home.dart", "apps/mobile_flutter/lib/session_gate.dart"],
+      "html": "frontend/src/screens/mobile-experience.js",
+      "demos": ["chat-experience-cached-start", "chat-experience-recent-history"],
+      "components": ["RoomPage", "SessionGate", "AppHome"],
+      "props": ["transactionId", "activeTab"],
+      "states": ["cached", "loading", "offline", "queued", "ready", "sent"],
+      "tokens": ["WeChatSpacing.lg = --space-lg", "WeChatColors.textSecondary = --color-text-secondary"],
+      "behavior": "Eligible local content permits tab navigation and room entry during recovery. Local pending messages keep one bubble through live handoff and acknowledgement. Identity and durable storage checks still precede access; pending is not delivered. HTML uses synthetic local fixtures."
+    },
     "2026-10-16-mobile-experience": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
       "additionalFlutter": ["apps/mobile_flutter/lib/app_home.dart", "apps/mobile_flutter/lib/session_gate.dart", "apps/mobile_flutter/lib/ui/chat/emoji_resource_glyph.dart"],

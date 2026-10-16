@@ -28,6 +28,26 @@ test('cached content stays present while asynchronous sync fails and retries',as
   click(root,'retry'); assert.equal(rows().length,3);
   click(root,'complete'); assert.equal(root.dataset.phase,'ready');
 });
+test('cached startup permits tab navigation and room entry before sync completes',async()=>{
+  const root=await render('cached-start');
+  click(root,'tab-contacts'); assert.equal(root.dataset.activeTab,'contacts');
+  click(root,'tab-messages'); assert.equal(root.dataset.activeTab,'messages');
+  click(root,'open-room-1'); assert.equal(root.dataset.openRoom,'1');
+  assert.equal(root.dataset.phase,'loading');
+  click(root,'back-to-list'); assert.equal(root.dataset.openRoom,'');
+  assert.equal(walk(root).filter(node=>node.dataset.cachedMessage).length,3);
+});
+test('room pending sends survive recovery and ACK updates the same bubble',async()=>{
+  const root=await render('recent-history');
+  click(root,'send-local');
+  const pending=control(root,'pending-bubble');
+  assert.ok(pending); assert.equal(pending.dataset.delivery,'queued');
+  click(root,'fail'); assert.equal(control(root,'pending-bubble'),pending);
+  click(root,'retry'); click(root,'complete');
+  assert.equal(control(root,'pending-bubble'),pending);
+  assert.equal(pending.dataset.delivery,'sent');
+  assert.equal(walk(root).filter(node=>node.dataset.control==='pending-bubble').length,1);
+});
 test('local outgoing preview survives failure/retry and one ACK maps the same row',async()=>{
   const root=await render('outgoing-media');
   const identity=root.dataset.transactionId;

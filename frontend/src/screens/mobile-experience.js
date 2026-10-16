@@ -83,6 +83,16 @@ export function mobileExperienceDemo(definition) {
   }
   const history=definition.state==='recent-history';
   const rows=element('div','p-mobile-experience__rows');
+  const navigationActions=element('div','p-mobile-experience__actions');
+  let pending;
+  root.dataset.activeTab='messages';
+  const openRoom=id=>{
+    root.dataset.openRoom=id;
+    content.replaceChildren(element('p','','这周末一起去海边吧。'));
+    action('back-to-list','返回消息列表',()=>{
+      root.dataset.openRoom=''; content.replaceChildren(rows);
+    },content);
+  };
   for (const [index,text] of ['这周末一起去海边吧。','好，照片我发给你。','收到，明天见！'].entries()) {
     const row=element('div',history?'':'c-conversation-row');
     row.dataset.cachedMessage=String(index+1);
@@ -92,12 +102,35 @@ export function mobileExperienceDemo(definition) {
       const body=element('div','c-conversation-row__body');
       body.append(element('h2','c-conversation-row__title',name),element('p','c-conversation-row__preview',text));
       row.append(component('app-avatar',{name,size:'conversation'}),body,element('time','c-conversation-row__time','09:41'));
+      action(`open-room-${index+1}`,'进入会话',()=>openRoom(String(index+1)),row);
     }
     rows.append(row);
   }
   content.append(rows);
+  if (!history) {
+    for (const [id,label] of [['messages','消息'],['contacts','通讯录'],['discover','发现'],['me','我']]) {
+      action(`tab-${id}`,label,()=>{
+        root.dataset.activeTab=id; root.dataset.openRoom='';
+        content.replaceChildren(id==='messages'?rows:element('h2','',label));
+      },navigationActions);
+    }
+    root.append(navigationActions);
+  } else {
+    action('send-local','发送测试消息',()=>{
+      if (pending) return;
+      pending=element('div','','明天见！ · 待发送');
+      pending.dataset.control='pending-bubble';
+      pending.dataset.delivery=root.dataset.phase==='ready'?'sent':'queued';
+      if (pending.dataset.delivery==='sent') pending.textContent='明天见！ · 已发送';
+      rows.append(pending);
+    },navigationActions);
+    root.append(navigationActions);
+  }
   const draw=phase=>{
     root.dataset.phase=phase; actions.replaceChildren();
+    if (phase==='ready' && pending) {
+      pending.dataset.delivery='sent'; pending.textContent='明天见！ · 已发送';
+    }
     status.textContent=phase==='ready'?'':phase==='failed'?'连接暂不可用，本地内容仍可浏览。':history?'正在补齐更早的消息…':'正在连接…';
     if (phase==='failed') action('retry','重试',()=>draw('loading'));
     if (phase==='loading') {
