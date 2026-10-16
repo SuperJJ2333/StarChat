@@ -959,8 +959,11 @@ class Timeline {
 
   /// Retry local decryption for a captured bounded cache without replacing the
   /// subscribed timeline or admitting events that have since left its window.
+  /// [retainedFragments] supplies only current reading forks, including forks
+  /// created during a decryption await; no fork registry or viewport is retained.
   Future<void> hydrateCachedEvents(Iterable<Event> cachedEvents,
-      {required bool Function() isActive}) async {
+      {required bool Function() isActive,
+      Iterable<Timeline> Function()? retainedFragments}) async {
     final generation = room.historyGeneration;
     final encryption = room.client.encryption;
     if (!room.encrypted || !room.client.encryptionEnabled || encryption == null) {
@@ -968,29 +971,48 @@ class Timeline {
     }
     bool active() =>
         !_pinnedDisposed && generation == room.historyGeneration && isActive();
-    var changed = false;
+    Iterable<Timeline> targets() => [
+          this,
+          ...?retainedFragments?.call(),
+        ].where((target) =>
+            !target._pinnedDisposed &&
+            identical(target.room, room) &&
+            (identical(target, this) || target._pinnedGeneration == generation));
+    final changed = <Timeline>{};
     for (final original in cachedEvents) {
       if (!active()) return;
       if (original.type != EventTypes.Encrypted || original.redacted) continue;
-      if (!events.any((event) => identical(event, original))) continue;
+      if (!targets().any((target) =>
+          target.events.any((event) => identical(event, original)))) {
+        continue;
+      }
       // Use the normal local-key/replay validation path. Hydration only changes
       // this presentation; it must not write a stale result after history clear.
       final decrypted = await encryption.decryptRoomEvent(room.id, original);
       if (!active()) return;
-      final index = events.indexWhere((event) =>
-          event.eventId == original.eventId && identical(event, original));
-      if (index < 0 ||
-          original.redacted ||
+      if (original.redacted ||
+          original.type != EventTypes.Encrypted ||
           decrypted.type == EventTypes.Encrypted) {
         continue;
       }
-      events[index] = decrypted;
-      _presentationRevision++;
-      _rebuildAggregatedEvents();
-      onChange?.call(index);
-      changed = true;
+      // Resolve again after await: scrolling may have created a reading fork,
+      // replaced its context, or evicted the live copy while the fork kept it.
+      for (final target in targets()) {
+        if (!active()) return;
+        final index = target.events.indexWhere((event) =>
+            event.eventId == original.eventId && identical(event, original));
+        if (index < 0) continue;
+        target.events[index] = decrypted;
+        target._presentationRevision++;
+        target._rebuildAggregatedEvents();
+        target.onChange?.call(index);
+        changed.add(target);
+      }
     }
-    if (changed && active()) onUpdate?.call();
+    if (!active()) return;
+    for (final target in targets()) {
+      if (changed.contains(target)) target.onUpdate?.call();
+    }
   }
 
   void _sessionKeyReceived(String sessionId) async {

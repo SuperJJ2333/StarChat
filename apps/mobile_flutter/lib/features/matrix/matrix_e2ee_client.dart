@@ -2071,6 +2071,10 @@ final class MatrixRoomLease
               // SDK getTimeline decrypts its own default thirty rows. Retry the
               // captured forty in the retained subscription, including its tail.
               await timeline.hydrateCachedEvents(cachedEvents,
+                  retainedFragments: () {
+                    final context = capability._contextTimeline;
+                    return context == null ? const <Timeline>[] : [context];
+                  },
                   isActive: () =>
                       !capability._disposed &&
                       !canceled &&

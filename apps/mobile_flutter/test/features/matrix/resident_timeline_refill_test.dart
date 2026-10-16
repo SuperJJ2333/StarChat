@@ -329,6 +329,69 @@ void main() {
     }
   });
 
+  for (final race in ['before', 'during', 'evicted-before', 'evicted-during',
+    'replace', 'redact', 'dispose', 'owner', 'history', 'old-fragment-generation',
+    'context-replaced', 'boundary']) {
+    test('cached hydration updates only the current retained fork: $race', () async {
+      final encryption = _HeldEncryption();
+      final client = _DecryptClient(encryption);
+      final room = Room(id: '!resident:synthetic', client: client);
+      room.setState(Event.fromJson({..._row(99), 'type': EventTypes.Encryption,
+        'state_key': '', 'content': {'algorithm': AlgorithmTypes.megolmV1AesSha2}}, room));
+      final original = Event.fromJson({..._row(1), 'type': EventTypes.Encrypted,
+        'content': {'msgtype': MessageTypes.BadEncrypted, 'session_id': 'synthetic-session'}}, room);
+      final live = Timeline(room: room, chunk: TimelineChunk(events: [original]));
+      final fragments = <Timeline>[];
+      Timeline? current;
+      Timeline fork(Timeline source) {
+        final value = Timeline.forkHistory(source: source, room: room);
+        fragments.add(value);
+        return value;
+      }
+      if (race != 'during') current = fork(live);
+      final first = current;
+      if (race == 'evicted-before') live.events.clear();
+      if (race == 'old-fragment-generation') room.invalidateHistoryFragment();
+      var active = true;
+      try {
+        final pending = live.hydrateCachedEvents([original], isActive: () => active,
+            retainedFragments: () => [if (current != null) current]);
+        await encryption.entered.future;
+        switch (race) {
+          case 'during': current = fork(live);
+          case 'evicted-during': live.events.clear();
+          case 'replace': current!.events[0] = Event.fromJson(_row(1), room);
+          case 'redact': original.setRedactionEvent(Event.fromJson({..._row(3), 'type': EventTypes.Redaction}, room));
+          case 'dispose': current!.cancelSubscriptions();
+          case 'owner': active = false;
+          case 'history': room.invalidateHistoryFragment();
+          case 'context-replaced':
+            final unrelated = Timeline(room: room, chunk: TimelineChunk(events: [Event.fromJson(_row(8), room)]));
+            current = fork(unrelated);
+            unrelated.cancelSubscriptions();
+          case 'boundary': live.events.insert(0, Event.fromJson(_row(2), room));
+        }
+        final before = current!.events.toList();
+        final revision = current.presentationRevision;
+        encryption.released.complete(Event.fromJson(_row(1), room));
+        await pending;
+        if (['before', 'during', 'evicted-before', 'evicted-during', 'boundary'].contains(race)) {
+          expect(current.events.map((e) => e.eventId), ['saved-1']);
+          expect(current.events.single.type, EventTypes.Message);
+          expect(current.presentationRevision, greaterThan(revision));
+        } else {
+          expect(current.events, before);
+          expect(current.presentationRevision, revision);
+          if (race == 'context-replaced') expect(first!.events.single.type, EventTypes.Encrypted);
+        }
+      } finally {
+        for (final fragment in fragments) { fragment.cancelSubscriptions(); }
+        live.cancelSubscriptions();
+        await client.dispose();
+      }
+    });
+  }
+
   for (final race in ['insert', 'replace', 'redact', 'evict', 'history', 'owner', 'dispose']) {
     test('cached hydration respects retained identity and lifecycle: $race', () async {
       final encryption = _HeldEncryption();
