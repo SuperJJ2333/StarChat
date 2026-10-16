@@ -2,7 +2,7 @@
 
 ## 2026-10-17 首屏本地投影修正实施中（2218冷启动体验未达标）
 
-用户报告2218仍有整页加载并明确批准四项修正：最小身份/密钥检查后有界加密缓存直接交互、完整SDK后台恢复、入房缓存滚动/文字持久待发、真实main入口延迟恢复验收。当前只读研究确认外层启动门及全量房间读取仍阻塞。复用interactive-cache-startup树7747e54a，尚未产生新包；2218安装事实保持，S1用户体验记FAIL_USER_REPORT。见[续办任务](tasks/2026-10-17-startup-local-projection.md)。
+用户报告2218仍有整页加载并明确批准四项修正：最小身份/密钥检查后有界加密缓存直接交互、完整SDK后台恢复、入房缓存滚动/文字持久待发、真实main入口延迟恢复验收。2219普通main已保数据安装，但实际账号录像仍见整页加载，记FAIL_PERCEIVED_LOADING。全量6093PASS/9SKIP与原生合成入口PASS不足以证明体验；继续实现独立有界AEAD首屏缓存，将原整库检查保留后台。复用interactive-cache-startup树02c76dcc。见[续办任务](tasks/2026-10-17-startup-local-projection.md)。
 
 
 ## 2026-10-16 交互缓存启动及入房：2218 Debug已安装
@@ -2713,3 +2713,4 @@ iOS0.4.25/2194于21:54 +08发布，最终SHA552a07a4；用户对当前包三项�
 
 
 用户审核 Three.js HTML 与美化 APP 图标后授权静态发布。www 首页及 /download 已切 orbit-20261005-v1，532 前端测试、UI契约、6项发布器恢复、两侧严格TLS资源SHA/安装包HEAD、线上390/1440px检查通过。Android2202/iOS2194包、manifest、十项设置、选线模块、nginx与容器不变；0700回退备份已保存，临时SOCKS已关闭。[任务](tasks/2026-10-05-orbit-website-publication.md) · [验证](../verification/2026-10-05-orbit-website-publication.md)。
+

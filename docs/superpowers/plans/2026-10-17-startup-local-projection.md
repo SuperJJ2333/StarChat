@@ -3,7 +3,7 @@
 > Use subagent-driven-development for one coherent cross-module implementation task, independent specification then quality/security review, followed by root-owned delivery. User already approved the four-point design and original emulator delivery; continue without another permission loop.
 
 **Goal:** Valid cached account opens a real interactive messages list and rooms before full SDK initialization, including durable text pending.
-**Architecture:** Opt-in staged initialization on the same Client/Room identities; existing SQLCipher projection reads at most40 recent rooms and required bounded states first. Keep minimum installation/identity/key/Olm safety; defer device-key collections, remaining rooms and optional data/network, and do not mark dispatch verified until full initialization settles.
+**Architecture (revised after real-device failure):** Independent bounded account-bound AEAD display projection; minimum secure account/install/key admission before display, unchanged whole Matrix DB preflight and SDK restoration after first content frame. Same Client/Room/page and existing outbox. Prior Task1 SQLCipher projection is historical implementation evidence, superseded for the fast path by Task4 and its ADR. Full original checks still gate transport.
 **Tech:** Flutter/Dart, vendored Matrix, SQLCipher, Android Debug.
 **Spec:** docs/superpowers/specs/2026-10-17-startup-local-projection-design.md.
 
@@ -28,7 +28,7 @@
 
 **Owned files:** apps/mobile_flutter/third_party/matrix/lib/src/client.dart; src/database/database_api.dart; src/database/matrix_sdk_database.dart; apps/mobile_flutter/lib/features/matrix/matrix_client_factory.dart; matrix_e2ee_client.dart; core/matrix_startup_client.dart; core/session_bootstrap_controller.dart; main.dart; core/installation_startup_gate.dart only if required; focused matching tests and integration_test/android_startup_local_projection_test.dart. Additional required product file must be declared to root before editing. Preserve LF SDK files.
 
-**Interfaces:** Client.init optional bool localCacheFirst=false, localCacheReady and initializationCompleted completion interfaces; concrete future ownership/error delivery documented in report. MatrixClientFactory.createForStartup() returns sameClient once safe bounded projection available, normal create unchanged. MatrixSdkE2eeClient/public session interface exposes complete initialization barrier with immediately complete default for ordinary fakes/clients. Bootstrap announces local eligibility first, awaits full barrier before authenticated dispatch. main test dependency seam defaults production, injects platform/store/factory/API adapters only and must call actual production main composition. Names can be adjusted only with root-notified equivalent semantics.
+**Interfaces (approved equivalent API):** Client.initLocalCache() opt-in wrapper preserves existing init overrides; localCacheReady and initializationCompleted completion interfaces; concrete future ownership/error delivery documented in report. MatrixClientFactory.createForStartup() returns sameClient once safe bounded projection available, normal create unchanged. MatrixSdkE2eeClient/public session interface exposes complete initialization barrier with immediately complete default for ordinary fakes/clients. Bootstrap announces local eligibility first, awaits full barrier before authenticated dispatch. main test dependency seam defaults production, injects platform/store/factory/API adapters only and must call actual production main composition. Names can be adjusted only with root-notified equivalent semantics. Approved scheduling clarification: optional full-recovery resume barrier is released after the actual cached AppHome frame; ordinary callers continue by default. No-cache, recovery, errors and disposal must not wait indefinitely for a nonexistent home frame.
 
 - [ ] RED: genuine persisted SQLCipher fixture with>40 rooms; hold full initialization device-key/allroom stage. Assert factory returns within local projection while full completionpending, <=40 local rows and no allroom scan; data/keys no unauthorized exposure.
 - [ ] Implement opt-in sameClient local-ready stage. Existing minimum encrypted identity/Olm path retained; guarded full continuation merges Room identity. Preserve defaults/source compatibility. Add error/dispose/accountgeneration and defaultnormal-init regression cases.
@@ -48,3 +48,15 @@ Root owned docs/pubspec/AppConfig/iOS metadata parity as version contracts requi
 - [ ] Build ordinarymain source once, Apktool2.12.1→zipalign36-P16→fixedsign→semantic/nativeasset/manifest/signature checks. RawAPK is intermediate.
 - [ ] install-r ordinarymain; compare UID/firstInstall/version/baseAPKhash; coldlaunch actualUI observation, no humanmessage sending. Keep native synthetic test evidence separate from realuserdata smoke and Debug performance separate from profileperformance.
 - [ ] Update task/currentstate/report, timings and links; clean onlyownedmaps/processes. Keepworktree/artifacts; no productionpublish/merge requested.
+
+## 2219 真冷启动反例与修正决定（2026-10-17）
+
+普通 main 0.4.50+2219 已保数据安装，成品 SHA256 283cbcf18f90e1dbd81c65edb19154f11693e84789057d07d0b8fea1a258066b，固定 75b31 签名，UID10090/firstInstall 不变。但实际账号冷启动录像 main-cold-video-2219 明确 FAIL_PERCEIVED_LOADING：仍出现启动、本地聊天及本机会话加载页面。6093PASS/9SKIP 与原生合成入口 PASS 均不覆盖该性能反例，不能记作用户目标完成。
+
+Ruling: 采用独立有界 AEAD 首屏缓存，替代首屏依赖整库 SQLCipher 查询。用户四项明确授权支持此修正。保留原整库 preflight、SDK、业务认证与发送权限链在后台；本地展示能力不能充当通信权限。先冻结存储/失效/接口边界并独立领域与质量安全审查，再实施及真冷启重验。详见 task-3-diagnosis.md。下一步：独立缓存设计审查与行为 RED（持有整个原整库 preflight，而非仅 device-key 恢复）。
+
+## Task4: Independent encrypted first-screen projection
+
+Task1 and Task2 produced installed2219 but FAILED actual cold-start UX. Do not repeat them unchanged. Execute [Task4 brief](../../verification/artifacts/2026-10-17/startup-local-projection/task-4-brief.md) after independent DOMAIN then QUALITY/SECURITY approval of [ADR](../../adr/2026-10-17-bounded-encrypted-startup-projection.md). The ADR and Task4 override earlier SQLCipher-only first-frame and pre-display Olm requirements specifically for verified derived-cache display; full-store/Olm and dispatch checks remain mandatory in background. No authenticated SDK state is fabricated.
+
+Task4 ownership/interfaces/RED/GREEN and invalidation matrix are frozen in those two files. Same single product writer startup_pipeline, independent reviewer read-only; root versions/build/device/docs. Following implementation review, Task2 frozen verification/delivery is repeated only for changed final input, with a new reserved version. Candidate2219 remains installed until successor is ready; no false completion.
