@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-16 2215五项体验优化：2216 Debug已验证，iOS待匹配签名真机验收
+
+用户批准执行与模拟器 Debug；工作树 im-reliability，分支 codex/mobile-experience-2216-20261016，候选 0.4.47+2216。五项实现及整分支规格→质量审查完成；Android main Debug 已保数据安装，实际相册发送 9 JPEG + GIF + MP4，冷重启后 11 条均服务端 ACK、唯一消息/事务 ID，无 SDK 重复本地回声，视频播放通过。共享全量修正环境后 6035 PASS/9 SKIP/2夹具ERROR，测试-only修复后18项PASS；原全量退出1保留，verify因缺.env不完整。原生聚合初轮失败已隔离host/live binding，修订5用例设备包27b00b9f完整驱动PASS，之后恢复实际main并再次核验11ACK。iOS未签名IPA成功；21原生PASS/2保护目录ERROR，另同源能力探针4PASS/4SKIP验证模拟器缺DataProtection，真实iPhone仍待。用户固定原 APNs Team HY9Q7Q35S5；匹配回签、真实通知和跨Team保数据升级待验。05:27只读确认正式两端仍2215/min3；本任务没有发布2216或更改弹窗。详见[任务](tasks/2026-10-16-mobile-experience-2216.md)及[报告](../verification/2026-10-16-mobile-experience-2216.md)。
+
 ## 2026-10-15 iOS0.4.46+2215待签名IPA已构建
 
 候选a24e40cb/CI38735034870两job成功；21原生测试/2权限hook通过，59包装专项通过，共享移动证据按输入一致复用。完整arm64 IPA34966220B，SHA137e4477…2713d7，本地验包及Downloads/primary delivery副本一致。用户确认沿用HY9Q7Q35S5/com.liuhetong.liuhetongMobile生产推送身份，生产Sygnal配置及11隔离契约通过；真实APNs到达、最终回签权益和旧数据覆盖升级待验，未发布。见[任务](tasks/2026-10-15-ios2215-signing-handoff.md)与[检查](../verification/2026-10-15-ios2215-signing-handoff.md)。

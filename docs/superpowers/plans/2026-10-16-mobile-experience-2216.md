@@ -42,15 +42,19 @@ Files: room_page.dart, room_timeline_controller.dart, media_outbox_pending_view.
 
 ### Task 4: Startup and history first paint
 Files: main.dart, session_gate.dart, installation_startup_gate.dart, session bootstrap only within existing auth contract; room_page/timeline/Matrix local storage hooks as evidence requires; performance traces and tests.
-- [ ] Instrument phase timings and reproduce cache waiting/blank room with delayed dependencies.
-- [ ] Defer optional work; stable cached shell and safely scrollable preview; necessary identity/key/migration checks retained. Local40 window before optional indexes/history; keep prior content and meaningful loading/retry state.
-- [ ] Avoid full history scans in initial path; page30–50, max200 models, event anchor retention; cancel stale leases.
-- [ ] Focused failure/weak-network/large-history tests and review; no fake cache hit claims.
+- [x] Instrument phase timings and reproduce cache waiting/blank room with delayed dependencies.
+- [x] Defer optional work; stable cached shell and safely scrollable preview; necessary identity/key/migration checks retained. Local first read30 / UI cap40 before optional indexes/history; keep prior content and meaningful loading/retry state.
+- [x] Avoid full history scans in initial path; page30–50, max200 models, event anchor retention; cancel stale leases.
+- [x] Focused failure/weak-network/large-history tests and review; no fake cache hit claims.
 
 ### Task 5: Integration, native verification and delivery
 Root-owned: HTML catalog/registry/tests, task record/current-state, pubspec version, CI diagnostic targets and build artifacts.
-- [ ] Mirror changed states/controls in HTML demo; UI contract and affected frontend tests.
-- [ ] Focused tests then one final Flutter full/analyze/boundaries; preflight verify.ps1 environment and record missing prerequisites without borrowing production secrets.
-- [ ] Recheck APNs production identity safely. Do not replace credentials/topic with guesses. Record real device/signing dependency if absent.
-- [ ] Build2216 Debug, conventional rebuild/fixed signer, verify and install -r on existing emulator; exercise five scenarios with synthetic data, preserve account/data. Capture stage metrics without real message bodies.
-- [ ] Run iOS native tests via existing macOS CI if available; actual APNs/audio/upgrade cannot be inferred from simulator. Final independent spec and quality review; record remaining gates and rollback.
+- [x] Mirror changed states/controls in HTML demo; UI contract and affected frontend tests.
+- [x] Focused tests then one final Flutter full/analyze/boundaries; preflight verify.ps1 environment and record missing prerequisites without borrowing production secrets.
+- [x] Recheck APNs production identity safely. Do not replace credentials/topic with guesses. Record real device/signing dependency if absent.
+- [x] Build2216 Debug, conventional rebuild/fixed signer, verify and install-r; actual9JPEG+GIF+MP4 send/11uniqueACK/coldreentry/video and syntheticnative5casegate. FinalmainAPK restored; account/data preserved. Debug metrics recorded without real bodies.
+- [ ] Complete actual offline/weak-network and Release/Profile timing matrix; one LDPlayer network-toggle probe hung, recovered with data preserved, no offlinePASS.
+- [x] Run iOS existing CI: unsigned deviceIPA PASS; 21nativePASS/2protectedoutboxERROR; independent policy4PASS/4capabilitySKIP confirms Simulator limitation. Final code spec/qualityreviews complete, originalerrors/rollback recorded.
+- [ ] Matching HY9Q7Q35S5 signature and realiPhone permission/APNs/background/locked/cross-Team upgrade/protectedoutbox success acceptance; no simulator substitution.
+
+Integration evidence clarification (2026-10-16 08:11+08): shared full executed, retained exit1/6035PASS/2fixtureERROR/9SKIP; final fixture-only18PASS plus unchanged-input reuse closes affected cases, not a rewritten all-green command. verify.ps1 missing.env remains explicitly incomplete. Android actual-main11synthetic media ACK after cold restart, video playback, UID/firstInstall retained. Dedicated native5case aggregate27b00b9f is being rebuilt/run after host/live-binding separation. iOS IPA built and verified; native21PASS/2ERROR, same-runtime policy4PASS/4capabilitySKIP; signed real-device gates stillpending.
