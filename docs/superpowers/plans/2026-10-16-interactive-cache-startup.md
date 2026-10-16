@@ -26,16 +26,15 @@ Interface: existing RoomPage/RoomLease entry remains source-compatible. If early
 
 ## Task 2: Cold startup and interactive home
 Files: main.dart, installation_startup_gate.dart, session_gate.dart, app_home.dart, matrix_home_page.dart; startup factory/local restore only when necessary and within existing security contract; matching tests.
-- [ ] RED held optional startup/Matrix resources: valid local account can switch tabs and open cached room; read-only preview never upgrades before existing local safety checks.
-- [ ] Minimize pre-shell blocking work, preserve necessary installation/key/account checks; mount stable navigable home from eligible local state; room uses Task1 local readiness and existing live dispatch gate.
-- [ ] GREEN logout/account switch/late completion/first install/no cache; preserve routes and scroll at live handoff. Analyze and commit.
-- [ ] Specification then quality review.
+- [x] RED held optional startup/Matrix resources: valid local account can switch tabs and open cached room; read-only preview never upgrades before existing local safety checks.
+- [x] Minimize pre-shell blocking work, preserve necessary installation/key/account checks; mount stable navigable home from eligible local state; room uses Task1 local readiness and existing live dispatch gate.
+- [x] GREEN logout/account switch/late completion/first install/no cache; preserve routes and scroll at live handoff. Analyze and commit.
+- [x] Specification then quality review.
 
 ## Task 3: Integration and Debug delivery
 Root files: docs, pubspec/AppConfig version as needed, relevant HTML parity if UI skill requires it, build evidence.
-- [ ] Verify final scope and security, focused plus shared full Flutter/analyze; preflight verify.ps1, reuse unchanged inputs only with evidence.
-- [ ] Whole branch independent review before build, resolve blocking findings with tests.
-- [ ] Check installed version/signature, use new build greater than2217 and unused version at freeze, emulator ABI, fixed75b31 signer and Apktool2.12.1/build-tools36 rebuild. Verify semantic/asset/manifest/signature output.
-- [ ] adb install-r, compare UID/firstInstallTime, launch passive smoke. Do not send messages to other people. User owns manual interaction testing.
-- [ ] Record exact artifact/version/hash, commands/results, timing and remaining true-device limitations; update primary task entry.
-
+- [x] Verify final scope and security, focused plus shared full Flutter/analyze; preflight verify.ps1, reuse unchanged inputs only with evidence.
+- [x] Whole branch independent review before build, resolve blocking findings with tests.
+- [x] Check installed version/signature, use new build greater than2217 and unused version at freeze, emulator ABI, fixed75b31 signer and Apktool2.12.1/build-tools36 rebuild. Verify semantic/asset/manifest/signature output.
+- [x] adb install-r, compare UID/firstInstallTime, launch passive smoke. Do not send messages to other people. User owns manual interaction testing.
+- [x] Record exact artifact/version/hash, commands/results, timing and remaining true-device limitations; update primary task entry.

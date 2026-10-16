@@ -4,10 +4,10 @@
 
 - 用户要求：冷启动直接使用本地会话列表，恢复期间可切页/进房；入房先展示缓存气泡，可滚动/发送；改进 Debug 安装模拟器供用户测试。
 - 授权范围：客户端改进及模拟器 Debug 安装；未要求公开发布。
-- 当前阶段：用户已批准方案，实施中；Task1已通过规格及质量复核，Task2聚焦回归中，尚未构建或安装。
+- 当前阶段：实现及Debug交付完成；0.4.49+2218已保数据安装emulator-5556，用户人工功能验收待反馈。
 - 源码基线：活动树 `C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat`，HEAD `74cf7217`，分支 `codex/android-consent-20261016`。primary main `5c83a08a` 不是最新移动基线。两树均有其他任务文档改动，实施须隔离。
-- 负责人：root；工作树 `C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat`，分支 `codex/interactive-cache-startup-20261016`。计划：[交互缓存实施](../../superpowers/plans/2026-10-16-interactive-cache-startup.md)。下一步：Task2冻结后独立复核，运行共享门禁，构建并保数据安装。
-- 更新时间：2026-10-16T20:51:22+08:00。开始精确时间未知；调查工具在本轮聊天留存，未估算耗时。
+- 负责人：root；工作树 `C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat`，分支 `codex/interactive-cache-startup-20261016`。计划：[交互缓存实施](../../superpowers/plans/2026-10-16-interactive-cache-startup.md)。下一步：用户在模拟器强停冷启、切页入房、恢复期间滚动与发送文字；按反馈继续复现，不重复构建已验证包。
+- 更新时间：2026-10-16T23:21:28+08:00。开始精确时间未知；调查工具在本轮聊天留存，未估算耗时。
 
 ## 已核实事实
 
@@ -30,3 +30,18 @@
 
 2026-10-16T21:36:52.8318365+08:00 Task1 commits44f079ba+981ac950；Task2单写进行中。证据：[交付验证](../../verification/2026-10-16-interactive-cache-startup.md)，详细时间账本在 artifacts/2026-10-16/interactive-cache-startup/progress.md。Debug目标0.4.49+2218，无生产发布。
 
+2026-10-16T22:57:39.1246897+08:00 Task1/Task2 independently reviewed; final-review fixes2f6b625c plus pinned-window continuation c29597e0 (78focusedPASS) await scoped re-review. Next: frozen full Flutter/analyze, then conventional rebuilt/signed Debug2218 install-r. Full runs2/3 interrupted, no passing full gate or new APK yet. Root owns V mapping while scoped tests complete.
+
+## 最终交付（2026-10-16 23:19+08）
+
+产品源码c29597e0，Debug0.4.49+2218，固定75b31签名x86_64成品SHA e5de14ae36afbdf8f465ac5411ba8d76b39cc3a762c8a56d88e2f7e8b86115a6，125983066字节。full-4完整6075PASS9SKIP0FAIL/fullanalyze0，独立SPEC→QUALITY通过；Apktool常规重建及代码/资产/清单一致性、验签、对齐均通过。安装2216→2218，UID10090/首次安装时间保留，设备APK哈希一致，主入口启动ok；当前进程fatal0，截图确认原消息列表可见。
+
+| 验收 | 实现/自动证据 | 人工缺口 |
+|---|---|---|
+| S1缓存首页/导航 | Task2及fix1专项与全量通过 | 用户冷启动真实体验 |
+| S2气泡/滚动/恢复 | Task1、最终固定窗口78项及全量通过 | 用户当前房间体验 |
+| S3持久文字排队 | 队列开启/验证竞争、派发前readiness、同txid回归通过 | 用户实际发送与收件端 |
+| S4隔离/取消 | 账号/owner/generation/销毁/撤回边界与全量通过 | 实体机/完整设备矩阵 |
+| D1重建安装 | 成品/安装收据/被动运行通过 | 正式发布未授权；无iOS包 |
+
+构建7分2.772秒、最终全量12分12.880秒、安装启动21.059秒；前序返工及计时见报告/progress。必要本地安全检查仍可能显示初始加载；早期队列仅文字。HTML全量6项既有基线失败、verify缺.env未启动、P3诊断归因延期均在报告说明。无运行命令或自有映射/服务；保留工作树及APK，不合并、不发布、不清数据。

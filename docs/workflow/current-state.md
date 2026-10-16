@@ -1,5 +1,10 @@
 # 当前工作状态
 
+## 2026-10-16 交互缓存启动及入房：2218 Debug已安装
+
+用户批准实施。独立工作树interactive-cache-startup，产品源码c29597e0；首页缓存可导航、房间有界缓存与可滚动恢复、文字持久待发，必要身份/密钥检查保留。6075PASS/9SKIP/0FAIL、fullanalyze0、独立SPEC→QUALITY通过。固定75b31签名0.4.49+2218 x86_64常规重建成品SHAe5de14ae…6115a6/125983066B已于23:19+08保数据install-r至5556；UID/首次安装/设备APK哈希确认，启动及被动检查通过。人工冷启/滚动/发送待用户自行验收，未发布正式渠道。详见[任务](tasks/2026-10-16-interactive-cache-startup.md)；完整[验证报告](C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat/docs/verification/2026-10-16-interactive-cache-startup.md)。
+
+
 ## 2026-10-16 Android2216正式包及普通更新已发布
 
 11:04:15+08发布Android0.4.47+2216，固定75b31签名ARM64 APK SHA db914f66…41039/73,262,170B，包含五项体验优化与超级表情自动播放。20构建门禁全0、共享6038PASS/9SKIP复用、实包与发布SPEC→QUALITY通过；官网/CDN与route/audit后验PASS，Android三键审计、iOS2215/min3/35容器保持。备份0700，旧APK保留，自建隧道已关闭。既有libcrypto16KiB与ARM64真机/客户端弹窗实测缺口保留。见[任务](tasks/2026-10-16-android2216-release.md)与[报告](../verification/2026-10-16-android2216-release.md)。
