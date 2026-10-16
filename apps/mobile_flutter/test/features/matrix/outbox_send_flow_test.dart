@@ -162,6 +162,41 @@ void main() {
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
 
+  test('local-ready send cannot claim durable acceptance without a journal',
+      () async {
+    final transport = _FakeTransport();
+    final controller =
+        RoomTimelineController(transport, canDispatchNow: () => false);
+    await controller.sendText('not durable');
+    expect(transport.txids, isEmpty);
+    expect(controller.outboxError, isA<StateError>());
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.failed);
+    controller.dispose();
+  });
+
+  test(
+      'local-ready send persists queued until dispatch readiness then reuses txid',
+      () async {
+    var ready = false;
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        canDispatchNow: () => ready,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    await controller.sendText('durable while hydrating');
+    final row = (await outbox.unsent()).single;
+    expect(row.status, OutboxStatus.queued);
+    expect(transport.txids, isEmpty);
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.local);
+    ready = true;
+    await controller.resumePendingDispatch();
+    expect(transport.txids, [row.txid]);
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.sent);
+    await controller.resumePendingDispatch();
+    expect(transport.txids, [row.txid]);
+    controller.dispose();
+  });
+
   for (final exitMode in ['inactive', 'unregister', 'replace', 'clear']) {
     testWidgets(
         'registry preserves deleted foreground ownership after page closes ($exitMode)',

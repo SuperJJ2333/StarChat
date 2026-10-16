@@ -2036,8 +2036,54 @@ final class MatrixRoomLease
 
   Future<RoomTimelineCapability> openRoomTimeline({
     required void Function() onUpdate,
+    bool cachedFirst = false,
+    void Function()? onHydrated,
   }) =>
       _withLeaseOperation((room) async {
+        if (cachedFirst && room.client.database != null && !room.isArchived) {
+          final generation = room.historyGeneration;
+          final client = room.client;
+          final identity = (client.userID, client.deviceID, client.homeserver);
+          final events = await client.database!.getEventList(room, limit: 40);
+          if (canceled ||
+              owner._accessRevoked ||
+              !identical(owner._client, client) ||
+              !identical(_room, room) ||
+              identity != (client.userID, client.deviceID, client.homeserver) ||
+              generation != room.historyGeneration) {
+            throw StateError('Matrix cached timeline lease revoked');
+          }
+          final timeline = Timeline(
+              room: room,
+              chunk: TimelineChunk(events: events),
+              persistedInitialIds: events
+                  .where((event) => event.status.isSynced)
+                  .map((event) => event.eventId),
+              onUpdate: onUpdate);
+          final capability =
+              _SdkRoomTimelineCapability(this, timeline, onUpdate);
+          _timelines.add(capability);
+          unawaited(() async {
+            Timeline? hydrated;
+            try {
+              hydrated = await room.getTimeline(onUpdate: onUpdate);
+              // Keep the subscribed local timeline and its reading fragment.
+              // SDK hydration publishes decrypt/member changes through the same
+              // room streams; replacing it here would lose a scrolled anchor.
+              await _enableSdkResidentWindow(timeline);
+              capability._ensureActive();
+              if (generation != room.historyGeneration) {
+                throw StateError('Matrix history generation changed');
+              }
+              hydrated.cancelSubscriptions();
+              onHydrated?.call();
+              onUpdate();
+            } catch (_) {
+              hydrated?.cancelSubscriptions();
+            }
+          }());
+          return capability;
+        }
         final timeline = await room.getTimeline(onUpdate: onUpdate);
         try {
           await _enableSdkResidentWindow(timeline);
@@ -2050,6 +2096,7 @@ final class MatrixRoomLease
         }
         final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
         _timelines.add(capability);
+        onHydrated?.call();
         return capability;
       });
 
@@ -2090,10 +2137,13 @@ final class MatrixRoomLease
 
   Future<RoomTimelineCapability> openLogicalRoomTimeline({
     required void Function() onUpdate,
+    bool cachedFirst = false,
+    void Function()? onHydrated,
     String? anchorRoomId,
     String? anchorEventId,
   }) async {
-    final primary = await openRoomTimeline(onUpdate: onUpdate);
+    final primary = await openRoomTimeline(
+        onUpdate: onUpdate, cachedFirst: cachedFirst, onHydrated: onHydrated);
     late final LogicalConversationTimelineCapability merged;
     merged = LogicalConversationTimelineCapability(
       primaryRoomId: roomId,

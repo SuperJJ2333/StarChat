@@ -64,6 +64,22 @@ class _LifecycleClient extends Client {
   Room? getRoomById(String roomId) => roomId == localRoom.id ? localRoom : null;
 }
 
+class _CachedDatabase extends Fake implements DatabaseApi {
+  late List<Event> events;
+  @override
+  Future<User?> getUser(String userId, Room room) async => null;
+  @override
+  Future<List<Event>> getEventList(Room room,
+          {int start = 0, bool onlySending = false, int? limit}) async =>
+      events.skip(start).take(limit ?? 40).toList();
+}
+
+class _CachedClient extends _LifecycleClient {
+  final store = _CachedDatabase();
+  @override
+  DatabaseApi get database => store;
+}
+
 class _LifecycleTimeline extends Fake implements Timeline {
   _LifecycleTimeline(this.events);
   @override
@@ -147,6 +163,7 @@ class _MetadataLifecycleClient extends _LifecycleClient {
 Future<MatrixRoomLease> _mountLifecycleRoom(
     WidgetTester tester, _LifecycleClient client,
     {bool pushRoute = false,
+    ValueNotifier<bool>? dispatchReady,
     SharedPreferencesStorePlatform? preferences}) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
@@ -177,6 +194,7 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
       client: MockClient((_) async => http.Response('{}', 503)));
   final page = RoomPage(
       api: api,
+      dispatchReady: dispatchReady,
       roomLease: lease,
       roomName: 'Synthetic lifecycle',
       initialIdentityCache: ProfileRepository.forTesting(
@@ -204,6 +222,58 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+
+  testWidgets('cached bubbles paint and scroll while full timeline is held',
+      (tester) async {
+    final client = _CachedClient();
+    client.store.events = client.localRoom.timeline.events;
+    client.localRoom.heldTimeline = Completer<Timeline>();
+    final ready = ValueNotifier(false);
+    final lease =
+        await _mountLifecycleRoom(tester, client, dispatchReady: ready);
+    final page = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(page.controller, isNotNull);
+    expect(page.controller.messages.length, 40);
+    expect(find.text('正在读取本机消息…'), findsNothing);
+    ready.value = true;
+    expect(page.controller.canDispatchNow(), isTrue,
+        reason:
+            'optional SDK history hydration cannot block authorized dispatch');
+    ready.value = false;
+    await page.hiddenEvents.hide(lease.roomId, 'synthetic-1199');
+    page.controller.setHiddenFilter(page.hiddenEvents.readFilter(lease.roomId));
+    await page.controller.refresh();
+    await tester.pump();
+    expect(
+        page.controller.messages
+            .any((RoomMessageViewModel m) => m.id == 'synthetic-1199'),
+        isFalse);
+    final list = find.byType(AnchoredTimelineList);
+    expect(list, findsOneWidget);
+    final scroll = tester.widget<AnchoredTimelineList>(list).controller;
+    scroll.jumpTo(100);
+    await tester.pump();
+    final position = scroll.offset;
+    client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+        identical(page.controller,
+            (tester.state(find.byType(RoomPage)) as dynamic).controller),
+        isTrue);
+    expect(scroll.offset, position);
+    expect(
+        page.controller.messages
+            .any((RoomMessageViewModel m) => m.id == 'synthetic-1199'),
+        isFalse);
+    expect(page.controller.canDispatchNow(), isFalse);
+    ready.value = true;
+    await tester.pump();
+    expect(page.controller.canDispatchNow(), isTrue);
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
       'pending local history explains wait then paints bounded recent rows',

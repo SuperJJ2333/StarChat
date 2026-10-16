@@ -208,6 +208,7 @@ class RoomPage extends StatefulWidget {
     this.initialOutbox = const <String>[],
     this.outbox,
     this.readOnly = false,
+    this.dispatchReady,
     this.initialAnchorRoomId,
     this.navigationRequests,
     this.requestOutboxDrain,
@@ -255,6 +256,10 @@ class RoomPage extends StatefulWidget {
   /// 只读打开（缺陷 0919 项 3）：历史孤儿房间经搜索/通知定位时为 true，
   /// 隐藏输入区与面板——保留查看与定位能力，但不提供任何发送入口。
   final bool readOnly;
+
+  /// Local account access permits durable queueing while live authorization
+  /// recovers. Dispatch still goes through the existing lease permission gates.
+  final ValueListenable<bool>? dispatchReady;
 
   final String? initialAnchorRoomId;
   final ValueListenable<RoomOpenRequest>? navigationRequests;
@@ -1166,6 +1171,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    widget.dispatchReady?.addListener(_dispatchReadinessChanged);
     MediaOutboxRecoveryService.current.addListener(_bindMediaTimeline);
     MaintenanceActivity.instance.install();
     MaintenanceActivity.instance.pulse(_maintenanceReason('entry'));
@@ -1247,6 +1253,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(covariant RoomPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.dispatchReady, widget.dispatchReady)) {
+      oldWidget.dispatchReady?.removeListener(_dispatchReadinessChanged);
+      widget.dispatchReady?.addListener(_dispatchReadinessChanged);
+      _dispatchReadinessChanged();
+    }
     if (!identical(oldWidget.api, widget.api)) {
       _supportIdentities = widget.api.supportIdentities;
       if (!isGroup && roomInfo.directPeerId != null) {
@@ -1473,6 +1484,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   RoomTimelineCapability? _logicalTimeline;
+  bool get _canDispatch =>
+      (widget.dispatchReady?.value ?? true) && !widget.roomLease.canceled;
+
+  void _dispatchReadinessChanged() {
+    if (!mounted || _disposing || !_canDispatch) return;
+    unawaited(controller?.resumePendingDispatch());
+    widget.requestOutboxDrain?.call();
+  }
 
   void _onNavigationRequest() {
     final request = widget.navigationRequests?.value;
@@ -1511,6 +1530,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // （Room.defaultHistoryCount，处于 30~50 规范区间），
           // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
           await widget.roomLease.openLogicalRoomTimeline(
+        cachedFirst: true,
         anchorRoomId: widget.navigationRequests?.value.anchorRoomId ??
             widget.initialAnchorRoomId,
         anchorEventId: widget.navigationRequests?.value.anchorEventId ??
@@ -1539,6 +1559,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               isBlocked: blockedContacts.isBlocked(_peerUserId()),
             ).canSendMessage(),
         // Offline First：发送前先落盘；重试/重启复用同一 txid。
+        canDispatchNow: () => _canDispatch,
         outboxJournal: _outboxJournal,
         outboxRoomId: roomInfo.id,
         onOutboxCorrelation: widget.onOutboxCorrelation,
@@ -1554,6 +1575,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         controller: () => controller,
         canSend: () =>
             !widget.readOnly &&
+            _canDispatch &&
             mounted &&
             !_disposing &&
             !widget.roomLease.canceled &&
@@ -5619,6 +5641,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    widget.dispatchReady?.removeListener(_dispatchReadinessChanged);
     MaintenanceActivity.instance
         .setInteractive(_maintenanceReason('scroll'), false);
     MaintenanceActivity.instance

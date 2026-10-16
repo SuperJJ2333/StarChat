@@ -411,6 +411,7 @@ final class RoomTimelineController extends ChangeNotifier
     implements RoomPagedHistorySource {
   RoomTimelineController(this.adapter,
       {this.canSendNow,
+      this.canDispatchNow,
       this.outboxRoomId,
       bool windowed = false,
       NetworkStateManager? networkStateManager,
@@ -481,6 +482,20 @@ final class RoomTimelineController extends ChangeNotifier
   /// 规格§二/§三：互动权限门（非好友/拉黑 → 消息进入本地 failed，
   /// 绝不触达发送服务；UI 与服务层同一守卫）。
   final bool Function()? canSendNow;
+
+  /// Optional recovery readiness; permission is still checked independently.
+  final bool Function()? canDispatchNow;
+
+  Future<void> resumePendingDispatch() async {
+    if (_disposed || !(canDispatchNow?.call() ?? true)) return;
+    for (final row in List<RoomMessageViewModel>.of(_localEchoes.values)) {
+      if (_disposed) return;
+      if (row.deliveryState == RoomDeliveryState.local) {
+        await _retry(row.stableId, rethrowErrors: false);
+      }
+    }
+  }
+
   final String? outboxRoomId;
   final Set<String> _foreignOutboxTransactions = {};
 
@@ -1361,6 +1376,7 @@ final class RoomTimelineController extends ChangeNotifier
       {required bool rethrowErrors, OutboxMessage? outboxRow}) async {
     if (_disposed ||
         _inFlightTxids.contains(transactionId) ||
+        !(canDispatchNow?.call() ?? true) ||
         !(canSendNow?.call() ?? true) ||
         _foreignOutboxTransactions.contains(transactionId)) {
       return;
@@ -1970,6 +1986,35 @@ final class RoomTimelineController extends ChangeNotifier
     OutboxMessage? outboxRow,
     PerformanceTrace? trace,
   }) async {
+    if (!(canDispatchNow?.call() ?? true)) {
+      // Hold the txid while persistence completes so a readiness notification
+      // cannot race a second dispatch against this queued outcome.
+      _inFlightTxids.add(tx);
+      try {
+        if (_outboxJournal == null) {
+          outboxError = StateError('Durable local outbox is unavailable');
+        } else {
+          await _persistOutboxOutcome(tx, local, RoomDeliveryState.local,
+              error: null, outboxRow: outboxRow);
+        }
+        if (outboxError != null && !_disposed) {
+          _echoRevision++;
+          _localEchoes[tx] =
+              local.copyWith(deliveryState: RoomDeliveryState.failed);
+          messages = _snapshot();
+          _publish();
+        }
+      } finally {
+        _inFlightTxids.remove(tx);
+        _finishSendTrace(tx, trace, PerformanceResult.cancelled);
+      }
+      if (!_disposed &&
+          outboxError == null &&
+          (canDispatchNow?.call() ?? true)) {
+        unawaited(resumePendingDispatch());
+      }
+      return null;
+    }
     // 乐观行创建时是 `local`；派发一真正开始就**同步**翻成 `sending`，
     // 行绝不会停在「未派发」外观上（`sendText` 的调用方无需 await 即可看到）。
     // `local` 与 `sending` 的呈现完全一致，因此这次内部迁移不再额外通知：
