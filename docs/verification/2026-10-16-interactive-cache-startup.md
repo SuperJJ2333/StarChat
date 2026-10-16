@@ -23,6 +23,8 @@ All relative paths below under `artifacts/2026-10-16/interactive-cache-startup/`
 | Room regression | task1/focused-green-final.log | 113PASS before final optional-dispatch decoupling |
 | Room final narrow | task1/final-narrow-green.log | 5PASS on final44f079ba |
 | Room analysis | task1/analyze.log | no issues |
+| Room readiness race/nontext fixes | task1/fix1/red.log → green.log; review.md | 2 intended RED failures → 74 PASS; scoped specification and quality/security PASS |
+| Repository/deployment policy | repository-policy.log, deployment-policy.log, final-preflight.json | PASS; full verify.ps1 blocked before launch by absent .env |
 
 SQLCipher fixture is a real FFI driver using an in-memory database, 80 persisted SDK events and held genuine Room.postLoad. It proves bounded head40/local-ready/retirement and missing-encryption refusal, not file encryption-at-rest or physical phone performance.
 
@@ -41,3 +43,4 @@ Demo paths `frontend/index.html?screen=chat-experience-cached-start` and `?scree
 - User will perform manual functional testing; no human recipient messages sent by this task.
 
 Exact total duration not yet available. Tool timestamps are recorded in preflight/progress; no invented active-vs-wait timing.
+

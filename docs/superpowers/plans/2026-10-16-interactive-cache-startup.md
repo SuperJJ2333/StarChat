@@ -18,10 +18,10 @@
 
 ## Task 1: Room first paint and local send readiness
 Files: apps/mobile_flutter/lib/features/matrix/room_page.dart, room_timeline_controller.dart and related room lease/local snapshot/outbox public interfaces only as required; matching tests.
-- [ ] Establish focused baseline, then RED: retained local bubbles visible while full timeline future held; scroll works; send accepted durably without awaiting optional history; late hydration preserves anchor and pending txid.
-- [ ] Reuse encrypted bounded cache/head (initial30–40, max200 UI models) and existing outbox, expose minimal local-ready API where necessary; live hydration merges without clearing the subtree.
-- [ ] GREEN with revoked/disposed/hidden/cleared-history/account isolation and duplicate ACK coverage. Run focused analyze. Commit exact owned files.
-- [ ] Independent specification then quality review, fix covered findings.
+- [x] Establish focused baseline, then RED: retained local bubbles visible while full timeline future held; scroll works; send accepted durably without awaiting optional history; late hydration preserves anchor and pending txid.
+- [x] Reuse encrypted bounded cache/head (initial30–40, max200 UI models) and existing outbox, expose minimal local-ready API where necessary; live hydration merges without clearing the subtree.
+- [x] GREEN with revoked/disposed/hidden/cleared-history/account isolation and duplicate ACK coverage. Run focused analyze. Commit exact owned files.
+- [x] Independent specification then quality review, fix covered findings.
 Interface: existing RoomPage/RoomLease entry remains source-compatible. If early navigation requires a deferred lease API, document the exact public interface for Task2. Do not alter AppHome/main/session gate in Task1.
 
 ## Task 2: Cold startup and interactive home
@@ -38,3 +38,4 @@ Root files: docs, pubspec/AppConfig version as needed, relevant HTML parity if U
 - [ ] Check installed version/signature, use new build greater than2217 and unused version at freeze, emulator ABI, fixed75b31 signer and Apktool2.12.1/build-tools36 rebuild. Verify semantic/asset/manifest/signature output.
 - [ ] adb install-r, compare UID/firstInstallTime, launch passive smoke. Do not send messages to other people. User owns manual interaction testing.
 - [ ] Record exact artifact/version/hash, commands/results, timing and remaining true-device limitations; update primary task entry.
+

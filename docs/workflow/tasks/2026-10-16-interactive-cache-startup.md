@@ -4,9 +4,9 @@
 
 - 用户要求：冷启动直接使用本地会话列表，恢复期间可切页/进房；入房先展示缓存气泡，可滚动/发送；改进 Debug 安装模拟器供用户测试。
 - 授权范围：客户端改进及模拟器 Debug 安装；未要求公开发布。
-- 当前阶段：只读调查完成，具体设计待确认；没有产品代码修改、构建或安装。
+- 当前阶段：用户已批准方案，实施中；Task1已通过规格及质量复核，Task2聚焦回归中，尚未构建或安装。
 - 源码基线：活动树 `C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat`，HEAD `74cf7217`，分支 `codex/android-consent-20261016`。primary main `5c83a08a` 不是最新移动基线。两树均有其他任务文档改动，实施须隔离。
-- 负责人：root；本轮仅拥有本记录。下一步确认交互缓存设计，建立本任务计划/隔离工作树后测试先行。
+- 负责人：root；工作树 `C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat`，分支 `codex/interactive-cache-startup-20261016`。计划：[交互缓存实施](../../superpowers/plans/2026-10-16-interactive-cache-startup.md)。下一步：Task2冻结后独立复核，运行共享门禁，构建并保数据安装。
 - 更新时间：2026-10-16T20:51:22+08:00。开始精确时间未知；调查工具在本轮聊天留存，未估算耗时。
 
 ## 已核实事实
@@ -27,3 +27,6 @@
 设计边界：正常已登录且有缓存路径减少整页加载；冷进程仍须读取磁盘/安全存储，不承诺所有设备绝对零延迟。发送点击可立即入队，不意味着恢复前已完成网络投递。
 
 用户已批准上述方案实施。新工作树interactive-cache-startup，分支codex/interactive-cache-startup-20261016，基线74cf7217。Task1房间→Task2启动→Task3交付。根负责文档/构建，实施代理单写，独立审查。
+
+2026-10-16T21:36:52.8318365+08:00 Task1 commits44f079ba+981ac950；Task2单写进行中。证据：[交付验证](../../verification/2026-10-16-interactive-cache-startup.md)，详细时间账本在 artifacts/2026-10-16/interactive-cache-startup/progress.md。Debug目标0.4.49+2218，无生产发布。
+
