@@ -162,6 +162,53 @@ void main() {
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
 
+  test('readiness revoked during claim releases queued txid before transport',
+      () async {
+    var ready = true;
+    final entered = Completer<void>(), release = Completer<bool>();
+    final transport = _FakeTransport();
+    final journal = RoomOutboxJournal(
+        manager: outbox,
+        roomId: '!room:test',
+        receiverId: '@peer:test',
+        beforeClaim: (_) {
+          if (!entered.isCompleted) entered.complete();
+          return release.future;
+        });
+    final controller = RoomTimelineController(transport,
+        canDispatchNow: () => ready, outboxJournal: journal);
+    final sending = controller.sendText('held claim');
+    await entered.future;
+    ready = false;
+    release.complete(true);
+    await sending;
+    expect(transport.txids, isEmpty);
+    final row = (await outbox.unsent()).single;
+    expect(row.status, OutboxStatus.queued);
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.local);
+    ready = true;
+    await controller.resumePendingDispatch();
+    await controller.resumePendingDispatch();
+    expect(transport.txids, [row.txid]);
+    expect(await outbox.unsent(), isEmpty);
+    controller.dispose();
+  });
+
+  test('local-ready unsupported media is rejected without a durable task',
+      () async {
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        canDispatchNow: () => false,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    await controller.sendText('[image]', kind: RoomMessageKind.image);
+    expect(transport.txids, isEmpty);
+    expect(await outbox.unsent(), isEmpty);
+    expect(controller.outboxError, isA<StateError>());
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.failed);
+    controller.dispose();
+  });
+
   test('local-ready send cannot claim durable acceptance without a journal',
       () async {
     final transport = _FakeTransport();

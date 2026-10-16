@@ -1991,7 +1991,7 @@ final class RoomTimelineController extends ChangeNotifier
       // cannot race a second dispatch against this queued outcome.
       _inFlightTxids.add(tx);
       try {
-        if (_outboxJournal == null) {
+        if (_outboxJournal == null || !_tracksOutbox(local)) {
           outboxError = StateError('Durable local outbox is unavailable');
         } else {
           await _persistOutboxOutcome(tx, local, RoomDeliveryState.local,
@@ -2039,6 +2039,7 @@ final class RoomTimelineController extends ChangeNotifier
     var diagnosticStage = ChatDiagnosticStage.sendAdmission;
     var finalResult = PerformanceResult.failed;
     var matrixSendStarted = false;
+    var deferredForReadiness = false;
     try {
       // ① 先持久化：没有这一行就绝不派发。
       if (journal != null && tracks) {
@@ -2080,6 +2081,28 @@ final class RoomTimelineController extends ChangeNotifier
       }
       final sender = _senders[tx];
       if (sender == null) {
+        _finishSendTrace(tx, trace, PerformanceResult.cancelled);
+        return null;
+      }
+      // Admission may await storage and canonical-room verification. Check the
+      // live gate again after those awaits, immediately before transport.
+      if (_disposed || !(canDispatchNow?.call() ?? true)) {
+        deferredForReadiness = true;
+        if (journal == null || !tracks || row == null) {
+          outboxError = StateError('Durable local outbox is unavailable');
+        } else {
+          await _persistOutboxOutcome(tx, local, RoomDeliveryState.local,
+              error: null, outboxRow: row);
+        }
+        if (!_disposed) {
+          _echoRevision++;
+          _localEchoes[tx] = local.copyWith(
+              deliveryState: outboxError == null
+                  ? RoomDeliveryState.local
+                  : RoomDeliveryState.failed);
+          messages = _snapshot();
+          _publish();
+        }
         _finishSendTrace(tx, trace, PerformanceResult.cancelled);
         return null;
       }
@@ -2159,6 +2182,13 @@ final class RoomTimelineController extends ChangeNotifier
             elapsed: clock.elapsed);
       }
       _resumeSettledWaiting(tx, attemptRevision);
+      if (deferredForReadiness &&
+          !_disposed &&
+          outboxError == null &&
+          (canDispatchNow?.call() ?? true)) {
+        // Run after any enclosing retry releases its txid ownership.
+        unawaited(Future<void>(() => resumePendingDispatch()));
+      }
     }
     messages = _snapshot();
     _publish();
