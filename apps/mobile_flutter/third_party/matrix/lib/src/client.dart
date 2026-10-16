@@ -1898,8 +1898,66 @@ class Client extends MatrixApi {
   int _startupInitializationGeneration = 0;
   Future<void> get localCacheReady =>
       _localCacheCompleter?.future ?? Future<void>.value();
-  Future<void> get initializationCompleted => _initializationCompleted;
-  bool get isInitializationPending => _localCacheFirst;
+
+  /// Application display-cache fence. The returned finish is called only after
+  /// the real SDK apply/transaction settles; empty longpolls do not acquire it.
+  Future<void Function(bool applied)> Function()? beginLocalDisplayMutation;
+  void Function(SyncUpdate)? onLocalDisplayApplySettled;
+  Future<T> runLocalDisplayMutation<T>(Future<T> Function() apply) async {
+    final finish = await beginLocalDisplayMutation?.call();
+    var applied = false;
+    try {
+      if (_disposed) throw StateError('Client disposed');
+      final value = await apply();
+      applied = true;
+      return value;
+    } finally {
+      finish?.call(applied);
+    }
+  }
+
+  bool _changesDisplay(SyncUpdate sync) =>
+      (sync.rooms?.join?.isNotEmpty ?? false) ||
+      (sync.rooms?.leave?.isNotEmpty ?? false) ||
+      (sync.rooms?.invite?.isNotEmpty ?? false) ||
+      (sync.accountData?.isNotEmpty ?? false);
+
+  Future<void>? _projectionInitialization;
+  bool _projectionPending = false;
+  List<Room>? _startupSeededRooms;
+  Future<void> get initializationCompleted =>
+      _projectionInitialization ?? _initializationCompleted;
+  bool get isInitializationPending => _localCacheFirst || _projectionPending;
+
+  /// Wait outside any storage/lifecycle lock, with cancellation on disposal.
+  Future<void> awaitStartupResume(Future<void>? resume) async {
+    await Future.any([resume ?? Future<void>.value(), _startupDisposed.future]);
+    if (_disposed) throw StateError('Client startup disposed');
+  }
+
+  /// Display objects only. Does not set credentials, user identity or login
+  /// state. The caller still performs the original store admission and init.
+  void seedStartupRooms(List<Room> rooms, Future<void> fullInitialization) {
+    if (_initLock ||
+        _disposed ||
+        isLogged() ||
+        _startupSeededRooms != null ||
+        rooms.length > 40 ||
+        rooms.any((room) => !identical(room.client, this))) {
+      throw StateError('Invalid startup room seed');
+    }
+    _startupSeededRooms = List<Room>.of(rooms);
+    _rooms = List<Room>.of(rooms);
+    _projectionPending = true;
+    _projectionInitialization = Future.any([
+      fullInitialization,
+      _startupDisposed.future
+          .then<void>((_) => throw StateError('Client startup disposed')),
+    ]).whenComplete(() {
+      _projectionPending = false;
+    });
+    unawaited(_projectionInitialization!.catchError((Object _) {}));
+  }
 
   /// Restore a safe retained local projection before optional full SDK recovery.
   /// Login and recovery without a retained Olm account keep the normal barrier.
@@ -2191,6 +2249,15 @@ class Client extends MatrixApi {
         final projectedStateKeys = <String, Set<String>>{};
         final projectedAccountKeys = <String, Set<String>>{};
         final projectedHistory = <String, int>{};
+        final seeded = _startupSeededRooms;
+        if (seeded != null) {
+          projectedRooms = seeded;
+          for (final room in seeded) {
+            projectedStateKeys[room.id] = {};
+            projectedAccountKeys[room.id] = {};
+            projectedHistory[room.id] = room.historyGeneration;
+          }
+        }
         if (_localCacheFirst && olmAccount != null && encryptionEnabled) {
           final projection = await database.getStartupRoomList(this);
           final localAccount = await database.getStartupAccountData(this);
@@ -2561,27 +2628,47 @@ class Client extends MatrixApi {
         await roomsLoading;
         await _accountDataLoading;
         if (!ownsLoop() || _disposed || _aborted) return;
-        await database.prepareSyncTimelineStorage(
-            syncResp, _eventsPendingDecryption.map((e) => e.event.roomID));
-        _currentTransaction = database.transaction(() async {
-          // An abort before this queued transaction starts must leave the
-          // replacement loop's cache untouched. Once _handleSync has begun,
-          // abortSync awaits this transaction and lets it finish normally.
+        final finish = _changesDisplay(syncResp)
+            ? await beginLocalDisplayMutation?.call()
+            : null;
+        var applied = false;
+        try {
           if (!ownsLoop() || _disposed || _aborted) return;
-          await _handleSync(syncResp, direction: Direction.f);
-          if (prevBatch != syncResp.nextBatch) {
-            await database.storePrevBatch(syncResp.nextBatch);
-          }
-        });
-        await runBenchmarked(
-          'Process sync',
-          () async => await _currentTransaction,
-          syncResp.itemCount,
-        );
+          await database.prepareSyncTimelineStorage(
+              syncResp, _eventsPendingDecryption.map((e) => e.event.roomID));
+          _currentTransaction = database.transaction(() async {
+            // An abort before this queued transaction starts must leave the
+            // replacement loop's cache untouched. Once _handleSync has begun,
+            // abortSync awaits this transaction and lets it finish normally.
+            if (!ownsLoop() || _disposed || _aborted) return;
+            await _handleSync(syncResp, direction: Direction.f);
+            applied = true;
+            if (prevBatch != syncResp.nextBatch) {
+              await database.storePrevBatch(syncResp.nextBatch);
+            }
+          });
+          await runBenchmarked(
+            'Process sync',
+            () async => await _currentTransaction,
+            syncResp.itemCount,
+          );
+        } catch (_) {
+          applied = false;
+          rethrow;
+        } finally {
+          finish?.call(applied);
+        }
+        if (!applied) return;
       } else {
         if (!ownsLoop() || _disposed || _aborted) return;
-        await _handleSync(syncResp, direction: Direction.f);
+        if (_changesDisplay(syncResp)) {
+          await runLocalDisplayMutation(
+              () => _handleSync(syncResp, direction: Direction.f));
+        } else {
+          await _handleSync(syncResp, direction: Direction.f);
+        }
       }
+      onLocalDisplayApplySettled?.call(syncResp);
       // An abort deliberately lets in-flight transaction processing finish,
       // but a stale loop must not update the replacement loop's cursor or
       // retry state after that processing settles.
@@ -2647,9 +2734,18 @@ class Client extends MatrixApi {
     sync.deviceOneTimeKeysCount ??= {
       'signed_curve25519': encryption?.olmManager.maxNumberOfOneTimeKeys ?? 100,
     };
-    await database?.prepareSyncTimelineStorage(
-        sync, _eventsPendingDecryption.map((e) => e.event.roomID));
-    await _handleSync(sync, direction: direction);
+    Future<void> apply() async {
+      await database?.prepareSyncTimelineStorage(
+          sync, _eventsPendingDecryption.map((e) => e.event.roomID));
+      await _handleSync(sync, direction: direction);
+    }
+
+    if (_changesDisplay(sync)) {
+      await runLocalDisplayMutation(apply);
+    } else {
+      await apply();
+    }
+    onLocalDisplayApplySettled?.call(sync);
   }
 
   Future<void> _handleSync(SyncUpdate sync, {Direction? direction}) async {

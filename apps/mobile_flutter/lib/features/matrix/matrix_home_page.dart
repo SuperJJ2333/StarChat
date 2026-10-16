@@ -235,7 +235,7 @@ final class MatrixHomeHandoff extends ChangeNotifier {
       !_retired &&
       eligible() &&
       _account != null &&
-      matrix.isLoggedIn &&
+      (matrix.isLoggedIn || matrix.hasLocalDisplayProjection) &&
       matrix.userId == _account &&
       api.sessionEpoch == _epoch &&
       matrix.sendPreparationIdentity == _owner;

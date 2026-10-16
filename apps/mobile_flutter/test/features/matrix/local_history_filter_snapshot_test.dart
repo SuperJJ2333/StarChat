@@ -8,9 +8,13 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final alice = SharedPreferencesLocalHiddenEvents(
-        preferences: prefs, accountId: 'alice');
+        mutationGuard: (apply) => apply(),
+        preferences: prefs,
+        accountId: 'alice');
     final bob = SharedPreferencesLocalHiddenEvents(
-        preferences: prefs, accountId: 'bob');
+        mutationGuard: (apply) => apply(),
+        preferences: prefs,
+        accountId: 'bob');
     final now = DateTime.utc(2026, 9, 11);
     final before = alice.readFilter('room');
     await alice.hide('room', 'event');

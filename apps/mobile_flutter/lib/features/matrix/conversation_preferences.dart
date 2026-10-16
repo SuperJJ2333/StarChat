@@ -404,21 +404,22 @@ ConversationPreference preferenceForRoom(Room room) =>
     remotePreferenceForRoom(room);
 
 Future<void> saveLocalConversationPreference(
-    Room room, ConversationPreference preference) async {
-  await loadConversationPreferences(room.client);
-  final store = _localPreferences[room.client];
-  if (store == null) throw StateError('Matrix 账号尚未登录');
-  final previous = store.pending[room.id] ?? remotePreferenceForRoom(room);
-  await NativeMessagePolicy.shared
-      .observeRoom(room.client.userID!, room.id, preference.muted);
-  store.pending[room.id] = preference;
-  if (preference.muted != previous.muted ||
-      (preference.muted && !store.pushApplied.contains(room.id))) {
-    store.pushPending[room.id] = preference.muted;
-  }
-  conversationPreferencesChanged.publish();
-  await store.persist();
-}
+        Room room, ConversationPreference preference) =>
+    room.client.runLocalDisplayMutation(() async {
+      await loadConversationPreferences(room.client);
+      final store = _localPreferences[room.client];
+      if (store == null) throw StateError('Matrix 账号尚未登录');
+      final previous = store.pending[room.id] ?? remotePreferenceForRoom(room);
+      await NativeMessagePolicy.shared
+          .observeRoom(room.client.userID!, room.id, preference.muted);
+      store.pending[room.id] = preference;
+      if (preference.muted != previous.muted ||
+          (preference.muted && !store.pushApplied.contains(room.id))) {
+        store.pushPending[room.id] = preference.muted;
+      }
+      conversationPreferencesChanged.publish();
+      await store.persist();
+    });
 
 /// Called inside the Matrix client's managed lifecycle. Failed writes remain
 /// durable and are retried on the next conversation snapshot/sync.

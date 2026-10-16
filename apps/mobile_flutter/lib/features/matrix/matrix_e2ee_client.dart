@@ -1,3 +1,6 @@
+import '../../core/startup_projection/startup_projection.dart';
+import '../../core/startup_projection/startup_projection_coordinator.dart';
+import '../../core/startup_projection/startup_projection_store.dart';
 import 'conversation_identity_admission.dart';
 import 'logical_conversation_timeline.dart';
 import 'matrix_room_display_name.dart' as room_names;
@@ -806,143 +809,146 @@ final class MatrixConversationCapability {
         }
       });
 
-  Future<MatrixConversationSnapshot> snapshot() =>
-      _owner._withClient((client) async {
-        final snapshotAccount = client.userID;
-        await reconcileConversationPreferences(client);
-        _flushPreferences();
-        final localHistory = client.userID == null
-            ? null
-            : await _owner._loadLocalHistory(client);
-        _owner._memberProjectionCache.prune({
-          for (final room in client.rooms)
-            if (room.membership == Membership.join) room.id,
-        });
-        final selfUserId = client.userID;
-        final registry = _owner._duplicateRooms;
-        if (selfUserId != null && registry != null) {
-          await loadDirectRoomAssociations(client, registry);
-        }
-        if (client.userID != snapshotAccount) {
-          throw StateError('Conversation snapshot account changed');
-        }
-        final admitted = <MatrixConversationRoomSnapshot>[];
-        final observed = <String, String>{};
-        final snapshotRooms = client.rooms.toList(growable: false);
-        final controlRooms = {
-          client.accountData[emojiVaultAccountDataType]?.content['room_id'],
-          client
-              .accountData[messageReminderAccountDataType]?.content['room_id'],
-        };
-        for (final room in snapshotRooms) {
-          if (room.membership != Membership.join) continue;
-          var identity = selfUserId == null || registry == null
+  Future<MatrixConversationSnapshot> snapshot() => _owner
+          .hasLocalDisplayProjection
+      ? Future.value(_owner._projectionSnapshot())
+      : _owner._withClient((client) async {
+          final snapshotAccount = client.userID;
+          await reconcileConversationPreferences(client);
+          _flushPreferences();
+          final localHistory = client.userID == null
               ? null
-              : admitConversationIdentity(room, selfUserId, registry);
-          if (identity == null &&
-              room.partial &&
-              selfUserId != null &&
-              registry != null) {
-            // SDK custom state is lazy. Hydrate only its local database, never
-            // wait on /state or /members to render established conversations.
-            await room.postLoad();
-            if (client.userID != snapshotAccount) {
-              throw StateError('Conversation snapshot account changed');
-            }
-            identity = admitConversationIdentity(room, selfUserId, registry);
+              : await _owner._loadLocalHistory(client);
+          _owner._memberProjectionCache.prune({
+            for (final room in client.rooms)
+              if (room.membership == Membership.join) room.id,
+          });
+          final selfUserId = client.userID;
+          final registry = _owner._duplicateRooms;
+          if (selfUserId != null && registry != null) {
+            await loadDirectRoomAssociations(client, registry);
           }
-          if (identity == null &&
-              selfUserId != null &&
-              registry != null &&
-              (room.summary.mJoinedMemberCount ?? 0) >= 3 &&
-              !room.participantListComplete) {
-            // postLoad does not hydrate the SDK's separate member table.
-            // Reading it is local-only, including after partial becomes false.
-            List<User> stored;
-            try {
-              stored = await client.database?.getUsers(room) ?? const [];
-            } catch (_) {
-              stored = const [];
-            }
-            if (client.userID != snapshotAccount) {
-              throw StateError('Conversation snapshot account changed');
-            }
-            for (final member in stored) {
-              if (room.getState(EventTypes.RoomMember, member.id) == null) {
-                room.setState(member);
+          if (client.userID != snapshotAccount) {
+            throw StateError('Conversation snapshot account changed');
+          }
+          final admitted = <MatrixConversationRoomSnapshot>[];
+          final observed = <String, String>{};
+          final snapshotRooms = client.rooms.toList(growable: false);
+          final controlRooms = {
+            client.accountData[emojiVaultAccountDataType]?.content['room_id'],
+            client.accountData[messageReminderAccountDataType]
+                ?.content['room_id'],
+          };
+          for (final room in snapshotRooms) {
+            if (room.membership != Membership.join) continue;
+            var identity = selfUserId == null || registry == null
+                ? null
+                : admitConversationIdentity(room, selfUserId, registry);
+            if (identity == null &&
+                room.partial &&
+                selfUserId != null &&
+                registry != null) {
+              // SDK custom state is lazy. Hydrate only its local database, never
+              // wait on /state or /members to render established conversations.
+              await room.postLoad();
+              if (client.userID != snapshotAccount) {
+                throw StateError('Conversation snapshot account changed');
               }
+              identity = admitConversationIdentity(room, selfUserId, registry);
             }
-            identity = admitConversationIdentity(room, selfUserId, registry);
+            if (identity == null &&
+                selfUserId != null &&
+                registry != null &&
+                (room.summary.mJoinedMemberCount ?? 0) >= 3 &&
+                !room.participantListComplete) {
+              // postLoad does not hydrate the SDK's separate member table.
+              // Reading it is local-only, including after partial becomes false.
+              List<User> stored;
+              try {
+                stored = await client.database?.getUsers(room) ?? const [];
+              } catch (_) {
+                stored = const [];
+              }
+              if (client.userID != snapshotAccount) {
+                throw StateError('Conversation snapshot account changed');
+              }
+              for (final member in stored) {
+                if (room.getState(EventTypes.RoomMember, member.id) == null) {
+                  room.setState(member);
+                }
+              }
+              identity = admitConversationIdentity(room, selfUserId, registry);
+            }
+            if (identity != null) observed[room.id] = identity;
           }
-          if (identity != null) observed[room.id] = identity;
-        }
-        if (registry != null && selfUserId != null) {
-          await registry.rememberLocalIdentities(selfUserId, observed);
-        }
-        _owner._queueLocalMessageCounts(client);
-        if (client.userID != snapshotAccount) {
-          throw StateError('Conversation snapshot account changed');
-        }
-        var unresolved = 0;
-        // No awaits from this point: current evidence and the projected row
-        // must be from the same sync state, not a pre-hydration observation.
-        for (final room in snapshotRooms) {
-          if (room.membership != Membership.join) continue;
-          final identity = selfUserId == null || registry == null
-              ? null
-              : admitConversationIdentity(room, selfUserId, registry);
-          if (identity == null && !controlRooms.contains(room.id)) {
-            unresolved++;
-            continue;
+          if (registry != null && selfUserId != null) {
+            await registry.rememberLocalIdentities(selfUserId, observed);
           }
-          admitted.add(_reassociateDuplicate(
-              _snapshotRoom(room, localHistory), registry, selfUserId,
-              admittedIdentity: identity));
-        }
-        // 身份解析（同一好友一行）在数据源出口统一执行：m.direct 中同一
-        // peer 的多个已加入房间（历史房间/旧版本建房/avoidRoomId 新建残留）
-        // 不再各自渲染一条。落选房间仅从列表隐藏，绝不 leave。
-        final resolution = resolveConversationIdentitiesDetailed(
-          admitted,
-          selfUserId: selfUserId,
-          // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
-          // 自动退回消息数/活跃度规则）。
-          primaryRoomIdOf: (registry == null || selfUserId == null)
-              ? null
-              : (peer) => registry.primaryRoomIdForPeer(selfUserId, peer),
-          // 规则二数据源：本会话已解密缓存条数（本地消息量的保守代理）。
-          localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
-        );
-        // BUG-23 残余自愈：通话中进程被杀 → 重启后尾部是通话终态信令而
-        // 服务器未读仍虚增（服务器只见 m.room.encrypted，无法区分信令）。
-        // 快照观察到该组合即静默推进一次已读（详见 _healCallSignalingTails）。
-        _healCallSignalingTails(
-          client: client,
-          rooms: {
-            ...resolution.representatives,
-            ...resolution.duplicatesByRepresentativeId.values
-                .expand((rooms) => rooms),
-          },
-        );
-        return MatrixConversationSnapshot(
-          unresolvedRoomCount: unresolved,
-          vaultRoomId: client
-              .accountData[emojiVaultAccountDataType]?.content['room_id']
-              ?.toString(),
-          reminderRoomId: client
-              .accountData[messageReminderAccountDataType]?.content['room_id']
-              ?.toString(),
-          // 方案 A：落选房间不渲染行，其未读并入主行，不能凭空消失；列表
-          // 摘要取身份组内最新事件，落选房间的新消息不因隐藏而在预览中消失。
-          rooms: [
-            for (final room in resolution.representatives)
-              _mergeDuplicateConversationState(
-                  room,
-                  resolution.duplicatesByRepresentativeId[room.id] ?? const [],
-                  selfUserId)
-          ],
-        );
-      });
+          _owner._queueLocalMessageCounts(client);
+          if (client.userID != snapshotAccount) {
+            throw StateError('Conversation snapshot account changed');
+          }
+          var unresolved = 0;
+          // No awaits from this point: current evidence and the projected row
+          // must be from the same sync state, not a pre-hydration observation.
+          for (final room in snapshotRooms) {
+            if (room.membership != Membership.join) continue;
+            final identity = selfUserId == null || registry == null
+                ? null
+                : admitConversationIdentity(room, selfUserId, registry);
+            if (identity == null && !controlRooms.contains(room.id)) {
+              unresolved++;
+              continue;
+            }
+            admitted.add(_reassociateDuplicate(
+                _snapshotRoom(room, localHistory), registry, selfUserId,
+                admittedIdentity: identity));
+          }
+          // 身份解析（同一好友一行）在数据源出口统一执行：m.direct 中同一
+          // peer 的多个已加入房间（历史房间/旧版本建房/avoidRoomId 新建残留）
+          // 不再各自渲染一条。落选房间仅从列表隐藏，绝不 leave。
+          final resolution = resolveConversationIdentitiesDetailed(
+            admitted,
+            selfUserId: selfUserId,
+            // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
+            // 自动退回消息数/活跃度规则）。
+            primaryRoomIdOf: (registry == null || selfUserId == null)
+                ? null
+                : (peer) => registry.primaryRoomIdForPeer(selfUserId, peer),
+            // 规则二数据源：本会话已解密缓存条数（本地消息量的保守代理）。
+            localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
+          );
+          // BUG-23 残余自愈：通话中进程被杀 → 重启后尾部是通话终态信令而
+          // 服务器未读仍虚增（服务器只见 m.room.encrypted，无法区分信令）。
+          // 快照观察到该组合即静默推进一次已读（详见 _healCallSignalingTails）。
+          _healCallSignalingTails(
+            client: client,
+            rooms: {
+              ...resolution.representatives,
+              ...resolution.duplicatesByRepresentativeId.values
+                  .expand((rooms) => rooms),
+            },
+          );
+          return MatrixConversationSnapshot(
+            unresolvedRoomCount: unresolved,
+            vaultRoomId: client
+                .accountData[emojiVaultAccountDataType]?.content['room_id']
+                ?.toString(),
+            reminderRoomId: client
+                .accountData[messageReminderAccountDataType]?.content['room_id']
+                ?.toString(),
+            // 方案 A：落选房间不渲染行，其未读并入主行，不能凭空消失；列表
+            // 摘要取身份组内最新事件，落选房间的新消息不因隐藏而在预览中消失。
+            rooms: [
+              for (final room in resolution.representatives)
+                _mergeDuplicateConversationState(
+                    room,
+                    resolution.duplicatesByRepresentativeId[room.id] ??
+                        const [],
+                    selfUserId)
+            ],
+          );
+        });
 
   /// BUG-23 残余自愈去重：每个 (账号, 房间, 尾部事件) 只推进一次已读。
   // 类暴露 const 构造器，去重状态放静态（键含账号，进程级共享安全）。
@@ -1133,7 +1139,7 @@ final class MatrixConversationCapability {
       _owner._withClient((client) async {
         final room = client.getRoomById(id);
         if (room == null) return;
-        await room.leave();
+        await _owner._remotePrivacy(room, room.leave);
         await client.oneShotSync();
       });
   Future<GroupInvitationAutoJoinResult> autoJoinGroupInvites(
@@ -1883,6 +1889,11 @@ final class MatrixRoomLease
   @override
   bool canceled = false;
 
+  bool get canQueueLocalText => owner._projectionRoom(roomId)?.canSend ?? true;
+
+  Future<void> runLocalHistoryMutation(Future<void> Function() apply) =>
+      owner.runLocalHistoryMutation(apply);
+
   Room get _activeRoom =>
       _room ?? (throw StateError('Matrix room lease is not active'));
 
@@ -1929,6 +1940,21 @@ final class MatrixRoomLease
   /// A non-SDK snapshot valid only while this lease is active.
   MatrixRoomInfoSnapshot get roomInfo {
     final room = _activeRoom;
+    final cached = owner._projectionRoom(roomId);
+    if (cached != null) {
+      return MatrixRoomInfoSnapshot(
+          id: roomId,
+          name: cached.name,
+          topic: '',
+          isDirect: cached.direct,
+          directPeerId: cached.peer,
+          currentUserId: owner.startupAdmission!.userId,
+          announcementVersion: 0,
+          homeserver: owner.homeserver,
+          preference: ConversationPreference(
+              pinned: cached.pinned, muted: cached.muted),
+          members: const []);
+    }
     final value = _snapshotRoomInfo(room,
         members: owner._memberProjectionCache
             .roomMembersFor(room, preferenceForRoom(room)));
@@ -2042,86 +2068,122 @@ final class MatrixRoomLease
     required void Function() onUpdate,
     bool cachedFirst = false,
     void Function()? onHydrated,
-  }) =>
-      _withLeaseOperation((room) async {
-        if (cachedFirst && room.client.database != null && !room.isArchived) {
-          final generation = room.historyGeneration;
-          final client = room.client;
-          final identity = (client.userID, client.deviceID, client.homeserver);
-          final events = await client.database!.getEventList(room, limit: 40);
-          if (canceled ||
-              owner._accessRevoked ||
-              !identical(owner._client, client) ||
-              !identical(_room, room) ||
-              identity != (client.userID, client.deviceID, client.homeserver) ||
-              generation != room.historyGeneration) {
-            throw StateError('Matrix cached timeline lease revoked');
-          }
-          final cachedEvents = List<Event>.of(events);
-          final timeline = Timeline(
+  }) async {
+    final cached = owner._projectionRoom(roomId);
+    if (cached != null) {
+      final room = _activeRoom;
+      final events = [
+        for (final e in cached.events)
+          Event(
               room: room,
-              chunk: TimelineChunk(events: events),
-              persistedInitialIds: events
-                  .where((event) => event.status.isSynced)
-                  .map((event) => event.eventId),
-              onUpdate: onUpdate);
-          final capability =
-              _SdkRoomTimelineCapability(this, timeline, onUpdate);
-          _timelines.add(capability);
-          unawaited(() async {
-            Timeline? hydrated;
-            try {
-              Future<void> hydrateLocal() => timeline.hydrateCachedEvents(
-                  cachedEvents,
-                  retainedFragments: () {
-                    final context = capability._contextTimeline;
-                    return context == null ? const <Timeline>[] : [context];
-                  },
-                  isActive: () =>
-                      !capability._disposed &&
-                      !canceled &&
-                      !owner._accessRevoked &&
-                      identical(owner._client, client) &&
-                      identical(_room, room) &&
-                      identity ==
-                          (client.userID, client.deviceID, client.homeserver) &&
-                      generation == room.historyGeneration);
-              // The retained Olm identity is already validated. Decrypt only
-              // these forty cached rows with local keys before full recovery.
-              if (client.isInitializationPending) await hydrateLocal();
-              await client.initializationCompleted;
-              capability._ensureActive();
-              hydrated = await room.getTimeline(onUpdate: onUpdate);
-              await hydrateLocal();
-              await _enableSdkResidentWindow(timeline);
-              capability._ensureActive();
-              if (generation != room.historyGeneration) {
-                throw StateError('Matrix history generation changed');
-              }
-              hydrated.cancelSubscriptions();
-              onHydrated?.call();
-              onUpdate();
-            } catch (_) {
-              hydrated?.cancelSubscriptions();
-            }
-          }());
-          return capability;
-        }
-        final timeline = await room.getTimeline(onUpdate: onUpdate);
+              eventId: e.id,
+              type: e.kind == 'm.sticker'
+                  ? EventTypes.Sticker
+                  : EventTypes.Message,
+              senderId: e.sender,
+              originServerTs: DateTime.fromMillisecondsSinceEpoch(e.timestamp),
+              content: e.displayContent)
+      ];
+      final timeline = Timeline(
+          room: room,
+          chunk: TimelineChunk(events: events),
+          persistedInitialIds: events.map((e) => e.eventId),
+          onUpdate: onUpdate);
+      final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
+      _timelines.add(capability);
+      unawaited(() async {
         try {
+          await owner.initializationCompleted;
+          capability._ensureActive();
+          final restored = await room.getTimeline(onUpdate: onUpdate);
+          restored.cancelSubscriptions();
           await _enableSdkResidentWindow(timeline);
-          if (canceled || owner._accessRevoked) {
-            throw StateError('Matrix timeline lease revoked during hydration');
-          }
-        } catch (_) {
-          timeline.cancelSubscriptions();
-          rethrow;
+          capability._ensureActive();
+          onHydrated?.call();
+          onUpdate();
+        } catch (_) {}
+      }());
+      return capability;
+    }
+    return _withLeaseOperation((room) async {
+      if (cachedFirst && room.client.database != null && !room.isArchived) {
+        final generation = room.historyGeneration;
+        final client = room.client;
+        final identity = (client.userID, client.deviceID, client.homeserver);
+        final events = await client.database!.getEventList(room, limit: 40);
+        if (canceled ||
+            owner._accessRevoked ||
+            !identical(owner._client, client) ||
+            !identical(_room, room) ||
+            identity != (client.userID, client.deviceID, client.homeserver) ||
+            generation != room.historyGeneration) {
+          throw StateError('Matrix cached timeline lease revoked');
         }
+        final cachedEvents = List<Event>.of(events);
+        final timeline = Timeline(
+            room: room,
+            chunk: TimelineChunk(events: events),
+            persistedInitialIds: events
+                .where((event) => event.status.isSynced)
+                .map((event) => event.eventId),
+            onUpdate: onUpdate);
         final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
         _timelines.add(capability);
-        onHydrated?.call();
+        unawaited(() async {
+          Timeline? hydrated;
+          try {
+            Future<void> hydrateLocal() => timeline.hydrateCachedEvents(
+                cachedEvents,
+                retainedFragments: () {
+                  final context = capability._contextTimeline;
+                  return context == null ? const <Timeline>[] : [context];
+                },
+                isActive: () =>
+                    !capability._disposed &&
+                    !canceled &&
+                    !owner._accessRevoked &&
+                    identical(owner._client, client) &&
+                    identical(_room, room) &&
+                    identity ==
+                        (client.userID, client.deviceID, client.homeserver) &&
+                    generation == room.historyGeneration);
+            // The retained Olm identity is already validated. Decrypt only
+            // these forty cached rows with local keys before full recovery.
+            if (client.isInitializationPending) await hydrateLocal();
+            await client.initializationCompleted;
+            capability._ensureActive();
+            hydrated = await room.getTimeline(onUpdate: onUpdate);
+            await hydrateLocal();
+            await _enableSdkResidentWindow(timeline);
+            capability._ensureActive();
+            if (generation != room.historyGeneration) {
+              throw StateError('Matrix history generation changed');
+            }
+            hydrated.cancelSubscriptions();
+            onHydrated?.call();
+            onUpdate();
+          } catch (_) {
+            hydrated?.cancelSubscriptions();
+          }
+        }());
         return capability;
-      });
+      }
+      final timeline = await room.getTimeline(onUpdate: onUpdate);
+      try {
+        await _enableSdkResidentWindow(timeline);
+        if (canceled || owner._accessRevoked) {
+          throw StateError('Matrix timeline lease revoked during hydration');
+        }
+      } catch (_) {
+        timeline.cancelSubscriptions();
+        rethrow;
+      }
+      final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
+      _timelines.add(capability);
+      onHydrated?.call();
+      return capability;
+    });
+  }
 
   final Map<String, MatrixRoomLease> _historyLeases = {};
   StreamSubscription<void>? _logicalSync;
@@ -2668,7 +2730,9 @@ final class MatrixRoomLease
   ) {
     _requireRoomId(requestedRoomId);
     return _withLeaseOperation(
-      (room) => room.redactEvent(eventId, reason: reason),
+      (room) => owner._remotePrivacy(
+          room, () => room.redactEvent(eventId, reason: reason),
+          eventId: eventId),
     );
   }
 
@@ -3114,11 +3178,14 @@ final class _SdkRoomTimelineCapability
     };
     _outgoingWork = _lease.owner.outgoingWork;
     _outgoingWork.addListener(_outgoingListener);
-    _eventOwner = (
-      _lease._activeRoom.client.userID,
-      _lease._activeRoom.client.deviceID,
-      _lease._activeRoom.client.homeserver
-    );
+    _seededDisplayOwner = _lease.owner.hasLocalDisplayProjection;
+    _eventOwner = _seededDisplayOwner
+        ? (_lease.owner.userId, _lease.owner.deviceId, _lease.owner.homeserver)
+        : (
+            _lease._activeRoom.client.userID,
+            _lease._activeRoom.client.deviceID,
+            _lease._activeRoom.client.homeserver
+          );
     _resolvedEventUpdates =
         _lease._activeRoom.client.onEvent.stream.listen((update) {
       if (update.roomID != _lease.roomId) return;
@@ -3607,6 +3674,7 @@ final class _SdkRoomTimelineCapability
     _localContextOnly = false;
   }
 
+  late final bool _seededDisplayOwner;
   void _ensureActive() {
     if (_disposed) throw StateError('Matrix timeline capability is disposed');
     if (_lease.canceled || _lease.owner._accessRevoked) {
@@ -3614,7 +3682,10 @@ final class _SdkRoomTimelineCapability
     }
     _lease._activeRoom;
     final client = _lease._activeRoom.client;
-    if ((client.userID, client.deviceID, client.homeserver) != _eventOwner) {
+    final identity = _seededDisplayOwner
+        ? (_lease.owner.userId, _lease.owner.deviceId, _lease.owner.homeserver)
+        : (client.userID, client.deviceID, client.homeserver);
+    if (!identical(_lease.owner._client, client) || identity != _eventOwner) {
       throw StateError('Matrix timeline owner changed');
     }
   }
@@ -5637,7 +5708,8 @@ final class _SdkGroupChatInfoGateway
       _withOperation(() => room.invite(matrixUserId));
 
   @override
-  Future<void> leave() => _withOperation(() => room.leave());
+  Future<void> leave() =>
+      _withOperation(() => _lease.owner._remotePrivacy(room, room.leave));
 
   @override
   Future<void> removeMembers(List<String> matrixUserIds) =>
@@ -5728,7 +5800,7 @@ final class _SdkGroupChatInfoGateway
         for (final member in members) {
           if (member.id != authority.ownerId) await room.kick(member.id);
         }
-        await room.leave();
+        await _lease.owner._remotePrivacy(room, room.leave);
       });
 
   @override
@@ -6672,9 +6744,14 @@ final class _OutgoingSession {
   final MatrixOutgoingWorkCoordinator coordinator;
 }
 
+abstract interface class MatrixLocalProjectionGateway {
+  bool get hasLocalDisplayProjection;
+}
+
 final class MatrixSdkE2eeClient
     implements
         MatrixInitializationGateway,
+        MatrixLocalProjectionGateway,
         MatrixE2eeClient,
         MatrixMediaUploadLimitGateway,
         MatrixRecoveryClient,
@@ -6716,7 +6793,8 @@ final class MatrixSdkE2eeClient
     if (accountId == null) throw StateError('Matrix client is not logged in');
     final store = SharedPreferencesLocalHiddenEvents(
         preferences: await SharedPreferences.getInstance(),
-        accountId: accountId);
+        accountId: accountId,
+        mutationGuard: runLocalHistoryMutation);
     _localHistoryStore = store;
     return store;
   }
@@ -6741,6 +6819,9 @@ final class MatrixSdkE2eeClient
     PerformanceTraceRecorder? performanceRecorder,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
     this.secureSessionStore,
+    this.startupProjection,
+    this.startupAdmission,
+    this.startupClock,
     this.migrateRecoveryArchives,
     this.refreshRecoveryBusinessSession,
     DateTime Function()? memberRefreshNow,
@@ -6771,12 +6852,388 @@ final class MatrixSdkE2eeClient
                 MatrixOutgoingWorkCoordinator(accountId: accountId)),
         securityLogger = securityLogger ??
             MatrixSecurityLogger.create(sink: (line) => debugPrint(line)) {
-    _outgoingWork = _newOutgoingWork(client.userID ?? '');
+    _bindStartupProjectionOwner(client);
+    _outgoingWork =
+        _newOutgoingWork(client.userID ?? startupAdmission?.userId ?? '');
     _bindRecoveryWrites(client);
     _attachOutgoingEchoListener(client);
     _attachDecryptionListener(client);
     _attachMemberRefreshListener(client);
   }
+  final Stopwatch? startupClock;
+  final StartupProjection? startupProjection;
+  final StartupProjectionAdmission? startupAdmission;
+  @override
+  bool get hasLocalDisplayProjection =>
+      !_accessRevoked &&
+      _projectionCoordinator?.displayRevoked != true &&
+      startupProjection != null &&
+      startupAdmission != null &&
+      _client?.isInitializationPending == true;
+  StartupProjectionRoom? _projectionRoom(String id) {
+    if (!hasLocalDisplayProjection) return null;
+    for (final row in startupProjection!.rooms) {
+      if (row.id == id) return row;
+    }
+    return null;
+  }
+
+  MatrixConversationSnapshot _projectionSnapshot() =>
+      MatrixConversationSnapshot(
+          vaultRoomId: null,
+          reminderRoomId: null,
+          rooms: [
+            for (final row in startupProjection!.rooms)
+              MatrixConversationRoomSnapshot(
+                  id: row.id,
+                  displayName: row.name,
+                  name: row.name,
+                  avatar: Uri.tryParse(row.avatar ?? ''),
+                  isDirect: row.direct,
+                  directPeerId: row.peer,
+                  members: const [],
+                  lastEvent: row.preview == null
+                      ? null
+                      : _projectionEventSnapshot(row.preview!),
+                  preference: ConversationPreference(
+                      pinned: row.pinned, muted: row.muted),
+                  notificationCount: row.unread,
+                  notificationsEnabled: !row.muted,
+                  lastActivityAt:
+                      DateTime.fromMillisecondsSinceEpoch(row.activity))
+          ]);
+  static MatrixEventSnapshot _projectionEventSnapshot(
+          StartupProjectionEvent event) =>
+      MatrixEventSnapshot(
+          type: event.kind == 'm.sticker'
+              ? EventTypes.Sticker
+              : EventTypes.Message,
+          text: event.body,
+          body: event.body,
+          originServerTs: DateTime.fromMillisecondsSinceEpoch(event.timestamp),
+          senderId: event.sender,
+          sender: MatrixMemberSnapshot(
+              id: event.sender, displayName: event.senderName, avatar: null),
+          redacted: false,
+          eventId: event.id,
+          messageType: event.kind,
+          content: event.displayContent);
+
+  void _bindStartupProjectionOwner(Client client) {
+    final secure = secureSessionStore;
+    if (secure != null) {
+      final coordinator = _projectionCoordinator = StartupProjectionCoordinator(
+          invalidateHead: secure.invalidateStartupProjection);
+      secure.startupProjectionCoordinator = coordinator;
+      client.onLocalDisplayApplySettled = (sync) {
+        if (_accessRevoked || !identical(_client, client)) return;
+        final redacted = <String, Set<String>>{};
+        for (final entry in sync.rooms?.join?.entries ??
+            const <MapEntry<String, JoinedRoomUpdate>>[]) {
+          for (final event in entry.value.timeline?.events ?? <MatrixEvent>[]) {
+            final json = event.toJson();
+            if (json['type'] != EventTypes.Redaction) continue;
+            final content = json['content'];
+            final id =
+                json['redacts'] ?? (content is Map ? content['redacts'] : null);
+            if (id is String) (redacted[entry.key] ??= {}).add(id);
+          }
+        }
+        unawaited(() async {
+          await secure.settleStartupProjectionPrivacy(
+              leftRooms: sync.rooms?.leave?.keys.toSet() ?? {},
+              redactedEvents: redacted);
+          if (_accessRevoked || !identical(_client, client)) return;
+          final cache = _projectionStore;
+          if (cache != null) await primeStartupProjection(cache);
+        }()
+            .catchError((Object _) {}));
+      };
+      client.beginLocalDisplayMutation = () async {
+        final ticket = coordinator.beginMutation('sdk-apply');
+        try {
+          await ticket.beforeApply;
+        } catch (_) {
+          ticket.finish(applied: false);
+          rethrow;
+        }
+        if (_accessRevoked || !identical(_client, client)) {
+          ticket.finish(applied: false);
+          throw StateError('Projection owner revoked');
+        }
+        return (applied) {
+          ticket.finish(applied: applied);
+          final cache = _projectionStore;
+          if (applied && cache != null) {
+            unawaited(Future<void>(() => primeStartupProjection(cache))
+                .catchError((Object _) {}));
+          }
+        };
+      };
+    }
+  }
+
+  Future<T> _remotePrivacy<T>(Room room, Future<T> Function() apply,
+      {String? eventId}) async {
+    final ticket = _projectionCoordinator?.beginMutation('remote-privacy');
+    var applied = false;
+    try {
+      await ticket?.beforeApply;
+      await secureSessionStore?.fenceStartupProjectionPrivacy(
+          roomId: room.id, eventId: eventId);
+      if (_accessRevoked || !identical(_client, room.client)) {
+        throw StateError('Privacy owner revoked');
+      }
+      final result = await apply();
+      // This finishes only the request; durable pending targets still prohibit
+      // a cache commit until the exact remote effect is transactionally applied.
+      applied = true;
+      return result;
+    } finally {
+      ticket?.finish(applied: applied);
+    }
+  }
+
+  Future<void> runLocalHistoryMutation(Future<void> Function() apply) =>
+      _projectionCoordinator?.runMutation('local-history', apply) ?? apply();
+
+  StartupProjectionCoordinator? _projectionCoordinator;
+  bool _projectionWriting = false;
+  bool _projectionRefreshPending = false;
+  StartupProjectionStore? _projectionStore;
+  StreamSubscription<SyncUpdate>? _projectionSync;
+
+  static Map<String, Object> _projectionMedia(Map<String, dynamic> content) {
+    final info = content['info'];
+    if (info is! Map) return const {};
+    final result = <String, Object>{};
+    const fields = {
+      'mimetype': 'mime',
+      'w': 'width',
+      'h': 'height',
+      'size': 'size',
+      'duration': 'duration'
+    };
+    for (final field in fields.entries) {
+      final value = info[field.key];
+      if (field.key == 'mimetype') {
+        if (value is String && utf8.encode(value).length <= 256) {
+          result[field.value] = value;
+        }
+      } else if (value is int && value >= 0 && value <= 9007199254740991) {
+        result[field.value] = value;
+      }
+    }
+    return result;
+  }
+
+  /// Invoked only by the Business-authenticated composition path, never by
+  /// local/offline display eligibility. Uses canonical admitted app rows.
+  Future<void> primeStartupProjection(StartupProjectionStore cache) async {
+    final secure = secureSessionStore;
+    if (secure == null || _accessRevoked || !isLoggedIn) return;
+    _projectionStore = cache;
+    final coordinator = _projectionCoordinator ??= StartupProjectionCoordinator(
+        invalidateHead: secure.invalidateStartupProjection);
+    secure.startupProjectionCoordinator = coordinator;
+    coordinator.markVerified();
+    _projectionSync ??= _client?.onSync.stream.listen((_) {
+      // SDK completion fences, rather than onSync, grant capture permission.
+      unawaited(Future<void>(() => primeStartupProjection(cache))
+          .catchError((Object _) {}));
+    });
+    if (_projectionWriting) {
+      _projectionRefreshPending = true;
+      return;
+    }
+    final permit = coordinator.beginCapture();
+    if (permit == null) return;
+    _projectionWriting = true;
+    try {
+      await cache.withWriter(() async {
+        if (!coordinator.isCurrent(permit)) return;
+        final active = _client!;
+        await initializationCompleted;
+        if (!coordinator.isCurrent(permit) || !identical(active, _client)) {
+          return;
+        }
+        final installation = await cache.primeInstallation();
+        final admission =
+            await secure.prepareStartupProjectionHead(installation);
+        if (admission == null) {
+          markStartupProjection(
+              StartupProjectionPhase.projectionCommitFailure, startupClock,
+              reason: StartupProjectionReason.identityUnavailable);
+          return;
+        }
+        if (admission.userId != active.userID ||
+            admission.deviceId != active.deviceID ||
+            !coordinator.isCurrent(permit)) {
+          return;
+        }
+        final snapshot = await conversations.snapshot();
+        final history = await _loadLocalHistory(active);
+        final rows = <StartupProjectionRoom>[];
+        for (final row
+            in snapshot.rooms.where((row) => !row.preference.hidden).take(40)) {
+          if (!coordinator.isCurrent(permit)) return;
+          final room = active.getRoomById(row.id);
+          if (room == null) continue;
+          final filter = history.readFilter(room.id);
+          final timeline = await room.getTimeline();
+          final events = <StartupProjectionEvent>[];
+          try {
+            await timeline.hydrateCachedEvents(
+                timeline.events.take(40).toList(),
+                isActive: () =>
+                    coordinator.isCurrent(permit) &&
+                    identical(active, _client));
+            for (final event in timeline.events.take(40)) {
+              if (event.redacted ||
+                  filter(event.eventId, event.originServerTs)) {
+                continue;
+              }
+              final kind = event.type == EventTypes.Sticker
+                  ? 'm.sticker'
+                  : event.type == EventTypes.Message
+                      ? event.messageType
+                      : event.type;
+              if (!StartupProjectionEvent.kinds.contains(kind)) continue;
+              final candidate = StartupProjectionEvent(
+                  id: event.eventId,
+                  sender: event.senderId,
+                  body: kind.startsWith('com.changliao.') ? '[消息]' : event.body,
+                  kind: kind,
+                  media: _projectionMedia(event.content),
+                  timestamp: event.originServerTs.millisecondsSinceEpoch,
+                  senderName: event.senderId);
+              try {
+                StartupProjectionEvent.fromJson(candidate.toJson());
+                events.add(candidate);
+              } on FormatException {
+                /* Explicit partial coverage omits oversized records. */
+              }
+            }
+          } finally {
+            timeline.cancelSubscriptions();
+          }
+          final preview = row.lastEvent;
+          final projected = StartupProjectionRoom(
+              id: row.id,
+              name: row.displayName,
+              direct: row.isDirect,
+              peer: row.directPeerId,
+              avatar: row.avatar?.toString(),
+              unread: row.notificationCount,
+              pinned: row.preference.pinned,
+              muted: row.preference.muted,
+              encrypted: room.encrypted,
+              membership: room.membership.name,
+              canSend: room.canSendDefaultMessages,
+              activity:
+                  (row.lastActivityAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                      .millisecondsSinceEpoch,
+              preview: preview == null ||
+                      preview.type != EventTypes.Message ||
+                      preview.redacted
+                  ? null
+                  : StartupProjectionEvent(
+                      id: preview.eventId,
+                      sender: preview.senderId,
+                      kind: StartupProjectionEvent.kinds
+                              .contains(preview.messageType)
+                          ? preview.messageType
+                          : 'm.notice',
+                      media: _projectionMedia(preview.content),
+                      body: preview.messageType.startsWith('com.changliao.')
+                          ? '[消息]'
+                          : preview.body,
+                      timestamp: preview.originServerTs.millisecondsSinceEpoch,
+                      senderName: preview.sender.displayName),
+              events: events);
+          try {
+            StartupProjectionRoom.fromJson(projected.toJson());
+            rows.add(projected);
+          } on FormatException {
+            /* Oversized metadata cannot enter the projection. */
+          }
+        }
+        if (!coordinator.isCurrent(permit)) return;
+        // Keep metadata for every admitted row; add newest heads round-robin.
+        final selected = <StartupProjectionRoom>[];
+        StartupProjectionRoom withEvents(
+                StartupProjectionRoom r, List<StartupProjectionEvent> events) =>
+            StartupProjectionRoom(
+                id: r.id,
+                name: r.name,
+                direct: r.direct,
+                peer: r.peer,
+                avatar: r.avatar,
+                unread: r.unread,
+                pinned: r.pinned,
+                muted: r.muted,
+                canSend: r.canSend,
+                activity: r.activity,
+                encrypted: r.encrypted,
+                membership: r.membership,
+                preview: r.preview,
+                events: events);
+        for (final row in rows) {
+          selected.add(withEvents(row, []));
+        }
+        var payloadBytes = StartupProjection(selected).encode().length;
+        for (var index = 0; index < 40; index++) {
+          for (var roomIndex = 0; roomIndex < rows.length; roomIndex++) {
+            final original = rows[roomIndex];
+            if (index >= original.events.length) continue;
+            final previous = selected[roomIndex];
+            final event = original.events[index];
+            final addedBytes = utf8.encode(jsonEncode(event.toJson())).length +
+                (previous.events.isEmpty ? 0 : 1);
+            if (payloadBytes + addedBytes + 38 > startupProjectionMaxEnvelope) {
+              continue;
+            }
+            selected[roomIndex] =
+                withEvents(previous, [...previous.events, event]);
+            payloadBytes += addedBytes;
+          }
+        }
+        final prepared =
+            await cache.prepare(admission, StartupProjection(selected));
+        if (!coordinator.isCurrent(permit)) return;
+        var committed = false;
+        final published = await coordinator.commit(permit, () async {
+          committed = await secure.commitStartupProjectionHead(
+              admission, prepared.digest, prepared.length);
+        });
+        if (published && committed) {
+          markStartupProjection(
+              StartupProjectionPhase.projectionCommitSuccess, startupClock,
+              bytes: prepared.length,
+              rooms: selected.length,
+              events: selected.fold<int>(0, (n, r) => n + r.events.length));
+          await cache.clean(prepared.digest);
+        } else {
+          markStartupProjection(
+              StartupProjectionPhase.projectionCommitFailure, startupClock,
+              reason: StartupProjectionReason.commitRejected);
+        }
+      });
+    } catch (_) {
+      markStartupProjection(
+          StartupProjectionPhase.projectionCommitFailure, startupClock,
+          reason: StartupProjectionReason.captureFailed);
+      rethrow;
+    } finally {
+      _projectionWriting = false;
+      if (_projectionRefreshPending) {
+        _projectionRefreshPending = false;
+        unawaited(Future<void>(() => primeStartupProjection(cache))
+            .catchError((Object _) {}));
+      }
+    }
+  }
+
   Client? _client;
   final SecureSessionStore? secureSessionStore;
   MediaOutboxRecoveryService? _durableMediaOutbox;
@@ -6962,13 +7419,8 @@ final class MatrixSdkE2eeClient
       });
 
   /// Admission only: existing transactions and encrypted payloads never call this.
-  Object get sendPreparationIdentity => (
-        _client,
-        _client?.userID,
-        _client?.deviceID,
-        _outgoingWork,
-        _accessRevoked
-      );
+  Object get sendPreparationIdentity =>
+      (_client, userId, deviceId, _outgoingWork, _accessRevoked);
 
   Future<String> Function(String accountId, String roomId, String peerId)?
       prepareRoomSend;
@@ -7101,7 +7553,11 @@ final class MatrixSdkE2eeClient
   final Future<MatrixClientContinuityMetadata> Function(Client client)
       _readContinuityMetadata;
   final MatrixDeviceRotation? _rotateDeviceBinding;
-  final MatrixDiagnosticHasher? _diagnosticHasher;
+  MatrixDiagnosticHasher? _diagnosticHasher;
+  void installDiagnosticHasher(MatrixDiagnosticHasher hasher) {
+    if (!_accessRevoked) _diagnosticHasher ??= hasher;
+  }
+
   final MatrixSecurityLogger securityLogger;
   Future<void> _lifecycleTail = Future.value();
   final Duration lifecycleDrainTimeout;
@@ -7270,13 +7726,15 @@ final class MatrixSdkE2eeClient
   /// 逻辑会话归并出口（缺陷 0919 项 3）：roomId 是登记在案的重复房间时
   /// 返回其 primary 房间号，否则 null。内存同步查询（登记簿由收敛路径
   /// ensureLoaded）；搜索/通知入口在打开前据此归一化为只读定位。
-  Future<void> prepareConversationAssociations() => _withClient((client) async {
-        final registry = _duplicateRooms;
-        if (registry != null) {
-          await loadDirectRoomAssociations(client, registry);
-        }
-        _queueLocalMessageCounts(client);
-      });
+  Future<void> prepareConversationAssociations() => hasLocalDisplayProjection
+      ? Future<void>.value()
+      : _withClient((client) async {
+          final registry = _duplicateRooms;
+          if (registry != null) {
+            await loadDirectRoomAssociations(client, registry);
+          }
+          _queueLocalMessageCounts(client);
+        });
 
   String? logicalPrimaryRoomIdSync(String roomId) {
     final client = _client;
@@ -8540,14 +8998,22 @@ final class MatrixSdkE2eeClient
   @override
   String? get userId {
     final active = _client;
-    if (active != null) return active.userID;
+    if (active != null) {
+      return hasLocalDisplayProjection
+          ? startupAdmission!.userId
+          : active.userID;
+    }
     return _suspendedMetadata?.userId ?? _suspendedIdentity?.userId;
   }
 
   @override
   String? get deviceId {
     final active = _client;
-    if (active != null) return active.deviceID;
+    if (active != null) {
+      return hasLocalDisplayProjection
+          ? startupAdmission!.deviceId
+          : active.deviceID;
+    }
     return _suspendedMetadata?.deviceId ?? _suspendedIdentity?.deviceId;
   }
 
@@ -8831,6 +9297,12 @@ final class MatrixSdkE2eeClient
           : (update.content['can_request_session'] == true
               ? MessageDecryptionState.missingKey
               : MessageDecryptionState.decrypting);
+      if (update.type == EventUpdateType.decryptedTimelineQueue &&
+          type != EventTypes.Encrypted &&
+          _projectionStore != null) {
+        unawaited(Future<void>(() => primeStartupProjection(_projectionStore!))
+            .catchError((Object _) {}));
+      }
       _decryptionUpdates.add(MatrixDecryptionUpdate(eventId, state));
       _scheduleSyncProjection();
     });
@@ -8839,8 +9311,8 @@ final class MatrixSdkE2eeClient
   void _attachOutgoingEchoListener(Client client) {
     _outgoingEchoSubscription?.cancel();
     final work = _outgoingWork;
-    final userId = client.userID;
-    final deviceId = client.deviceID;
+    final userId = client.userID ?? startupAdmission?.userId;
+    final deviceId = client.deviceID ?? startupAdmission?.deviceId;
     _outgoingEchoSubscription = client.onEvent.stream.listen((update) {
       if (_accessRevoked ||
           !identical(client, _client) ||
@@ -9020,6 +9492,13 @@ final class MatrixSdkE2eeClient
 
   /// 同步撤销对外能力。必须在进入串行区之前完成，避免等待期间被继续使用。
   void _beginSuspensionRevocation() {
+    _projectionCoordinator?.retire();
+    if (identical(secureSessionStore?.startupProjectionCoordinator,
+        _projectionCoordinator)) {
+      secureSessionStore?.startupProjectionCoordinator = null;
+    }
+    unawaited(_projectionSync?.cancel());
+    _projectionSync = null;
     _recentHistory?.revoke();
     _client?.recoveryOwner?.revoke();
     _cancelSyncProjection();
@@ -9032,6 +9511,7 @@ final class MatrixSdkE2eeClient
   /// A drain deadline leaves handles alive for retry until the real work settles.
   /// Optional continuity diagnostics cannot prevent an otherwise safe close.
   Future<void> _suspendWithinLifecycle() async {
+    await secureSessionStore?.invalidateStartupProjection();
     final active = _client;
     if (active == null) return;
     securityLogger.beginLifecycleOperation();
@@ -9382,6 +9862,9 @@ final class MatrixSdkE2eeClient
     bool authorizeAccess = false,
     bool freshLogin = false,
   }) async {
+    if (startupProjection != null && _client?.isInitializationPending == true) {
+      await initializationCompleted;
+    }
     if (_accessRevoked && !authorizeAccess) {
       throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
     }
@@ -9464,10 +9947,13 @@ final class MatrixSdkE2eeClient
     required Future<void> Function(Client client) open,
     required Future<void> Function() close,
     void Function()? revoke,
+    bool localDisplay = false,
   }) =>
       _serializeLifecycle(() async {
         _requireLifecycleAccess();
-        final active = await _resumeWithinLifecycle();
+        final active = localDisplay && hasLocalDisplayProjection
+            ? _client!
+            : await _resumeWithinLifecycle();
         final resource = _ManagedClientResource(
           owner: this,
           open: open,
@@ -9485,6 +9971,7 @@ final class MatrixSdkE2eeClient
   }) {
     _SdkAppHomeCapability? capability;
     return _registerInternalResource(
+      localDisplay: true,
       open: (client) async {
         final next = _SdkAppHomeCapability(this, client);
         capability = next;
@@ -9604,8 +10091,12 @@ final class MatrixSdkE2eeClient
   Future<MatrixRoomLease> openRoomLease(String roomId) =>
       _serializeLifecycle(() async {
         _requireLifecycleAccess();
-        final active = await _resumeWithinLifecycle();
-        if (active.userID != null) await _loadLocalHistory(active);
+        final active = hasLocalDisplayProjection
+            ? _client!
+            : await _resumeWithinLifecycle();
+        if (!hasLocalDisplayProjection && active.userID != null) {
+          await _loadLocalHistory(active);
+        }
         final lease = MatrixRoomLease._(this, roomId);
         await lease.attach(active);
         _managedResources.add(lease);
@@ -9762,6 +10253,7 @@ final class MatrixSdkE2eeClient
     }
     _bindDecryptionCache(resumedMetadata);
     _client = resumed;
+    _bindStartupProjectionOwner(resumed);
     // 挂起期的观察值不再适用：此刻的权威事实就是这个 client。
     _suspendedMetadata = null;
     _suspendedIdentity = null;

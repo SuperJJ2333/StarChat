@@ -411,11 +411,17 @@ void main() {
       () async {
     final preferences = await SharedPreferences.getInstance();
     final first = SharedPreferencesLocalHiddenEvents(
-        preferences: preferences, accountId: 'synthetic-a');
+        mutationGuard: (apply) => apply(),
+        preferences: preferences,
+        accountId: 'synthetic-a');
     final second = SharedPreferencesLocalHiddenEvents(
-        preferences: preferences, accountId: 'synthetic-a');
+        mutationGuard: (apply) => apply(),
+        preferences: preferences,
+        accountId: 'synthetic-a');
     final other = SharedPreferencesLocalHiddenEvents(
-        preferences: preferences, accountId: 'synthetic-b');
+        mutationGuard: (apply) => apply(),
+        preferences: preferences,
+        accountId: 'synthetic-b');
     final before = first.readFilter('room');
     expect(identical(before, first.readFilter('room')), isTrue);
     await second.hide('room', 'hidden');

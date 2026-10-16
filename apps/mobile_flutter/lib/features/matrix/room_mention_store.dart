@@ -96,7 +96,7 @@ final class RoomMentionStore extends ChangeNotifier {
       if (room.isDirectChat) return;
       final state = await open(room, shouldContinue: shouldContinue);
       _check(shouldContinue);
-      final localHistory = SharedPreferencesLocalHiddenEvents(
+      final localHistory = SharedPreferencesLocalHiddenEvents.readOnly(
           preferences: await SharedPreferences.getInstance(),
           accountId: room.client.userID ?? '');
       _check(shouldContinue);

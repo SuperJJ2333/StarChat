@@ -84,7 +84,17 @@ final class SharedPreferencesLocalHiddenEvents
   const SharedPreferencesLocalHiddenEvents({
     required this.preferences,
     required this.accountId,
-  });
+    required Future<void> Function(Future<void> Function()) mutationGuard,
+  }) : _mutationGuard = mutationGuard;
+  const SharedPreferencesLocalHiddenEvents.readOnly(
+      {required this.preferences, required this.accountId})
+      : _mutationGuard = null;
+  final Future<void> Function(Future<void> Function())? _mutationGuard;
+  Future<void> _mutate(Future<void> Function() apply) {
+    final guard = _mutationGuard;
+    if (guard == null) throw StateError('Read-only history filter');
+    return guard(apply);
+  }
 
   /// 「删除该聊天」写；会话列表据此把会话移出消息列表。
   ///
@@ -156,16 +166,18 @@ final class SharedPreferencesLocalHiddenEvents
   }
 
   @override
-  Future<void> clearThrough(String roomId, DateTime cutoff) async {
-    await _storeCutoff('${_key(roomId)}.$_deletedSuffix', cutoff);
-    _invalidate(roomId);
-  }
+  Future<void> clearThrough(String roomId, DateTime cutoff) =>
+      _mutate(() async {
+        await _storeCutoff('${_key(roomId)}.$_deletedSuffix', cutoff);
+        _invalidate(roomId);
+      });
 
   @override
-  Future<void> clearHistoryThrough(String roomId, DateTime cutoff) async {
-    await _storeCutoff('${_key(roomId)}.$_historySuffix', cutoff);
-    _invalidate(roomId);
-  }
+  Future<void> clearHistoryThrough(String roomId, DateTime cutoff) =>
+      _mutate(() async {
+        await _storeCutoff('${_key(roomId)}.$_historySuffix', cutoff);
+        _invalidate(roomId);
+      });
 
   /// 截止时间只前进不后退：重复清空不得把已隐藏的历史重新暴露出来。
   Future<void> _storeCutoff(String key, DateTime cutoff) async {
@@ -176,14 +188,16 @@ final class SharedPreferencesLocalHiddenEvents
   }
 
   @override
-  Future<void> hide(String roomId, String eventId) async {
-    final key = _key(roomId);
-    final ids = preferences.getStringList(key)?.toSet() ?? <String>{};
-    ids.add(eventId);
-    final stable = ids.toList(growable: false)..sort();
-    await preferences.setStringList(key, stable);
-    _invalidate(roomId);
-  }
+  Future<void> hide(String roomId, String eventId) => _mutate(() async {
+        final key = _key(roomId);
+        final ids = preferences.getStringList(key)?.toSet() ?? <String>{};
+        ids.add(eventId);
+        final stable = ids.toList(growable: false)..sort();
+        if (!await preferences.setStringList(key, stable)) {
+          throw StateError('Unable to persist hidden events');
+        }
+        _invalidate(roomId);
+      });
 
   @override
   bool isHidden(String roomId, String eventId) =>

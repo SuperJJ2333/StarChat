@@ -1562,6 +1562,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       final accountId = roomInfo.currentUserId;
       if (accountId == null) throw StateError('Matrix 账号尚未登录');
       hiddenEvents = SharedPreferencesLocalHiddenEvents(
+        mutationGuard: widget.roomLease.runLocalHistoryMutation,
         preferences: await SharedPreferences.getInstance(),
         accountId: accountId,
       );
@@ -1597,6 +1598,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         // 投影（GET /blocks + 本地立即更新），不做写死放行。
         canSendNow: () =>
             !widget.readOnly &&
+            widget.roomLease.canQueueLocalText &&
             InteractionPermission.resolve(
               isFriend: _peerIsFriend(),
               isBlocked: blockedContacts.isBlocked(_peerUserId()),

@@ -9,6 +9,7 @@ void main() {
       () async {
     final preferences = await SharedPreferences.getInstance();
     final store = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: 'alice-device',
     );
@@ -31,6 +32,7 @@ void main() {
       () async {
     final preferences = await SharedPreferences.getInstance();
     final store = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: 'alice-device',
     );
@@ -38,10 +40,12 @@ void main() {
     await store.clearThrough('room', cutoff);
     await store.clearThrough('room', cutoff.subtract(const Duration(days: 1)));
     final restored = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: 'alice-device',
     );
     final otherAccount = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: 'bob-device',
     );
@@ -61,10 +65,12 @@ void main() {
       () async {
     final preferences = await SharedPreferences.getInstance();
     final alice = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: '@alice:example.test',
     );
     final bob = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: '@bob:example.test',
     );
@@ -79,12 +85,14 @@ void main() {
       () async {
     final preferences = await SharedPreferences.getInstance();
     final first = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: '@alice:example.test',
     );
     await first.hide('!room:example.test', r'$event');
 
     final restored = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: '@alice:example.test',
     );
@@ -97,6 +105,7 @@ void main() {
       () async {
     final preferences = await SharedPreferences.getInstance();
     final hidden = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: preferences,
       accountId: '@alice:example.test',
     );

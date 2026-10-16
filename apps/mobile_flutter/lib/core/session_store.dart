@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
+import 'startup_projection/startup_projection.dart';
+import 'startup_projection/startup_projection_coordinator.dart';
 
 abstract interface class SecureKeyValueStore {
   Future<String?> read(String key);
@@ -46,8 +48,10 @@ final class FlutterSecureKeyValueStore
                 'liuhetong.matrix_clear_tombstone.v1',
                 'liuhetong.matrix_archives.v1',
                 'liuhetong.matrix_archive_journal.v1',
+                'liuhetong.registration_device_key.v1',
+                'liuhetong.startup_projection_head.v1',
               }.contains(key) ||
-              RegExp(r'^liuhetong\.(matrix_local_binding|matrix_clear_tombstone)\.v1\.[a-f0-9]{64}$')
+              RegExp(r'^liuhetong\.(matrix_local_binding|matrix_clear_tombstone|startup_projection_head)\.v1\.[a-f0-9]{64}$')
                   .hasMatch(key)));
 
   @override
@@ -349,6 +353,8 @@ final class SecureSessionStore {
   static const _matrixClearTombstoneValue = '{"version":1,"pending":true}';
   static const _matrixArchiveIndexKey = 'liuhetong.matrix_archives.v1';
   static const _matrixArchiveJournalKey = 'liuhetong.matrix_archive_journal.v1';
+  static const _projectionHeadKey = 'liuhetong.startup_projection_head.v1';
+  StartupProjectionCoordinator? startupProjectionCoordinator;
 
   /// 按槽隔离的键名。清空一次安装时要连同它们的全部槽后缀一起删除。
   static const _scopedKeyNames = <String>[
@@ -357,6 +363,7 @@ final class SecureSessionStore {
     _recoveryKey,
     _diagnosticSaltKey,
     _matrixClearTombstoneKey,
+    _projectionHeadKey,
   ];
 
   /// 独立于槽的固定键。ADR-0063 之前的单账号遗留键用空后缀覆盖。
@@ -370,6 +377,289 @@ final class SecureSessionStore {
   ];
 
   static final _hashToken = RegExp(r'[a-f0-9]{64}');
+
+  Future<String?> _boundedPeek(String key, int limit) async {
+    final value = await _storage.peekRaw(key);
+    if (value != null && utf8.encode(value).length > limit) {
+      throw const FormatException('Startup admission bound exceeded');
+    }
+    return value;
+  }
+
+  Future<StartupProjectionAdmission?> readStartupProjectionAdmission(
+      String installationId) async {
+    try {
+      return await _runMatrixIdentityOperation(
+          () => _projectionAdmissionUnlocked(installationId));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<StartupProjectionAdmission?> _projectionAdmissionUnlocked(
+      String installationId,
+      {bool priming = false}) async {
+    projectionEpoch(installationId);
+    if (await _boundedPeek(_matrixArchiveJournalKey, 65536) != null) {
+      return null;
+    }
+    final registryText =
+        await _boundedPeek(_AccountScopedSecureStore.registryKey, 65536);
+    final registry =
+        registryText == null ? <String, dynamic>{} : jsonDecode(registryText);
+    if (registry is! Map<String, dynamic> ||
+        registry.length > 256 ||
+        registry.entries.any((e) =>
+            !_AccountScopedSecureStore._hash.hasMatch(e.key) ||
+            e.value is! String ||
+            (e.value != '' &&
+                !_AccountScopedSecureStore._hash
+                    .hasMatch(e.value as String))) ||
+        registry.values.toSet().length != registry.length) {
+      return null;
+    }
+    final active =
+        await _boundedPeek(_AccountScopedSecureStore.activeKey, 2048);
+    final scope = active ?? '';
+    if (active != null &&
+        (!registry.containsValue(scope) ||
+            (scope.isNotEmpty &&
+                !_AccountScopedSecureStore._hash.hasMatch(scope)))) {
+      return null;
+    }
+    String scoped(String key) => scope.isEmpty ? key : '$key.$scope';
+    if (await _boundedPeek(scoped(_matrixClearTombstoneKey), 2048) != null) {
+      return null;
+    }
+    final archives = await _boundedPeek(_matrixArchiveIndexKey, 65536);
+    if (archives != null) {
+      final parsed = jsonDecode(archives);
+      if (parsed is! Map<String, dynamic> ||
+          parsed['entries'] is! List ||
+          (parsed['entries'] as List).length > 128) {
+        return null;
+      }
+      if (parsed.length != 2 || parsed['version'] != 1) return null;
+      final entries =
+          (parsed['entries'] as List).map(_MatrixArchiveEntry.parse).toList();
+      if (entries.toSet().length != entries.length ||
+          entries.map((entry) => entry.newScope).toSet().length !=
+              entries.length) {
+        return null;
+      }
+    }
+    final bindingText = await _boundedPeek(scoped(_matrixBindingKey), 8192);
+    final key = await _boundedPeek(scoped(_matrixDatabaseKey), 128);
+    final businessText = await _boundedPeek(_sessionKey, 16384);
+    final registration = await _boundedPeek(_registrationDeviceKey, 256);
+    if (bindingText == null ||
+        key == null ||
+        businessText == null ||
+        registration == null ||
+        registration.isEmpty) {
+      return null;
+    }
+    final binding = _decodeMatrixBinding(bindingText);
+    final business = jsonDecode(businessText);
+    if (binding.version != 2 ||
+        binding.ed25519Fingerprint?.isNotEmpty != true ||
+        binding.databaseGeneration.isEmpty ||
+        business is! Map<String, dynamic> ||
+        business['version'] != 1 ||
+        business['matrix_user_id'] != binding.matrixUserId ||
+        business['access_token'] is! String ||
+        business['refresh_token'] is! String ||
+        business['pending_refresh_operation'] != null) {
+      return null;
+    }
+    final account = _AccountScopedSecureStore.identity(
+        binding.homeserver, binding.matrixUserId);
+    if (registry.containsKey(account) && registry[account] != scope) {
+      return null;
+    }
+    final text = await _boundedPeek(scoped(_projectionHeadKey), 4096);
+    final head = text == null ? null : jsonDecode(text);
+    // Remote privacy requests remain fenced across a crash and authenticated
+    // reopen until their exact canonical effect has applied in a transaction.
+    if (head is Map &&
+        (head['blocked'] == true ||
+            (head['pending'] is List &&
+                (head['pending'] as List).isNotEmpty))) {
+      return null;
+    }
+    if (head != null &&
+        (head is! Map<String, dynamic> ||
+            head['version'] != 1 ||
+            head['installation'] != installationId ||
+            !['invalid', 'committed'].contains(head['state']))) {
+      return null;
+    }
+    if (head != null) {
+      final keys = head['state'] == 'committed'
+          ? {'version', 'installation', 'epoch', 'state', 'digest', 'length'}
+          : {'version', 'installation', 'epoch', 'state'};
+      if (head.length != keys.length || !head.keys.every(keys.contains)) {
+        return null;
+      }
+    }
+    if (!priming && (head == null || head['state'] != 'committed')) return null;
+    final epoch =
+        head == null ? newRefreshOperation() : projectionEpoch(head['epoch']);
+    String? hash;
+    int? length;
+    if (head?['state'] == 'committed') {
+      if (head['digest'] is! String ||
+          !RegExp(r'^[a-f0-9]{64}$').hasMatch(head['digest'] as String) ||
+          head['length'] is! int ||
+          (head['length'] as int) < 38 ||
+          (head['length'] as int) > startupProjectionMaxEnvelope) {
+        return null;
+      }
+      hash = head['digest'] as String;
+      length = head['length'] as int;
+    }
+    return StartupProjectionAdmission(
+        scope: scope,
+        homeserver: binding.homeserver,
+        userId: binding.matrixUserId,
+        deviceId: binding.deviceId,
+        fingerprint: binding.ed25519Fingerprint!,
+        databaseGeneration: binding.databaseGeneration,
+        installationId: installationId,
+        epoch: epoch,
+        databaseKey: key,
+        registrationKey: registration,
+        digest: hash,
+        length: length);
+  }
+
+  Future<StartupProjectionAdmission?> prepareStartupProjectionHead(
+          String installationId) =>
+      _runMatrixIdentityOperation(() async {
+        final admission =
+            await _projectionAdmissionUnlocked(installationId, priming: true);
+        if (admission == null) return null;
+        if (await _storage.read(_projectionHeadKey) == null) {
+          await _storage.write(
+              _projectionHeadKey,
+              jsonEncode({
+                'version': 1,
+                'installation': installationId,
+                'epoch': admission.epoch,
+                'state': 'invalid'
+              }));
+        }
+        return admission;
+      });
+
+  Future<void> invalidateStartupProjection() =>
+      _runMatrixIdentityOperation(_invalidateProjectionUnlocked,
+          skipArchiveRecovery: true);
+  Future<void> _invalidateProjectionUnlocked() async {
+    for (final scope in await _installationSlotSuffixes()) {
+      final key =
+          scope.isEmpty ? _projectionHeadKey : '$_projectionHeadKey.$scope';
+      final text = await _storage.peekRaw(key);
+      if (text == null) continue;
+      Map<String, dynamic>? head;
+      try {
+        if (utf8.encode(text).length <= 4096) {
+          head = jsonDecode(text) as Map<String, dynamic>;
+        }
+      } catch (_) {}
+      if (head != null &&
+          (head['blocked'] == true || head['pending'] is List)) {
+        await _storage.raw.write(
+            key,
+            jsonEncode({
+              'version': 1,
+              'state': 'invalid',
+              if (head['blocked'] == true) 'blocked': true,
+              if (head['pending'] is List) 'pending': head['pending']
+            }));
+      } else {
+        await _storage.raw.delete(key);
+      }
+    }
+  }
+
+  Future<void> fenceStartupProjectionPrivacy(
+          {required String roomId, String? eventId}) =>
+      _runMatrixIdentityOperation(() async {
+        final text = await _storage.read(_projectionHeadKey);
+        Map<String, dynamic>? head;
+        try {
+          if (text != null && utf8.encode(text).length <= 4096) {
+            head = jsonDecode(text) as Map<String, dynamic>;
+          }
+        } catch (_) {}
+        if (head?['blocked'] == true) return;
+        final target = {'room': roomId, if (eventId != null) 'event': eventId};
+        final pending = <Object?>[...?head?['pending'] as List?];
+        if (!pending.any((value) => jsonEncode(value) == jsonEncode(target))) {
+          pending.add(target);
+        }
+        final next =
+            jsonEncode({'version': 1, 'state': 'invalid', 'pending': pending});
+        // Never evict an unresolved target. Saturation disables this cache
+        // persistently; privacy requests retain their ordinary semantics.
+        await _storage.write(
+            _projectionHeadKey,
+            utf8.encode(next).length <= 4096
+                ? next
+                : '{"version":1,"state":"invalid","blocked":true}');
+      });
+
+  Future<void> settleStartupProjectionPrivacy(
+          {required Set<String> leftRooms,
+          required Map<String, Set<String>> redactedEvents}) =>
+      _runMatrixIdentityOperation(() async {
+        final text =
+            await _boundedPeek(await _storage._key(_projectionHeadKey), 4096);
+        if (text == null) return;
+        final head = jsonDecode(text);
+        if (head is! Map<String, dynamic> ||
+            head['blocked'] == true ||
+            head['pending'] is! List) {
+          return;
+        }
+        final remaining = (head['pending'] as List).where((value) {
+          if (value is! Map || value['room'] is! String) return true;
+          final room = value['room'] as String;
+          final event = value['event'];
+          return event == null
+              ? !leftRooms.contains(room)
+              : !(redactedEvents[room]?.contains(event) ?? false);
+        }).toList();
+        if (remaining.isEmpty) {
+          await _storage.delete(_projectionHeadKey);
+        } else {
+          await _storage.write(
+              _projectionHeadKey,
+              jsonEncode(
+                  {'version': 1, 'state': 'invalid', 'pending': remaining}));
+        }
+      });
+
+  Future<bool> commitStartupProjectionHead(
+          StartupProjectionAdmission expected, String digest, int length) =>
+      _runMatrixIdentityOperation(() async {
+        final current = await _projectionAdmissionUnlocked(
+            expected.installationId,
+            priming: true);
+        if (current == null || !current.sameIdentity(expected)) return false;
+        await _storage.write(
+            _projectionHeadKey,
+            jsonEncode({
+              'version': 1,
+              'installation': expected.installationId,
+              'epoch': expected.epoch,
+              'state': 'committed',
+              'digest': digest,
+              'length': length
+            }));
+        return true;
+      });
 
   Future<String> matrixStorageScope() =>
       _runMatrixIdentityOperation(_storage.scope);
@@ -488,7 +778,7 @@ final class SecureSessionStore {
     required String expectedHomeserver,
     required String expectedUserId,
   }) =>
-      _runMatrixIdentityOperation(() async {
+      _runProjectionIdentityMutation(() async {
         final encoded = await _storage.peekRaw(_matrixArchiveJournalKey);
         if (encoded == null) return;
         final journal = _MatrixArchiveJournal.parse(encoded);
@@ -546,7 +836,7 @@ final class SecureSessionStore {
     required MatrixStoredIdentitySnapshot expectedSnapshot,
     required Future<bool> Function(String scope) scopeHasDatabaseFiles,
   }) =>
-      _runMatrixIdentityOperation(() async {
+      _runProjectionIdentityMutation(() async {
         if (Uri.tryParse(expectedHomeserver)?.hasAuthority != true ||
             !expectedUserId.startsWith('@') ||
             !expectedUserId.contains(':')) {
@@ -665,7 +955,7 @@ final class SecureSessionStore {
     required MatrixStoredIdentitySnapshot expectedSnapshot,
     required MatrixStoredIdentitySnapshot verifiedCandidateSnapshot,
   }) =>
-      _runMatrixIdentityOperation(() async {
+      _runProjectionIdentityMutation(() async {
         if (Uri.tryParse(expectedHomeserver)?.hasAuthority != true ||
             !expectedUserId.startsWith('@') ||
             !expectedUserId.contains(':')) {
@@ -950,7 +1240,7 @@ final class SecureSessionStore {
   /// Only called after business authentication and the old client has closed.
   Future<void> selectMatrixAccount(String homeserver, String userId,
           {MatrixStoredIdentitySnapshot? expectedSnapshot}) =>
-      _runMatrixIdentityOperation(() async {
+      _runProjectionIdentityMutation(() async {
         if (Uri.tryParse(homeserver)?.hasAuthority != true ||
             !userId.startsWith('@') ||
             !userId.contains(':')) {
@@ -984,7 +1274,7 @@ final class SecureSessionStore {
         await _storage.raw.write(_AccountScopedSecureStore.activeKey, selected);
       });
 
-  Future<void> markMatrixClearPending() => _runMatrixIdentityOperation(
+  Future<void> markMatrixClearPending() => _runProjectionIdentityMutation(
         () => _storage.write(
           _matrixClearTombstoneKey,
           _matrixClearTombstoneValue,
@@ -1016,18 +1306,18 @@ final class SecureSessionStore {
       _businessAuthorizationGeneration++;
       _businessIdentity = identity;
     }
-    return _storage.write(
-      _sessionKey,
-      jsonEncode({
-        'version': 1,
-        'access_token': accessToken,
-        'refresh_token': refreshToken,
-        if (matrixUserId != null) 'matrix_user_id': matrixUserId,
-        if (deviceKey != null) 'device_key': deviceKey,
-        if (pendingRefreshOperation != null)
-          'pending_refresh_operation': pendingRefreshOperation,
-      }),
-    );
+    return _runProjectionIdentityMutation(() => _storage.write(
+          _sessionKey,
+          jsonEncode({
+            'version': 1,
+            'access_token': accessToken,
+            'refresh_token': refreshToken,
+            if (matrixUserId != null) 'matrix_user_id': matrixUserId,
+            if (deviceKey != null) 'device_key': deviceKey,
+            if (pendingRefreshOperation != null)
+              'pending_refresh_operation': pendingRefreshOperation,
+          }),
+        ));
   }
 
   Future<StoredBusinessSession?> session() async {
@@ -1100,7 +1390,26 @@ final class SecureSessionStore {
   Future<void> clearBusinessSession() {
     _businessAuthorizationGeneration++;
     _businessIdentity = null;
-    return _storage.delete(_sessionKey);
+    return _runProjectionIdentityMutation(() => _storage.delete(_sessionKey));
+  }
+
+  Future<T> _runProjectionIdentityMutation<T>(Future<T> Function() operation,
+      {bool skipArchiveRecovery = false}) {
+    final ticket = startupProjectionCoordinator?.beginMutation('identity');
+    return (() async {
+      var applied = false;
+      try {
+        if (ticket != null) await ticket.beforeApply;
+        final result = await _runMatrixIdentityOperation(() async {
+          if (ticket == null) await _invalidateProjectionUnlocked();
+          return operation();
+        }, skipArchiveRecovery: skipArchiveRecovery);
+        applied = true;
+        return result;
+      } finally {
+        ticket?.finish(applied: applied);
+      }
+    })();
   }
 
   Future<T> _runMatrixIdentityOperation<T>(Future<T> Function() operation,
@@ -1120,7 +1429,7 @@ final class SecureSessionStore {
   }
 
   Future<void> saveMatrixBinding(MatrixLocalBinding binding) =>
-      _runMatrixIdentityOperation(() => _saveMatrixBindingUnlocked(binding));
+      _runProjectionIdentityMutation(() => _saveMatrixBindingUnlocked(binding));
 
   Future<void> _saveMatrixBindingUnlocked(MatrixLocalBinding binding) =>
       _storage.write(_matrixBindingKey, jsonEncode(binding.toJson()));
@@ -1130,7 +1439,7 @@ final class SecureSessionStore {
   /// exists (out-of-band destruction such as an iOS reinstall), so the
   /// surviving binding describes nothing and must not block future logins.
   Future<void> clearMatrixBinding() =>
-      _runMatrixIdentityOperation(_clearMatrixBindingUnlocked);
+      _runProjectionIdentityMutation(_clearMatrixBindingUnlocked);
 
   Future<void> _clearMatrixBindingUnlocked() =>
       _storage.delete(_matrixBindingKey);
@@ -1158,7 +1467,7 @@ final class SecureSessionStore {
     required String nextDeviceId,
     required String? ed25519Fingerprint,
   }) =>
-      _runMatrixIdentityOperation(() async {
+      _runProjectionIdentityMutation(() async {
         final binding = await _matrixBindingUnlocked();
         if (binding == null) return null;
         if (binding.deviceId != previousDeviceId) {
@@ -1306,7 +1615,7 @@ final class SecureSessionStore {
   }
 
   Future<void> clearMatrixDatabaseKey() =>
-      _runMatrixIdentityOperation(_clearMatrixDatabaseKeyUnlocked);
+      _runProjectionIdentityMutation(_clearMatrixDatabaseKeyUnlocked);
 
   Future<void> _clearMatrixDatabaseKeyUnlocked() =>
       _storage.delete(_matrixDatabaseKey);
@@ -1330,7 +1639,7 @@ final class SecureSessionStore {
   }
 
   Future<void> clearMatrixIdentity() =>
-      _runMatrixIdentityOperation(_clearMatrixIdentityUnlocked);
+      _runProjectionIdentityMutation(_clearMatrixIdentityUnlocked);
 
   Future<void> _clearMatrixIdentityUnlocked() async {
     Object? firstError;
@@ -1381,7 +1690,7 @@ final class SecureSessionStore {
   /// 这里必须作用于 `raw`：要删除的正是作用域指针与注册表本身，不能先经过
   /// 作用域间接层。加密库文件已随沙盒消失，因此删除全部槽不会丢失可读数据。
   Future<void> clearInstallation() =>
-      _runMatrixIdentityOperation(_clearInstallationUnlocked,
+      _runProjectionIdentityMutation(_clearInstallationUnlocked,
           skipArchiveRecovery: true);
 
   Future<void> _clearInstallationUnlocked() async {
@@ -1485,6 +1794,7 @@ final class _AccountScopedSecureStore implements SecureKeyValueStore {
     'liuhetong.encrypted_recovery_key',
     'liuhetong.diagnostic_salt.v1',
     'liuhetong.matrix_clear_tombstone.v1',
+    'liuhetong.startup_projection_head.v1',
   };
   static String identity(String homeserver, String userId) =>
       sha256.convert(utf8.encode(jsonEncode([homeserver, userId]))).toString();

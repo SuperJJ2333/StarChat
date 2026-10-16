@@ -77,6 +77,7 @@ void main() {
     expect(deleted.lastEvent, isNull);
     expect(deleted.notificationCount, 0);
     final store = SharedPreferencesLocalHiddenEvents(
+      mutationGuard: (apply) => apply(),
       preferences: await SharedPreferences.getInstance(),
       accountId: client.userID!,
     );

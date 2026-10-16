@@ -1,3 +1,5 @@
+import '../../core/startup_projection/startup_projection.dart';
+import '../../core/startup_projection/startup_projection_store.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -77,7 +79,8 @@ final class MatrixClientFactory {
     Future<String> Function()? supportDirectoryPath,
     MatrixClientOpener? opener,
     MatrixClientOpener? startupOpener,
-    Future<void>? startupBackgroundResume,
+    this.startupBackgroundResume,
+    this.startupClientBuilder,
     MatrixClientDisposer? disposer,
     MatrixDatabaseDeleter? databaseDeleter,
     MatrixClientMigrator? clientMigrator,
@@ -117,6 +120,16 @@ final class MatrixClientFactory {
   static int get debugPendingInitLockCount =>
       _DatabaseInitLocks.pendingPathCount;
 
+  final Future<void>? startupBackgroundResume;
+  final Client Function(
+      {required String clientName,
+      required String databasePath,
+      required String cipher})? startupClientBuilder;
+  Stopwatch? startupClock;
+  StartupProjection? startupProjection;
+  StartupProjectionAdmission? startupAdmission;
+  StartupProjectionStore? projectionStore;
+
   final SecureSessionStore sessionStore;
   final Uri homeserver;
   final Future<String> Function() supportDirectoryPath;
@@ -129,7 +142,7 @@ final class MatrixClientFactory {
   final String Function() databaseGenerationFactory;
   final MatrixSecurityLogger securityLogger;
   final MatrixLocalIdentityPreflight localIdentityPreflight;
-  final MatrixDiagnosticHasher? diagnosticHasher;
+  MatrixDiagnosticHasher? diagnosticHasher;
   String? _unboundDatabaseGeneration;
   String? _authorizedFreshScope;
   String? _authorizedPlaintextScope;
@@ -407,7 +420,80 @@ final class MatrixClientFactory {
   Future<Client> create({StartupFailureObserver? onFailure}) =>
       _create(onFailure: onFailure);
 
-  Future<Client> createForStartup({StartupFailureObserver? onFailure}) {
+  Future<Client> createForStartup({StartupFailureObserver? onFailure}) async {
+    final directory = await supportDirectoryPath();
+    final cache = projectionStore = StartupProjectionStore(
+        Directory(p.join(directory, 'startup_projection_v1')));
+    final installation = await cache.readInstallation();
+    var missReason = StartupProjectionReason.markerAbsent;
+    if (installation != null) {
+      missReason = StartupProjectionReason.admissionRejected;
+      final admission =
+          await sessionStore.readStartupProjectionAdmission(installation);
+      if (admission != null && admission.homeserver == homeserver.toString()) {
+        final projection = await cache.read(admission);
+        missReason = projection == null
+            ? StartupProjectionReason.payloadRejected
+            : StartupProjectionReason.recheckRejected;
+        final rechecked =
+            await sessionStore.readStartupProjectionAdmission(installation);
+        if (projection != null &&
+            rechecked != null &&
+            admission.sameIdentity(rechecked) &&
+            admission.digest == rechecked.digest) {
+          markStartupProjection(
+              StartupProjectionPhase.cacheAdmissionHit, startupClock);
+          final client = (startupClientBuilder ?? _configuredPersistentClient)(
+              clientName: clientName,
+              databasePath: _databasePathForScope(directory, admission.scope),
+              cipher: admission.databaseKey);
+          final completion = Completer<void>();
+          client.seedStartupRooms([
+            for (final row in projection.rooms)
+              Room(
+                  id: row.id,
+                  client: client,
+                  membership: Membership.values.byName(row.membership))
+                ..states.addAll({
+                  if (row.encrypted)
+                    EventTypes.Encryption: {
+                      '': StrippedStateEvent(
+                          type: EventTypes.Encryption,
+                          stateKey: '',
+                          senderId: admission.userId,
+                          content: {'algorithm': 'm.megolm.v1.aes-sha2'})
+                    }
+                })
+          ], completion.future);
+          startupProjection = projection;
+          startupAdmission = admission;
+          unawaited(() async {
+            try {
+              await client.awaitStartupResume(startupBackgroundResume);
+              final current = await sessionStore
+                  .readStartupProjectionAdmission(installation);
+              if (current == null ||
+                  !admission.sameIdentity(current) ||
+                  current.digest != admission.digest) {
+                throw StateError('Startup projection admission revoked');
+              }
+              await _create(onFailure: onFailure, preparedClient: client);
+              markStartupProjection(
+                  StartupProjectionPhase.fullSdkReady, startupClock);
+              completion.complete();
+            } catch (error, stack) {
+              completion.completeError(error, stack);
+            }
+          }());
+          return client;
+        }
+      }
+    }
+
+    markStartupProjection(
+        StartupProjectionPhase.cacheAdmissionMiss, startupClock,
+        reason: missReason);
+    await sessionStore.registrationDeviceKey();
     final ready = Completer<Client>();
     unawaited(_create(onFailure: onFailure, localReady: ready).then((client) {
       if (!ready.isCompleted) ready.complete(client);
@@ -420,15 +506,8 @@ final class MatrixClientFactory {
 
   Future<Client> _create(
       {StartupFailureObserver? onFailure,
-      Completer<Client>? localReady}) async {
-    final startupClock = Stopwatch()..start();
-    void markStartup(String phase) {
-      if (localReady != null && kDebugMode) {
-        debugPrint(
-            '[chatflow/startup] phase=$phase elapsed_ms=${startupClock.elapsedMilliseconds}');
-      }
-    }
-
+      Completer<Client>? localReady,
+      Client? preparedClient}) async {
     final directory = await supportDirectoryPath();
     MatrixStoredIdentitySnapshot snapshot;
     try {
@@ -477,12 +556,15 @@ final class MatrixClientFactory {
       }
       Client client;
       try {
+        markStartupProjection(
+            StartupProjectionPhase.fullPreflightBegin, startupClock);
         final inspection = await _inspectBeforeSdk(
           directory: directory,
           databasePath: databasePath,
           snapshot: snapshot,
         );
-        markStartup('identity_preflight_complete');
+        markStartupProjection(
+            StartupProjectionPhase.identityPreflightComplete, startupClock);
         if (inspection.requiresAuthenticatedMigration &&
             _authorizedPlaintextScope != snapshot.scope) {
           throw const MatrixLocalIdentityPreflightException(
@@ -499,11 +581,13 @@ final class MatrixClientFactory {
           rethrow;
         }
         try {
-          client = await (localReady == null ? opener : startupOpener)(
-            clientName: clientName,
-            databasePath: databasePath,
-            cipher: cipher,
-          );
+          client = preparedClient != null
+              ? await initializeClient(preparedClient)
+              : await (localReady == null ? opener : startupOpener)(
+                  clientName: clientName,
+                  databasePath: databasePath,
+                  cipher: cipher,
+                );
         } catch (error) {
           notifyStartupFailure(
               onFailure,
@@ -518,11 +602,13 @@ final class MatrixClientFactory {
       try {
         await clientMigrator(client, homeserver);
         if (localReady != null) {
-          markStartup('local_projection_ready');
+          markStartupProjection(
+              StartupProjectionPhase.localProjectionReady, startupClock);
           localReady.complete(client);
           // Keep the per-path lock until all startup work has settled.
           await client.initializationCompleted;
-          markStartup('full_initialization_complete');
+          markStartupProjection(
+              StartupProjectionPhase.fullSdkReady, startupClock);
         }
         return client;
       } catch (error) {
@@ -978,6 +1064,18 @@ final class MatrixClientFactory {
     bool localCacheFirst = false,
     Future<void>? startupBackgroundResume,
   }) async {
+    final client = _configuredPersistentClient(
+        clientName: clientName, databasePath: databasePath, cipher: cipher);
+    return localCacheFirst
+        ? initializeStartupClient(client,
+            resumeBackground: startupBackgroundResume)
+        : initializeClient(client);
+  }
+
+  static Client _configuredPersistentClient(
+      {required String clientName,
+      required String databasePath,
+      required String cipher}) {
     final databaseFactory = createDatabaseFactoryFfi(
       ffiInit: SQfLiteEncryptionHelper.ffiInit,
     );
@@ -986,7 +1084,6 @@ final class MatrixClientFactory {
       path: databasePath,
       cipher: cipher,
     );
-    await encryption.ensureDatabaseFileEncrypted();
     final client = Client(
       clientName,
       preserveStoreOnInvalidToken: true,
@@ -1008,6 +1105,7 @@ final class MatrixClientFactory {
         KeyVerificationMethod.numbers,
       },
       databaseBuilder: (_) async {
+        await encryption.ensureDatabaseFileEncrypted();
         final database = await databaseFactory.openDatabase(
           databasePath,
           options: OpenDatabaseOptions(onConfigure: encryption.applyPragmaKey),
@@ -1070,10 +1168,7 @@ final class MatrixClientFactory {
         return initializeDatabase(matrixDatabase, database.close);
       },
     );
-    return localCacheFirst
-        ? initializeStartupClient(client,
-            resumeBackground: startupBackgroundResume)
-        : initializeClient(client);
+    return client;
   }
 
   @visibleForTesting

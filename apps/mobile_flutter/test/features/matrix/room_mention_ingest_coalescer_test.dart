@@ -106,6 +106,7 @@ void main() {
     await store.ingest(room, rows, changedEventIds: {'e9001'});
     expect((await store.open(room)).pendingEventIdsNewestFirst(), ['e9001']);
     await SharedPreferencesLocalHiddenEvents(
+            mutationGuard: (apply) => apply(),
             preferences: await SharedPreferences.getInstance(),
             accountId: '@me:test')
         .hide(room.id, 'e9001');

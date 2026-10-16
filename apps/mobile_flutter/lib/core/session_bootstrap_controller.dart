@@ -211,7 +211,10 @@ final class SessionBootstrapController extends ChangeNotifier {
       }
       canShowCachedMessages = !resumingConfirmedRecovery &&
           !_matrixRestorePending &&
-          matrix.isLoggedIn &&
+          (matrix.isLoggedIn ||
+              (matrix is MatrixLocalProjectionGateway &&
+                  (matrix as MatrixLocalProjectionGateway)
+                      .hasLocalDisplayProjection)) &&
           localIdentity != null &&
           localIdentity == matrix.userId;
       notifyListeners();

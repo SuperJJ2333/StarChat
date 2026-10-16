@@ -39,8 +39,7 @@ final class WeChatVoiceBubble extends StatefulWidget {
 
 final class _WeChatVoiceBubbleState extends State<WeChatVoiceBubble>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _sweep =
-      AnimationController(vsync: this, value: 0);
+  late final AnimationController _sweep;
 
   bool get _usesRealProgress =>
       widget.playback != null && widget.messageId != null;
@@ -48,6 +47,7 @@ final class _WeChatVoiceBubbleState extends State<WeChatVoiceBubble>
   @override
   void initState() {
     super.initState();
+    _sweep = AnimationController(vsync: this, value: 0);
     // 无真实进度源时的估算扫过：从点击瞬间起按语音时长推进。
     if (!_usesRealProgress && widget.state == VoicePlaybackState.playing) {
       final total = widget.duration <= Duration.zero

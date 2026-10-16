@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CF2220000000000000000001 /* IOSStartupProjectionPeekTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2220000000000000000002 /* IOSStartupProjectionPeekTests.swift */; };
 		CF1011100000000000000003 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CF1011000000000000000003 /* PrivacyInfo.xcprivacy */; };
 		CF1011100000000000000001 /* IOSMediaStoragePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1011000000000000000001 /* IOSMediaStoragePolicy.swift */; };
 		CF1011100000000000000002 /* IOSMediaStoragePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1011000000000000000002 /* IOSMediaStoragePolicyTests.swift */; };
@@ -54,6 +55,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CF2220000000000000000002 /* IOSStartupProjectionPeekTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSStartupProjectionPeekTests.swift; sourceTree = "<group>"; };
 		CF1011000000000000000003 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CF1011000000000000000001 /* IOSMediaStoragePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMediaStoragePolicy.swift; sourceTree = "<group>"; };
 		CF1011000000000000000002 /* IOSMediaStoragePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMediaStoragePolicyTests.swift; sourceTree = "<group>"; };
@@ -101,6 +103,7 @@
 			isa = PBXGroup;
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
+				CF2220000000000000000002 /* IOSStartupProjectionPeekTests.swift */,
 				CF0353000000000000000007 /* IOSMessageNavigationGateTests.swift */,
 				CF0353000000000000000009 /* IOSBackgroundMediaPolicyTests.swift */,
 				CF1011000000000000000002 /* IOSMediaStoragePolicyTests.swift */,
@@ -312,6 +315,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
+				CF2220000000000000000001 /* IOSStartupProjectionPeekTests.swift in Sources */,
 				CF0353100000000000000007 /* IOSMessageNavigationGateTests.swift in Sources */,
 				CF0353100000000000000009 /* IOSBackgroundMediaPolicyTests.swift in Sources */,
 				CF1011100000000000000002 /* IOSMediaStoragePolicyTests.swift in Sources */,

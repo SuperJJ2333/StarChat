@@ -1,9 +1,35 @@
+import 'package:liuhetong_mobile/features/matrix/voice_playback_controller.dart'
+    as playback;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_voice_bubble.dart';
 
 /// 语音气泡播放动画（QQ 式）：高亮进度随播放从左到右扫过音纹。
+class _IdleEngine implements playback.VoiceAudioEngine {
+  @override
+  Stream<Duration> get position => const Stream.empty();
+  @override
+  Stream<void> get completed => const Stream.empty();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
+}
+
 void main() {
+  testWidgets(
+      'unplayed real-progress bubble disposes without creating a late ticker',
+      (tester) async {
+    final controller = playback.VoicePlaybackController(
+        loadAttachment: (_) async => throw StateError('must not load'),
+        engine: _IdleEngine());
+    await tester.pumpWidget(CupertinoApp(
+        home: WeChatVoiceBubble(
+            duration: const Duration(seconds: 2),
+            playback: controller,
+            messageId: 'synthetic')));
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
   testWidgets('loading voice remains cancellable with an activity indicator',
       (tester) async {
     var cancelled = false;

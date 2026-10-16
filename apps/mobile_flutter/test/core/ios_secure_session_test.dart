@@ -64,6 +64,20 @@ void main() {
     expect(nativeCalls.map((call) => call.method), ['peek', 'peek']);
     expect(pluginCalls, isEmpty);
   });
+  test('projection admission uses inspection-only native reads', () async {
+    final store = FlutterSecureKeyValueStore();
+    for (final key in [
+      'liuhetong.registration_device_key.v1',
+      'liuhetong.startup_projection_head.v1',
+      'liuhetong.startup_projection_head.v1.${'a' * 64}'
+    ]) {
+      await store.peek(key);
+    }
+    expect(nativeCalls.map((call) => call.method), ['peek', 'peek', 'peek']);
+    expect(pluginCalls, isEmpty);
+    await store.peek('liuhetong.startup_projection_head.v1.invalid');
+    expect(pluginCalls, hasLength(1));
+  });
   test('Android retains existing secure storage path', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     expect(

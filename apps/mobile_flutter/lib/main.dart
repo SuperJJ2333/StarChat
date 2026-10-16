@@ -1,3 +1,4 @@
+import 'core/startup_projection/startup_projection.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -63,6 +64,7 @@ class StartupDependencies {
 }
 
 Future<void> main({StartupDependencies? dependencies}) async {
+  final startupClock = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
   final startupDiagnostics = StartupDiagnostics(
     spool: FileStartupDiagnosticsSpool(),
@@ -92,7 +94,7 @@ Future<void> main({StartupDependencies? dependencies}) async {
       .addObserver(_StartupDiagnosticsLifecycle(startupDiagnostics));
   try {
     await _startApplicationShell(
-        startupDiagnostics, recordStartupFailure, dependencies);
+        startupDiagnostics, recordStartupFailure, dependencies, startupClock);
   } catch (error) {
     recordStartupFailure(safeStartupFailure(error,
         boundary: StartupFailureBoundary.preferencesLoad));
@@ -103,7 +105,8 @@ Future<void> main({StartupDependencies? dependencies}) async {
 Future<void> _startApplicationShell(
     StartupDiagnostics startupDiagnostics,
     StartupFailureObserver recordStartupFailure,
-    StartupDependencies? dependencies) async {
+    StartupDependencies? dependencies,
+    Stopwatch startupClock) async {
   scheduleAppStartupFirstFrame();
   installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: trimOptionalMediaMemoryCaches).install();
@@ -167,12 +170,9 @@ Future<void> _startApplicationShell(
         );
     // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
     // token 永远不出现在日志里。
-    final diagnosticSalt = await observeStartupOperation(
-        () => loadStartupDiagnosticSalt(store),
-        boundary: StartupFailureBoundary.diagnosticSalt);
-    final diagnosticHasher =
-        diagnosticSalt == null ? null : MatrixDiagnosticHasher(diagnosticSalt);
-    final localPresentationClock = Stopwatch()..start();
+    // Optional diagnostics must not serialize the cache content frame.
+    const MatrixDiagnosticHasher? diagnosticHasher = null;
+
     final firstLocalFrame = Completer<void>();
     void resumeInitialization() {
       if (!firstLocalFrame.isCompleted) firstLocalFrame.complete();
@@ -185,11 +185,9 @@ Future<void> _startApplicationShell(
           homeserver: Uri.parse(AppConfig.matrixHomeserver),
           diagnosticHasher: diagnosticHasher,
         );
+    matrixFactory.startupClock = startupClock;
     // Read/create the installation identifier before opening a DB handle so a
     // locked keychain cannot leave an initialized client behind on startup retry.
-    final installationDeviceKey = await observeStartupOperation(
-        store.registrationDeviceKey,
-        boundary: StartupFailureBoundary.installationIdentity);
     final startupClient = await observeStartupOperation(() async {
       StartupFailureMetadata? databaseFailure;
       try {
@@ -207,10 +205,17 @@ Future<void> _startApplicationShell(
         rethrow;
       }
     }, boundary: StartupFailureBoundary.databaseOpen);
+    final installationDeviceKey =
+        matrixFactory.startupAdmission?.registrationKey ??
+            await observeStartupOperation<String>(store.registrationDeviceKey,
+                boundary: StartupFailureBoundary.installationIdentity);
     final sdkClient = startupClient.client;
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
       secureSessionStore: store,
+      startupProjection: matrixFactory.startupProjection,
+      startupAdmission: matrixFactory.startupAdmission,
+      startupClock: startupClock,
       migrateRecoveryArchives: matrixFactory.migrateRecoveryArchives,
       refreshRecoveryBusinessSession: () async {
         await api.refreshSession();
@@ -232,6 +237,13 @@ Future<void> _startApplicationShell(
       // 历史孤儿房间登记簿：primary 规则数据源 + 收敛台账（只记录不删除）。
       duplicateRooms: DuplicateRoomRegistry(),
     );
+    unawaited(firstLocalFrame.future.then((_) async {
+      final salt = await loadStartupDiagnosticSalt(store);
+      if (salt == null) return;
+      final hasher = MatrixDiagnosticHasher(salt);
+      matrixFactory.diagnosticHasher = hasher;
+      matrix.installDiagnosticHasher(hasher);
+    }).catchError((Object _) {}));
     late final DualDomainLoginService login;
     final session = SessionBootstrapController(
       business: api,
@@ -307,9 +319,10 @@ Future<void> _startApplicationShell(
             eligible: () => session.canShowCachedMessages,
             onPublished: () {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!firstLocalFrame.isCompleted && kDebugMode) {
-                  debugPrint(
-                      '[chatflow/startup] phase=cached_snapshot_first_frame elapsed_ms=${localPresentationClock.elapsedMilliseconds}');
+                if (!firstLocalFrame.isCompleted) {
+                  markStartupProjection(
+                      StartupProjectionPhase.firstProjectionContentFrame,
+                      startupClock);
                 }
                 resumeInitialization();
               });
@@ -327,6 +340,13 @@ Future<void> _startApplicationShell(
           true,
         _ => false,
       };
+      if (session.state.status == SessionBootstrapStatus.authenticated) {
+        final cache = matrixFactory.projectionStore;
+        if (cache != null) {
+          unawaited(
+              matrix.primeStartupProjection(cache).catchError((Object _) {}));
+        }
+      }
       startupHandoff?.invalidateIfUnavailable();
       if (session.state.status != SessionBootstrapStatus.loading &&
           !session.canShowCachedMessages) {

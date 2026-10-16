@@ -33,7 +33,7 @@ enum IOSSecureSessionError: Error {
 final class IOSSecureSessionStore {
   private let security: IOSSessionSecurityOperations
   private static let keys: Set<String> = ["liuhetong.matrix_database_key.v1", "liuhetong.business_session.v1", "liuhetong.active_matrix_scope.v1", "liuhetong.matrix_account_slots.v1"]
-  private static let inspectionOnlyKeys: Set<String> = ["liuhetong.matrix_local_binding.v1", "liuhetong.matrix_clear_tombstone.v1", "liuhetong.matrix_archives.v1", "liuhetong.matrix_archive_journal.v1"]
+  private static let inspectionOnlyKeys: Set<String> = ["liuhetong.matrix_local_binding.v1", "liuhetong.matrix_clear_tombstone.v1", "liuhetong.matrix_archives.v1", "liuhetong.matrix_archive_journal.v1", "liuhetong.registration_device_key.v1", "liuhetong.startup_projection_head.v1"]
   private static let service = "flutter_secure_storage_service"
   private let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
 
@@ -42,7 +42,7 @@ final class IOSSecureSessionStore {
 
   private func query(key: String, inspection: Bool = false) throws -> [String: Any] {
     let scopedDatabaseKey = key.range(of: #"^liuhetong\.matrix_database_key\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil
-    let inspectionKey = Self.inspectionOnlyKeys.contains(key) || key.range(of: #"^liuhetong\.(matrix_local_binding|matrix_clear_tombstone)\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil
+    let inspectionKey = Self.inspectionOnlyKeys.contains(key) || key.range(of: #"^liuhetong\.(matrix_local_binding|matrix_clear_tombstone|startup_projection_head)\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil
     guard Self.keys.contains(key) || scopedDatabaseKey || (inspection && inspectionKey) else { throw IOSSecureSessionError.invalidKey }
     // Accessibility is deliberately NOT a search filter: an old WhenUnlocked
     // item must return its real locked error, not masquerade as absent.

@@ -1,3 +1,7 @@
+import 'package:audioplayers/audioplayers.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
+import 'package:liuhetong_mobile/core/startup_projection/startup_projection_store.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -28,8 +32,13 @@ import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 
 class _MemorySecure implements SecureKeyValueStore {
   final values = <String, String>{};
+  Completer<void>? diagnosticHold;
   @override
-  Future<String?> read(String key) async => values[key];
+  Future<String?> read(String key) async {
+    if (key == 'liuhetong.diagnostic_salt.v1') await diagnosticHold?.future;
+    return values[key];
+  }
+
   @override
   Future<void> write(String key, String value) async {
     values[key] = value;
@@ -82,6 +91,25 @@ class _HeldDatabase extends MatrixSdkDatabase {
   }
 }
 
+class _PreflightBarrier implements MatrixLocalIdentityReader {
+  final release = Completer<void>();
+  int originalCalls = 0;
+  final delegate = const ReadOnlySqlCipherIdentityReader();
+  @override
+  Future<bool> exists(String path) async {
+    await release.future;
+    originalCalls++;
+    return delegate.exists(path);
+  }
+
+  @override
+  Future<MatrixLocalIdentityRecord> read(String path, String cipher) async {
+    await release.future;
+    originalCalls++;
+    return delegate.read(path, cipher);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   registerStartupProjectionEntryTests();
@@ -93,6 +121,14 @@ void registerStartupProjectionEntryTests(
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   setUpAll(() async {
+    for (final name in [
+      'xyz.luan/audioplayers.global/events',
+      'xyz.luan/audioplayers.global'
+    ]) {
+      messenger.setMockMethodCallHandler(
+          MethodChannel(name), (_) async => null);
+    }
+    await AudioPlayer.global.ensureInitialized();
     NativeMessagePolicy.shared;
     await Future<void>.delayed(Duration.zero);
   });
@@ -141,18 +177,32 @@ void registerStartupProjectionEntryTests(
     }
     channels.clear();
   });
-  for (final allHidden in [false, true]) {
+  for (final scenario in [
+    (hidden: false, independent: false),
+    (hidden: true, independent: false),
+    (hidden: false, independent: true),
+    (hidden: true, independent: true)
+  ]) {
+    final allHidden = scenario.hidden;
+    final independent = scenario.independent;
     testWidgets(
-        'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
+        independent
+            ? (allHidden
+                ? 'actual main valid empty independent projection releases content frame'
+                : 'actual main independent projection precedes held whole-store preflight')
+            : 'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
         (tester) async {
       final oldPaths = PathProviderPlatform.instance;
       late Directory directory;
       late SecureSessionStore store;
+      final rawSecure = _MemorySecure();
+      MatrixClientFactory? latestFactory;
       late DatabaseFactory sqlFactory;
       late String cipher;
       late SqliteOutboxStore outbox;
       final host = Uri.parse(AppConfig.matrixHomeserver);
-      const user = '@startup:synthetic.test';
+      final user =
+          '@startup-${independent ? 'projection' : 'legacy'}-${allHidden ? 'empty' : 'rows'}:synthetic.test';
       final clock = Stopwatch()..start();
       await tester.runAsync(() async {
         await olm.init();
@@ -164,7 +214,7 @@ void registerStartupProjectionEntryTests(
         directory = (await evidence.createTemp('entry-')).absolute;
         PathProviderPlatform.instance = _Paths(directory.path);
         SharedPreferences.setMockInitialValues({});
-        store = SecureSessionStore(_MemorySecure());
+        store = SecureSessionStore(rawSecure);
         cipher = await store.matrixDatabaseKey();
         await store.saveSession(
             accessToken: 'synthetic-token',
@@ -280,61 +330,97 @@ void registerStartupProjectionEntryTests(
       late _HeldDatabase held;
       var transportSends = 0;
       final transportTxids = <String>[];
+      var encryptedTransport = false;
+      final preflight = _PreflightBarrier();
+      var priming = false;
+      var databaseOpens = 0;
+
+      Client buildClient(
+          {required String clientName,
+          required String databasePath,
+          required String cipher}) {
+        final result = Client(clientName,
+            databaseBuilder: (_) async {
+              databaseOpens++;
+              final sql = await sqlFactory.openDatabase(databasePath,
+                  options: OpenDatabaseOptions(
+                      onConfigure: (db) =>
+                          db.execute("PRAGMA key = '$cipher'")));
+              held = _HeldDatabase(clientName,
+                  database: sql, sqfliteFactory: sqlFactory);
+              await held.open();
+              if (priming || independent) held.release.complete();
+              opened = true;
+              return held;
+            },
+            preserveStoreOnInvalidToken: true,
+            httpClient: MockClient((request) async {
+              if (request.url.path.contains('/send/')) {
+                transportSends++;
+                final payload = jsonDecode(request.body) as Map;
+                encryptedTransport = request.url.path
+                        .contains('/m.room.encrypted/') &&
+                    payload['algorithm'] == AlgorithmTypes.megolmV1AesSha2 &&
+                    payload['ciphertext'] is String &&
+                    !payload.containsKey('body') &&
+                    !request.body.contains('Synthetic pending text');
+                transportTxids.add(request.url.pathSegments.last);
+                return http.Response('{"event_id":"synthetic-ack"}', 200);
+              }
+              if (request.url.path.endsWith('/sync')) {
+                return http.Response(
+                    '{"next_batch":"synthetic","rooms":{}}', 200);
+              }
+              if (request.url.path.endsWith('/filter')) {
+                return http.Response('{"filter_id":"synthetic"}', 200);
+              }
+              if (request.url.path.contains('/profile/')) {
+                return http.Response('{"displayname":"Synthetic member"}', 200);
+              }
+              if (request.url.path.endsWith('/members')) {
+                return http.Response('{"chunk":[]}', 200);
+              }
+              if (request.url.path.endsWith('/keys/query')) {
+                return http.Response('{"device_keys":{}}', 200);
+              }
+              if (request.url.path.endsWith('/keys/upload')) {
+                return http.Response(
+                    '{"one_time_key_counts":{"signed_curve25519":50}}', 200);
+              }
+              return http.Response('{}', 404);
+            }))
+          ..backgroundSync = false;
+        client = result;
+        return result;
+      }
+
       MatrixClientFactory matrixFactory(Future<void> resumeBackground) =>
-          MatrixClientFactory(
+          latestFactory = MatrixClientFactory(
               sessionStore: store,
               homeserver: host,
               supportDirectoryPath: () async => directory.path,
+              startupBackgroundResume: independent
+                  ? Future.wait([resumeBackground, preflight.release.future])
+                  : resumeBackground,
+              localIdentityPreflight: independent && !priming
+                  ? MatrixLocalIdentityPreflight(reader: preflight)
+                  : null,
+              startupClientBuilder: buildClient,
+              opener: (
+                      {required clientName,
+                      required databasePath,
+                      required cipher}) async =>
+                  MatrixClientFactory.initializeClient(buildClient(
+                      clientName: clientName,
+                      databasePath: databasePath,
+                      cipher: cipher)),
               startupOpener: (
-                  {required clientName,
-                  required databasePath,
-                  required cipher}) async {
-                final sql = await sqlFactory.openDatabase(databasePath,
-                    options: OpenDatabaseOptions(
-                        onConfigure: (db) =>
-                            db.execute("PRAGMA key = '$cipher'")));
-                held = _HeldDatabase(clientName,
-                    database: sql, sqfliteFactory: sqlFactory);
-                await held.open();
-                client = Client(clientName,
-                    databaseBuilder: (_) async => held,
-                    preserveStoreOnInvalidToken: true,
-                    httpClient: MockClient((request) async {
-                      if (request.url.path.contains('/send/')) {
-                        transportSends++;
-                        transportTxids.add(request.url.pathSegments.last);
-                        return http.Response(
-                            '{"event_id":"synthetic-ack"}', 200);
-                      }
-                      if (request.url.path.endsWith('/sync')) {
-                        return http.Response(
-                            '{"next_batch":"synthetic","rooms":{}}', 200);
-                      }
-                      if (request.url.path.endsWith('/filter')) {
-                        return http.Response('{"filter_id":"synthetic"}', 200);
-                      }
-                      if (request.url.path.contains('/profile/')) {
-                        return http.Response(
-                            '{"displayname":"Synthetic member"}', 200);
-                      }
-                      if (request.url.path.endsWith('/members')) {
-                        return http.Response('{"chunk":[]}', 200);
-                      }
-                      if (request.url.path.endsWith('/keys/query')) {
-                        return http.Response('{"device_keys":{}}', 200);
-                      }
-                      if (request.url.path.endsWith('/keys/upload')) {
-                        return http.Response(
-                            '{"one_time_key_counts":{"signed_curve25519":50}}',
-                            200);
-                      }
-                      return http.Response('{}', 404);
-                    }))
-                  ..backgroundSync = false;
-                opened = true;
-                return MatrixClientFactory.initializeStartupClient(client,
-                    resumeBackground: resumeBackground);
-              });
+                      {required clientName,
+                      required databasePath,
+                      required cipher}) async =>
+                  MatrixClientFactory.initializeStartupClient(
+                      buildClient(clientName: clientName, databasePath: databasePath, cipher: cipher),
+                      resumeBackground: resumeBackground));
       final api = BusinessApiClient(
           baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
           sessionStore: store,
@@ -347,6 +433,141 @@ void registerStartupProjectionEntryTests(
         }
       }
 
+      if (independent) {
+        await tester.runAsync(() async {
+          priming = true;
+          await store.registrationDeviceKey();
+          final factory = matrixFactory(Future<void>.value());
+          final full = await factory.create();
+          if (!allHidden) {
+            final room = full.getRoomById('!room-64:synthetic.test')!;
+            final outbound = olm.OutboundGroupSession()..create();
+            try {
+              await full.encryption!.keyManager.setInboundGroupSession(
+                  room.id, outbound.session_id(), 'synthetic-sender', {
+                'algorithm': AlgorithmTypes.megolmV1AesSha2,
+                'session_key': outbound.session_key()
+              });
+              await full.database!.storeEventUpdate(
+                  EventUpdate(
+                      roomID: room.id,
+                      type: EventUpdateType.timeline,
+                      content: {
+                        'event_id': 'cached-58',
+                        'type': EventTypes.Encrypted,
+                        'sender': user,
+                        'origin_server_ts': 10058,
+                        'content': {
+                          'algorithm': AlgorithmTypes.megolmV1AesSha2,
+                          'session_id': outbound.session_id(),
+                          'sender_key': 'synthetic-sender',
+                          'ciphertext': outbound.encrypt(jsonEncode({
+                            'room_id': room.id,
+                            'type': EventTypes.Message,
+                            'content': {
+                              'msgtype': 'm.text',
+                              'body': 'Synthetic encrypted head'
+                            }
+                          }))
+                        }
+                      }),
+                  full);
+              full.encryption!.keyManager.clearInboundGroupSessions();
+              for (final entry in [
+                'm.image',
+                'm.video',
+                'm.audio',
+                'm.file',
+                'm.sticker',
+                'com.changliao.red_packet'
+              ].indexed) {
+                await full.database!.storeEventUpdate(
+                    EventUpdate(
+                        roomID: room.id,
+                        type: EventUpdateType.timeline,
+                        content: {
+                          'event_id': 'cached-${57 - entry.$1}',
+                          'type': entry.$2 == 'm.sticker'
+                              ? EventTypes.Sticker
+                              : EventTypes.Message,
+                          'sender': user,
+                          'origin_server_ts': 10057 - entry.$1,
+                          'content': {
+                            'msgtype': entry.$2,
+                            'body': 'Synthetic media ${entry.$1}',
+                            'info': {
+                              'mimetype': 'image/png',
+                              'w': 20,
+                              'h': 30,
+                              'size': 50,
+                              'duration': 100
+                            },
+                            'file': {
+                              'key': {'k': 'forbidden-synthetic-key'}
+                            },
+                            'packet_id': 'forbidden-authority'
+                          }
+                        }),
+                    full);
+              }
+            } finally {
+              outbound.free();
+            }
+          }
+          final owner = MatrixSdkE2eeClient(full,
+              homeserver: host,
+              secureSessionStore: store,
+              readContinuityMetadata: factory.continuityMetadata);
+          final cache = StartupProjectionStore(
+              Directory('${directory.path}/startup_projection_v1'));
+          // Synthetic fully restored owner, admitted by the fixture's Business authority.
+          await owner.primeStartupProjection(cache);
+          final installation = await cache.readInstallation();
+          expect(installation, isNotNull);
+          final admitted =
+              await store.readStartupProjectionAdmission(installation!);
+          expect(admitted, isNotNull,
+              reason: 'verified writer must commit a readable head');
+          final projection = await cache.read(admitted!);
+          expect(projection!.rooms, allHidden ? isEmpty : isNotEmpty);
+          if (!allHidden) {
+            final head = projection.rooms
+                .firstWhere((r) => r.id == '!room-64:synthetic.test');
+            expect(head.encrypted, isTrue);
+            expect(head.membership, 'join');
+            expect(head.events.firstWhere((e) => e.id == 'cached-58').body,
+                'Synthetic encrypted head');
+            expect(
+                head.events.map((e) => e.kind).toSet(),
+                containsAll([
+                  'm.text',
+                  'm.image',
+                  'm.video',
+                  'm.audio',
+                  'm.file',
+                  'm.sticker',
+                  'com.changliao.red_packet'
+                ]));
+            expect(utf8.decode(projection.encode()),
+                isNot(contains('forbidden-synthetic-key')));
+            expect(utf8.decode(projection.encode()),
+                isNot(contains('forbidden-authority')));
+          }
+          await held.previewSettled.future.timeout(const Duration(seconds: 5));
+          await full.dispose();
+          store.startupProjectionCoordinator =
+              null; // process-restart fixture boundary
+          priming = false;
+          opened = false;
+          databaseOpens = 0;
+          if (const bool.fromEnvironment('STARTUP_PROJECTION_BASELINE')) {
+            // Safe baseline adapter: cache miss follows the prior full-preflight path.
+            await File('${directory.path}/startup_projection_v1/installation')
+                .delete();
+          }
+        });
+      }
+      if (independent) rawSecure.diagnosticHold = Completer<void>();
       try {
         await app.main(
             dependencies: app.StartupDependencies(
@@ -365,32 +586,88 @@ void registerStartupProjectionEntryTests(
                 .map((w) => w.data)
                 .join(' | '));
         expect(find.text('正在打开本地聊天'), findsNothing);
-        expect(held.release.isCompleted, isFalse);
-        expect(held.fullRead, isFalse);
-        expect(client.rooms, hasLength(40));
+        if (independent) {
+          expect(rawSecure.diagnosticHold!.isCompleted, isFalse,
+              reason:
+                  'optional diagnostic salt must not block first content frame');
+          rawSecure.diagnosticHold!.complete();
+          await flush(10);
+          expect(latestFactory!.diagnosticHasher, isNotNull);
+          expect(
+              latestFactory!.diagnosticHasher!
+                  .of(matrixUserId: user)
+                  .hashed['matrix_user'],
+              isNot(user));
+        }
+        if (independent) {
+          expect(databaseOpens, 0);
+          expect(preflight.originalCalls, 0);
+          expect(client.isLogged(), isFalse,
+              reason: 'display cache does not fabricate SDK login');
+        } else {
+          expect(held.release.isCompleted, isFalse);
+          expect(held.fullRead, isFalse);
+        }
+        expect(client.rooms, hasLength(independent && allHidden ? 0 : 40));
         if (allHidden) {
           expect(find.text('Synthetic room 64'), findsNothing);
-          expect(held.entered.isCompleted, isTrue,
-              reason: 'empty visible snapshot must release frame barrier');
-          held.release.complete();
+          if (independent) {
+            expect(preflight.originalCalls, 0);
+            expect(databaseOpens, 0);
+            preflight.release.complete();
+          } else {
+            expect(held.entered.isCompleted, isTrue,
+                reason: 'empty visible snapshot must release frame barrier');
+            held.release.complete();
+          }
+          var sdkReady = false;
+          client.initializationCompleted.then((_) => sdkReady = true);
+          for (var attempt = 0; attempt < 300 && !sdkReady; attempt++) {
+            await flush(1);
+          }
+          expect(sdkReady, isTrue, reason: 'full SDK continuation must settle');
           await flush(100);
           expect(held.fullRead, isTrue);
+          report?.call({
+            'scenario': independent
+                ? 'actual-main-empty-independent'
+                : 'actual-main-hidden-sdk',
+            'content_ready_ms': clock.elapsedMilliseconds,
+            'projected_rooms': 0,
+            'network_sends_while_held': 0,
+            'network_sends_after_recovery': 0
+          });
           return;
         }
         expect(find.text('Synthetic room 64'), findsOneWidget);
         final contentReadyMs = clock.elapsedMilliseconds;
         await tester.tap(find.text('通讯录').last);
         await flush();
-        expect(held.release.isCompleted, isFalse);
+        expect(
+            independent
+                ? preflight.release.isCompleted
+                : held.release.isCompleted,
+            isFalse);
         await tester.tap(find.text('消息').last);
         await flush();
         await tester.tap(find.text('Synthetic room 64'));
         await flush(80);
         expect(find.byType(RoomPage), findsOneWidget);
         expect(find.text('Cached message 59'), findsWidgets);
-        expect(held.release.isCompleted, isFalse);
+        expect(
+            independent
+                ? preflight.release.isCompleted
+                : held.release.isCompleted,
+            isFalse);
         final roomState = tester.state(find.byType(RoomPage));
         final retainedRoom = client.getRoomById('!room-64:synthetic.test');
+        if (independent) {
+          expect(retainedRoom!.encrypted, isTrue);
+          expect(retainedRoom.membership, Membership.join);
+          expect(find.text('Synthetic encrypted head'), findsOneWidget);
+          expect(databaseOpens, 0);
+          expect(client.encryption, isNull);
+        }
         final viewport = find
             .descendant(
                 of: find.byType(RoomPage),
@@ -403,7 +680,11 @@ void registerStartupProjectionEntryTests(
         await tester.drag(viewport, const Offset(0, 300));
         await flush(30);
         expect(scroll.position.pixels, isNot(beforeOffset));
-        expect(held.release.isCompleted, isFalse);
+        expect(
+            independent
+                ? preflight.release.isCompleted
+                : held.release.isCompleted,
+            isFalse);
         await tester.enterText(
             find.byKey(const Key('composer-input')), 'Synthetic pending text');
         await tester.pump();
@@ -413,7 +694,11 @@ void registerStartupProjectionEntryTests(
         expect(rows, hasLength(1));
         final txid = rows!.single.txid;
         expect(transportSends, 0);
-        expect(held.release.isCompleted, isFalse);
+        expect(
+            independent
+                ? preflight.release.isCompleted
+                : held.release.isCompleted,
+            isFalse);
         final viewportBounds = tester.getRect(viewport);
         final visibleMessages = find
             .descendant(of: viewport, matching: find.byType(Text))
@@ -434,7 +719,17 @@ void registerStartupProjectionEntryTests(
         final anchor =
             find.descendant(of: viewport, matching: find.text(anchorText));
         final anchorY = tester.getTopLeft(anchor).dy - viewportBounds.top;
-        held.release.complete();
+        if (independent) {
+          preflight.release.complete();
+        } else {
+          held.release.complete();
+        }
+        var sdkReady = false;
+        client.initializationCompleted.then((_) => sdkReady = true);
+        for (var attempt = 0; attempt < 300 && !sdkReady; attempt++) {
+          await flush(1);
+        }
+        expect(sdkReady, isTrue, reason: 'full SDK continuation must settle');
         await flush(100);
         expect(anchor, findsOneWidget);
         final restoredViewport = tester.getRect(viewport);
@@ -448,13 +743,22 @@ void registerStartupProjectionEntryTests(
             client.getRoomById('!room-64:synthetic.test'), same(retainedRoom));
         expect(transportTxids, [txid],
             reason: 'transport retains durable transaction identity');
+        if (independent) {
+          expect(encryptedTransport, isTrue,
+              reason:
+                  'cached display cannot downgrade the actual E2EE transport');
+        }
         final afterRows =
             await tester.runAsync(() => outbox.query(accountId: user));
         expect(afterRows!.where((row) => row.txid != txid), isEmpty);
         expect(transportSends, 1,
             reason: 'same queued transaction dispatches once after recovery');
         report?.call({
-          'scenario': 'actual-main-held-sdk',
+          'scenario': independent
+              ? 'actual-main-held-entire-preflight'
+              : 'actual-main-held-sdk',
+          'original_preflight_calls_while_held': 0,
+          'original_opener_calls_while_held': 0,
           'content_ready_ms': contentReadyMs,
           'interactive_ms': clock.elapsedMilliseconds,
           'projected_rooms': 40,
@@ -462,12 +766,28 @@ void registerStartupProjectionEntryTests(
           'network_sends_after_recovery': transportSends
         });
       } finally {
+        if (rawSecure.diagnosticHold?.isCompleted == false) {
+          rawSecure.diagnosticHold!.complete();
+        }
+        if (!preflight.release.isCompleted) preflight.release.complete();
+        await flush(80);
         if (opened) {
           if (find.byType(RoomPage).evaluate().isNotEmpty) {
+            final lease =
+                tester.widget<RoomPage>(find.byType(RoomPage)).roomLease;
             Navigator.of(tester.element(find.byType(RoomPage)),
                     rootNavigator: true)
                 .pop();
             await flush(50);
+            var drained = false;
+            final drain = lease.cancel().then((_) => drained = true);
+            for (var i = 0; i < 300 && !drained; i++) {
+              await flush(1);
+            }
+            expect(drained, isTrue,
+                reason:
+                    'room owner drain must settle before advancing teardown clock');
+            await drain;
           }
           if (!held.release.isCompleted) held.release.complete();
           await flush(50);
