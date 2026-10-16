@@ -1,0 +1,161 @@
+{
+  "status": "pass",
+  "binding": {
+    "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "source_manifest_sha256": "b07dfdc5a4632f338f27562ea32dd45e280c01fe4da7e4313be1bdb2d98a301f",
+    "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+    "artifact_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039"
+  },
+  "scope": "API28 x86_64 actual-main autoplay and synthetic native integration; not ARM64 phone acceptance",
+  "actual_main": {
+    "status": "PASS",
+    "source_commit": "544b61b63f30273d3fd2e198d11bd809a8fd0090",
+    "apk_sha256": "21553235a4ec7ef7e68a8d780dae43dac583f74ea3a31ff80c466ec6328ceab5",
+    "version": "0.4.47+2216 autoplay revision",
+    "device": "LDPlayer9 emulator-5556 Android9/API28 x86_64",
+    "observed_old_new_frames_per_two_seconds": [
+      0,
+      40
+    ],
+    "background_resume_scroll_return_frames_per_two_seconds": [
+      0,
+      50,
+      0,
+      50
+    ],
+    "visible_messages": 3,
+    "unique_active_resources": 2,
+    "current_frame_bytes": 524288,
+    "decode_peak": 2,
+    "warm_reentry_hits": 2,
+    "memory_samples": [
+      {
+        "sampled_epoch_ms": 1792113879445,
+        "phase": "new-no-tap",
+        "pid": 8167,
+        "total_pss_kib": 376605,
+        "private_dirty_kib": 305112,
+        "native_pss_kib": 54394,
+        "native_heap_size_kib": 65536,
+        "native_heap_alloc_kib": 50430,
+        "scope": "Android 9 x86_64 LDPlayer main Debug; point sample, includes Flutter VM/SDK/UI and current media; not release memory or leak/OOM proof",
+        "bounded_log_error_counts": {
+          "OutOfMemoryError": 0,
+          "FATAL EXCEPTION": 0,
+          "Unhandled Exception": 0
+        }
+      },
+      {
+        "sampled_epoch_ms": 1792113898943,
+        "phase": "new-background",
+        "pid": 8167,
+        "total_pss_kib": 345320,
+        "private_dirty_kib": 292736,
+        "native_pss_kib": 48058,
+        "native_heap_size_kib": 69632,
+        "native_heap_alloc_kib": 47154,
+        "scope": "Android 9 x86_64 LDPlayer main Debug; point sample, includes Flutter VM/SDK/UI and current media; not release memory or leak/OOM proof",
+        "bounded_log_error_counts": {
+          "OutOfMemoryError": 0,
+          "FATAL EXCEPTION": 0,
+          "Unhandled Exception": 0
+        }
+      },
+      {
+        "sampled_epoch_ms": 1792113930994,
+        "phase": "new-room-warm",
+        "pid": 8167,
+        "total_pss_kib": 357039,
+        "private_dirty_kib": 302736,
+        "native_pss_kib": 47550,
+        "native_heap_size_kib": 69632,
+        "native_heap_alloc_kib": 45084,
+        "scope": "Android 9 x86_64 LDPlayer main Debug; point sample, includes Flutter VM/SDK/UI and current media; not release memory or leak/OOM proof",
+        "bounded_log_error_counts": {
+          "OutOfMemoryError": 0,
+          "FATAL EXCEPTION": 0,
+          "Unhandled Exception": 0
+        }
+      },
+      {
+        "sampled_epoch_ms": 1792114002195,
+        "phase": "new-final",
+        "pid": 8167,
+        "total_pss_kib": 347809,
+        "private_dirty_kib": 307840,
+        "native_pss_kib": 48925,
+        "native_heap_size_kib": 67584,
+        "native_heap_alloc_kib": 45753,
+        "scope": "Android 9 x86_64 LDPlayer main Debug; point sample, includes Flutter VM/SDK/UI and current media; not release memory or leak/OOM proof",
+        "bounded_log_error_counts": {
+          "OutOfMemoryError": 0,
+          "FATAL EXCEPTION": 0,
+          "Unhandled Exception": 0
+        }
+      }
+    ],
+    "limitations": [
+      "Debug, one emulator and three own synthetic messages, not release/profile or OOM proof",
+      "Pool frame accounting excludes codec scratch/GPU/whole-process memory",
+      "Early room-reopen transition sample had zero active entries; later settled sample resumed without taps; no first-frame P95 claim",
+      "iOS playback still requires signed real-device verification"
+    ]
+  },
+  "native_driver": {
+    "status": "PASS",
+    "started_utc": "2026-10-16T00:13:38Z",
+    "source_commit": "27b00b9fbdaf149c30a364381025934ebe35c638",
+    "apk_sha256": "da3c1812838710be46df6f256b13eb05cec32c0d5948216b5eeebef014dc5833",
+    "before": {
+      "uid": "10090",
+      "first_install": "2026-09-26 04:06:20",
+      "version_code": "2216",
+      "version_name": "0.4.47"
+    },
+    "scope": "Synthetic native fixture; no installed account opened. adb install -r only; direct existing-VM integration driver.",
+    "after": {
+      "uid": "10090",
+      "first_install": "2026-09-26 04:06:20",
+      "version_code": "2216",
+      "version_name": "0.4.47"
+    },
+    "launcher_settlement_seconds": 1.8,
+    "driver_exit_code": 0,
+    "driver_seconds": 11.078,
+    "result_present": true,
+    "completed_utc": "2026-10-16T00:14:41Z"
+  },
+  "changed_since_native": [
+    "apps/mobile_flutter/lib/ui/chat/emoji_resource_glyph.dart",
+    "apps/mobile_flutter/lib/ui/chat/super_emoji_message.dart",
+    "apps/mobile_flutter/test/shared_emoji_player_test.dart",
+    "apps/mobile_flutter/test/ui/super_emoji_message_test.dart"
+  ],
+  "reuse_reason": "Native test/runtime modules and dependencies unchanged; two emoji widget changes independently exercised on actual-main final revision",
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-16/super-emoji-autoplay/runtime-acceptance.json",
+      "sha256": "93f1a7344eef110d7a9e16e4a4e2aa425e745108e8fd44abccd1ebb67bcc9b43",
+      "bytes": 3356
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/super-emoji-autoplay/install-autoplay/receipt.json",
+      "sha256": "5d7bac13c6a6607aea9314d041b7f5b570ba384e7b485c6124d4a01397d81b45",
+      "bytes": 831
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/mobile-experience-2216/android-native-corrected-runtime/receipt.json",
+      "sha256": "6eda09c328db357e6b70633efe95a856a5e23e03638385dfe10b5f8cc75720fb",
+      "bytes": 803
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/mobile-experience-2216/android-native-corrected-runtime/driver.log",
+      "sha256": "59e267d8a3f1188b44e77d794d1110d8543634cfd21db6d9c706f45291861653",
+      "bytes": 449
+    }
+  ],
+  "limitations": [
+    "Null reportData from native driver is not individual per-case metrics; driver exit0 and All tests passed are retained",
+    "No ARM64 phone, broad ROM, weak-network or 16KiB-device acceptance"
+  ]
+}

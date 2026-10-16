@@ -1,0 +1,1909 @@
+{
+  "abi": "arm64-v8a",
+  "artifact_bytes": 73262170,
+  "artifact_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039",
+  "artifact_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+  "build": 2216,
+  "cdn_url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+  "delivery_mode": "cloudfront-hk-origin",
+  "deployment": {
+    "bucket_policy_after": {
+      "Statement": [
+        {
+          "Action": "s3:*",
+          "Condition": {
+            "Bool": {
+              "aws:SecureTransport": "false"
+            }
+          },
+          "Effect": "Deny",
+          "Principal": "*",
+          "Resource": [
+            "arn:aws:s3:::starchat-installers-218022113852-sg",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/*"
+          ],
+          "Sid": "DenyInsecureTransport"
+        },
+        {
+          "Action": "s3:GetObject",
+          "Condition": {
+            "StringEquals": {
+              "AWS:SourceArn": "arn:aws:cloudfront::218022113852:distribution/E30IR8IHK6PMXZ"
+            }
+          },
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "cloudfront.amazonaws.com"
+          },
+          "Resource": [
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.19-build2188-arm64.apk",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.21-build2190-arm64.apk",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.24-build2193-arm64.apk",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.25-build2194-arm64.apk"
+          ],
+          "Sid": "AllowOnlyApprovedInstallerDistribution"
+        }
+      ],
+      "Version": "2012-10-17"
+    },
+    "bucket_policy_before": {
+      "Statement": [
+        {
+          "Action": "s3:*",
+          "Condition": {
+            "Bool": {
+              "aws:SecureTransport": "false"
+            }
+          },
+          "Effect": "Deny",
+          "Principal": "*",
+          "Resource": [
+            "arn:aws:s3:::starchat-installers-218022113852-sg",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/*"
+          ],
+          "Sid": "DenyInsecureTransport"
+        },
+        {
+          "Action": "s3:GetObject",
+          "Condition": {
+            "StringEquals": {
+              "AWS:SourceArn": "arn:aws:cloudfront::218022113852:distribution/E30IR8IHK6PMXZ"
+            }
+          },
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "cloudfront.amazonaws.com"
+          },
+          "Resource": [
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.19-build2188-arm64.apk",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.21-build2190-arm64.apk",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.24-build2193-arm64.apk",
+            "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/ChatFlow-0.4.25-build2194-arm64.apk"
+          ],
+          "Sid": "AllowOnlyApprovedInstallerDistribution"
+        }
+      ],
+      "Version": "2012-10-17"
+    },
+    "cloudfront_after": {
+      "Aliases": {
+        "Quantity": 0
+      },
+      "CacheBehaviors": {
+        "Items": [
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.19-build2188-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-failover",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.21-build2190-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-failover",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.24-build2193-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-failover",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.25-build2194-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-failover",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.26-build2195-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.27-build2196-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.33-build2202-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.35-build2204-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.36-build2205-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.37-build2206-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.38-build2207-arm64-candidate.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.40-build2209-arm64-candidate.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.42-build2211-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "resources/emoji/de380a20b3183d0a3e5f6e6c/*",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.44-build2213-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.45-build2214-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.46-build2215-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          },
+          {
+            "AllowedMethods": {
+              "CachedMethods": {
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+            "Compress": false,
+            "FieldLevelEncryptionId": "",
+            "FunctionAssociations": {
+              "Quantity": 0
+            },
+            "GrpcConfig": {
+              "Enabled": false
+            },
+            "LambdaFunctionAssociations": {
+              "Quantity": 0
+            },
+            "PathPattern": "downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+            "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+            "SmoothStreaming": false,
+            "TargetOriginId": "installer-hong-kong",
+            "TrustedKeyGroups": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "TrustedSigners": {
+              "Enabled": false,
+              "Quantity": 0
+            },
+            "ViewerProtocolPolicy": "https-only"
+          }
+        ],
+        "Quantity": 18
+      },
+      "CallerReference": "starchat-installer-2188-20260927",
+      "Comment": "Immutable Android installer with S3 OAC and Hong Kong origin fallback",
+      "ContinuousDeploymentPolicyId": "",
+      "CustomErrorResponses": {
+        "Quantity": 0
+      },
+      "DefaultCacheBehavior": {
+        "AllowedMethods": {
+          "CachedMethods": {
+            "Items": [
+              "HEAD",
+              "GET"
+            ],
+            "Quantity": 2
+          },
+          "Items": [
+            "HEAD",
+            "GET"
+          ],
+          "Quantity": 2
+        },
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "Compress": false,
+        "FieldLevelEncryptionId": "",
+        "FunctionAssociations": {
+          "Quantity": 0
+        },
+        "GrpcConfig": {
+          "Enabled": false
+        },
+        "LambdaFunctionAssociations": {
+          "Quantity": 0
+        },
+        "SmoothStreaming": false,
+        "TargetOriginId": "installer-s3",
+        "TrustedKeyGroups": {
+          "Enabled": false,
+          "Quantity": 0
+        },
+        "TrustedSigners": {
+          "Enabled": false,
+          "Quantity": 0
+        },
+        "ViewerProtocolPolicy": "https-only"
+      },
+      "DefaultRootObject": "",
+      "Enabled": true,
+      "HttpVersion": "http2and3",
+      "IsIPV6Enabled": true,
+      "Logging": {
+        "Bucket": "",
+        "Enabled": false,
+        "IncludeCookies": false,
+        "Prefix": ""
+      },
+      "OriginGroups": {
+        "Items": [
+          {
+            "FailoverCriteria": {
+              "StatusCodes": {
+                "Items": [
+                  500,
+                  502,
+                  503,
+                  504
+                ],
+                "Quantity": 4
+              }
+            },
+            "Id": "installer-failover",
+            "Members": {
+              "Items": [
+                {
+                  "OriginId": "installer-s3"
+                },
+                {
+                  "OriginId": "installer-hong-kong"
+                }
+              ],
+              "Quantity": 2
+            },
+            "SelectionCriteria": "default"
+          }
+        ],
+        "Quantity": 1
+      },
+      "Origins": {
+        "Items": [
+          {
+            "ConnectionAttempts": 1,
+            "ConnectionTimeout": 3,
+            "CustomHeaders": {
+              "Quantity": 0
+            },
+            "CustomOriginConfig": {
+              "HTTPPort": 80,
+              "HTTPSPort": 443,
+              "OriginKeepaliveTimeout": 5,
+              "OriginProtocolPolicy": "https-only",
+              "OriginReadTimeout": 30,
+              "OriginSslProtocols": {
+                "Items": [
+                  "TLSv1.2"
+                ],
+                "Quantity": 1
+              }
+            },
+            "DomainName": "www.liuhetong888.com",
+            "Id": "installer-hong-kong",
+            "OriginAccessControlId": "",
+            "OriginPath": "",
+            "OriginShield": {
+              "Enabled": false
+            }
+          },
+          {
+            "ConnectionAttempts": 1,
+            "ConnectionTimeout": 3,
+            "CustomHeaders": {
+              "Quantity": 0
+            },
+            "DomainName": "starchat-installers-218022113852-sg.s3.ap-southeast-1.amazonaws.com",
+            "Id": "installer-s3",
+            "OriginAccessControlId": "E6P1PEF2BA7OK",
+            "OriginPath": "",
+            "OriginShield": {
+              "Enabled": false
+            },
+            "S3OriginConfig": {
+              "OriginAccessIdentity": "",
+              "OriginReadTimeout": 30
+            }
+          }
+        ],
+        "Quantity": 2
+      },
+      "PriceClass": "PriceClass_All",
+      "Restrictions": {
+        "GeoRestriction": {
+          "Quantity": 0,
+          "RestrictionType": "none"
+        }
+      },
+      "Staging": false,
+      "ViewerCertificate": {
+        "CertificateSource": "cloudfront",
+        "CloudFrontDefaultCertificate": true,
+        "MinimumProtocolVersion": "TLSv1",
+        "SSLSupportMethod": "vip"
+      },
+      "WebACLId": ""
+    },
+    "cloudfront_before": {
+      "DistributionConfig": {
+        "Aliases": {
+          "Quantity": 0
+        },
+        "CacheBehaviors": {
+          "Items": [
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.19-build2188-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-failover",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.21-build2190-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-failover",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.24-build2193-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-failover",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.25-build2194-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-failover",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.26-build2195-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.27-build2196-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.33-build2202-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.35-build2204-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.36-build2205-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.37-build2206-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.38-build2207-arm64-candidate.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.40-build2209-arm64-candidate.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.42-build2211-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "resources/emoji/de380a20b3183d0a3e5f6e6c/*",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.44-build2213-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.45-build2214-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            },
+            {
+              "AllowedMethods": {
+                "CachedMethods": {
+                  "Items": [
+                    "HEAD",
+                    "GET"
+                  ],
+                  "Quantity": 2
+                },
+                "Items": [
+                  "HEAD",
+                  "GET"
+                ],
+                "Quantity": 2
+              },
+              "CachePolicyId": "b2884449-e4de-46a7-ac36-70bc7f1ddd6d",
+              "Compress": false,
+              "FieldLevelEncryptionId": "",
+              "FunctionAssociations": {
+                "Quantity": 0
+              },
+              "GrpcConfig": {
+                "Enabled": false
+              },
+              "LambdaFunctionAssociations": {
+                "Quantity": 0
+              },
+              "PathPattern": "downloads/ChatFlow-0.4.46-build2215-arm64.apk",
+              "ResponseHeadersPolicyId": "fb8eb155-a1ae-4012-950c-c94d570e5efe",
+              "SmoothStreaming": false,
+              "TargetOriginId": "installer-hong-kong",
+              "TrustedKeyGroups": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "TrustedSigners": {
+                "Enabled": false,
+                "Quantity": 0
+              },
+              "ViewerProtocolPolicy": "https-only"
+            }
+          ],
+          "Quantity": 17
+        },
+        "CallerReference": "starchat-installer-2188-20260927",
+        "Comment": "Immutable Android installer with S3 OAC and Hong Kong origin fallback",
+        "ContinuousDeploymentPolicyId": "",
+        "CustomErrorResponses": {
+          "Quantity": 0
+        },
+        "DefaultCacheBehavior": {
+          "AllowedMethods": {
+            "CachedMethods": {
+              "Items": [
+                "HEAD",
+                "GET"
+              ],
+              "Quantity": 2
+            },
+            "Items": [
+              "HEAD",
+              "GET"
+            ],
+            "Quantity": 2
+          },
+          "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+          "Compress": false,
+          "FieldLevelEncryptionId": "",
+          "FunctionAssociations": {
+            "Quantity": 0
+          },
+          "GrpcConfig": {
+            "Enabled": false
+          },
+          "LambdaFunctionAssociations": {
+            "Quantity": 0
+          },
+          "SmoothStreaming": false,
+          "TargetOriginId": "installer-s3",
+          "TrustedKeyGroups": {
+            "Enabled": false,
+            "Quantity": 0
+          },
+          "TrustedSigners": {
+            "Enabled": false,
+            "Quantity": 0
+          },
+          "ViewerProtocolPolicy": "https-only"
+        },
+        "DefaultRootObject": "",
+        "Enabled": true,
+        "HttpVersion": "http2and3",
+        "IsIPV6Enabled": true,
+        "Logging": {
+          "Bucket": "",
+          "Enabled": false,
+          "IncludeCookies": false,
+          "Prefix": ""
+        },
+        "OriginGroups": {
+          "Items": [
+            {
+              "FailoverCriteria": {
+                "StatusCodes": {
+                  "Items": [
+                    500,
+                    502,
+                    503,
+                    504
+                  ],
+                  "Quantity": 4
+                }
+              },
+              "Id": "installer-failover",
+              "Members": {
+                "Items": [
+                  {
+                    "OriginId": "installer-s3"
+                  },
+                  {
+                    "OriginId": "installer-hong-kong"
+                  }
+                ],
+                "Quantity": 2
+              },
+              "SelectionCriteria": "default"
+            }
+          ],
+          "Quantity": 1
+        },
+        "Origins": {
+          "Items": [
+            {
+              "ConnectionAttempts": 1,
+              "ConnectionTimeout": 3,
+              "CustomHeaders": {
+                "Quantity": 0
+              },
+              "CustomOriginConfig": {
+                "HTTPPort": 80,
+                "HTTPSPort": 443,
+                "OriginKeepaliveTimeout": 5,
+                "OriginProtocolPolicy": "https-only",
+                "OriginReadTimeout": 30,
+                "OriginSslProtocols": {
+                  "Items": [
+                    "TLSv1.2"
+                  ],
+                  "Quantity": 1
+                }
+              },
+              "DomainName": "www.liuhetong888.com",
+              "Id": "installer-hong-kong",
+              "OriginAccessControlId": "",
+              "OriginPath": "",
+              "OriginShield": {
+                "Enabled": false
+              }
+            },
+            {
+              "ConnectionAttempts": 1,
+              "ConnectionTimeout": 3,
+              "CustomHeaders": {
+                "Quantity": 0
+              },
+              "DomainName": "starchat-installers-218022113852-sg.s3.ap-southeast-1.amazonaws.com",
+              "Id": "installer-s3",
+              "OriginAccessControlId": "E6P1PEF2BA7OK",
+              "OriginPath": "",
+              "OriginShield": {
+                "Enabled": false
+              },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": "",
+                "OriginReadTimeout": 30
+              }
+            }
+          ],
+          "Quantity": 2
+        },
+        "PriceClass": "PriceClass_All",
+        "Restrictions": {
+          "GeoRestriction": {
+            "Quantity": 0,
+            "RestrictionType": "none"
+          }
+        },
+        "Staging": false,
+        "ViewerCertificate": {
+          "CertificateSource": "cloudfront",
+          "CloudFrontDefaultCertificate": true,
+          "MinimumProtocolVersion": "TLSv1",
+          "SSLSupportMethod": "vip"
+        },
+        "WebACLId": ""
+      },
+      "ETag": "E1IM4EOPHS76S7"
+    },
+    "old_artifact": {
+      "bytes": 73262170,
+      "name": "ChatFlow-0.4.46-build2215-arm64.apk",
+      "sha256": "4b43bd1ca655918b9754183c1713ed5eb6e864379a2e2ccc6bd861195578b6a6"
+    },
+    "preserved": {
+      "downloads/ios/manifest.plist": "f0c9014caf807a8a862f7fbfd64d0d14e209905879ac8b29f0c311c9c915ee16",
+      "src/admin-home.js": "6d23852775c478fa035025af8c993995ae13dcf7a1c8636ac59a0428cb2283f6",
+      "src/download-network-selector.js": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+      "src/download-network.js": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+      "src/download-redirect.js": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+    },
+    "settings_after": {
+      "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+      "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+      "app_ios_latest_build": "2215",
+      "app_ios_latest_version": "0.4.46",
+      "app_ios_min_supported_build": "3",
+      "app_ios_update_notes": "修复大历史会话快速上滑跳转、弱网新消息换位和语音首次播放问题，优化聊天记录加载与交互性能。",
+      "app_latest_build": "2216",
+      "app_latest_version": "0.4.47",
+      "app_min_supported_build": "3",
+      "app_update_notes": "优化启动和聊天记录加载，完善图片、视频及 GIF 发送预览，恢复超级表情自动播放，改进权限提示体验。"
+    },
+    "settings_before": {
+      "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+      "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+      "app_ios_latest_build": "2215",
+      "app_ios_latest_version": "0.4.46",
+      "app_ios_min_supported_build": "3",
+      "app_ios_update_notes": "修复大历史会话快速上滑跳转、弱网新消息换位和语音首次播放问题，优化聊天记录加载与交互性能。",
+      "app_latest_build": "2215",
+      "app_latest_version": "0.4.46",
+      "app_min_supported_build": "3",
+      "app_update_notes": "修复图片和视频发送失败问题，提升媒体发送稳定性。"
+    },
+    "static": {
+      "download.html": {
+        "after": "a79c2eb04672964afa74b5be7712f79fe6340bb14d7f594315e24f85ae824dea",
+        "before": "df2ecae1e25561b83a339478bfd80dc2d921f3c6e5964b26f1e5dc8849211491"
+      },
+      "downloads/android-release.json": {
+        "after": "525f36106048d8ed2c8a2bcff4d612350fc3b407fcfdfc1f0b49c44277bb0443",
+        "before": "cf772f9d1a9e464bc71622ad4603d70ae96cfb14bf8d2966e24bcedde5f6ce5b"
+      }
+    },
+    "update_notes": "优化启动和聊天记录加载，完善图片、视频及 GIF 发送预览，恢复超级表情自动播放，改进权限提示体验。"
+  },
+  "network_assets": {
+    "download-network-selector.js": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "download-network.js": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "download-redirect.js": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+  },
+  "network_selection": true,
+  "package": "com.liuhetong.mobile",
+  "platform": "android",
+  "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+  "signing_confirmed_by": "Codex root: actual fixed75b31 apksigner verify exit0; arm64-final/signature.log",
+  "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+  "source_manifest_sha256": "b07dfdc5a4632f338f27562ea32dd45e280c01fe4da7e4313be1bdb2d98a301f",
+  "version": "0.4.47"
+}

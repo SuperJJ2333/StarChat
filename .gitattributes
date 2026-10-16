@@ -7,6 +7,10 @@
 *.md text eol=lf
 *.py text eol=lf
 
+# Published installer metadata must retain the verified byte identity.
+frontend/downloads/android-release.json -text
+frontend/downloads/ios/manifest.plist -text
+
 # Preserve SDK provenance hashes.
 apps/mobile_flutter/third_party/matrix/** -text
 # Resource licensing evidence is hashed as downloaded bytes on every platform.

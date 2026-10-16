@@ -1,0 +1,32 @@
+{
+  "artifact_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039",
+  "runtime_sha256": "7d7812617eb31db6b949a7f7ab3fb1e16f72508ef8896d72b9a503f8da055479",
+  "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+  "freeze_sha256": "5df015a69df956450a6e1d8ec9c728324fce9c3bfa1be2863f18385aa3d551a6",
+  "operation_id": "experience-20261016-2216",
+  "authorized_operations": [
+    "preflight",
+    "runtime",
+    "upload",
+    "assemble",
+    "hk-install",
+    "cdn-install",
+    "cdn-check",
+    "hk-switch",
+    "publish",
+    "inspect",
+    "audit"
+  ],
+  "checks": {
+    "spec_domain": {
+      "status": "pass",
+      "path": "spec-publication.md",
+      "sha256": "54ff38d5c1daaf2a91ab6e13d215301d8025bedee1cfaf3bd54c480e61394017"
+    },
+    "quality_security": {
+      "status": "pass",
+      "path": "quality-publication.md",
+      "sha256": "21dc90ea137d96857bb61d5df8092858fc03c5a8083cc0f64bc01c85ef6a514b"
+    }
+  }
+}

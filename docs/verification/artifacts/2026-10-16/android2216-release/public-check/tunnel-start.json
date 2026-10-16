@@ -1,0 +1,10 @@
+{
+  "status": "LOCAL_LISTENER_READY_ONLY",
+  "pid": 337672,
+  "start_utc": "2026-10-16T03:01:11.7705246Z",
+  "executable": "C:\\Program Files\\OpenSSH\\ssh.exe",
+  "host": "127.0.0.1",
+  "port": 43825,
+  "public_release_requests": 0,
+  "requires_root_publish_go": true
+}

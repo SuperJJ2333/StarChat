@@ -1,0 +1,19 @@
+{
+  "before": {
+    "frontend/download.html": "eeb75215b8bcea683202923ff27f5ce5c130e139a94d8a286c90f6dd82576dd4",
+    "frontend/downloads/android-release.json": "cf772f9d1a9e464bc71622ad4603d70ae96cfb14bf8d2966e24bcedde5f6ce5b",
+    "frontend/downloads/ios/manifest.plist": "059fd04cc113d88e86d91c123715526234d8624342adf94c61d2acfdbea43bf4",
+    "frontend/src/admin-home.js": "5a33f4689a1fbd7ad3eb304dbf2b7e0f70f8334491fb9e519152a06935996190",
+    "frontend/src/download-network-selector.js": "b5acc7be7a25ec620e8848d40ffea627e582b1d39271b4d7282e86fa59515181",
+    "frontend/src/download-network.js": "6c1e12c6e7098a4f0b77e4f63748ae9c931e88179c2db48ddbe352722eae9786",
+    "frontend/src/download-redirect.js": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+  },
+  "after": {
+    "frontend/download.html": "a79c2eb04672964afa74b5be7712f79fe6340bb14d7f594315e24f85ae824dea",
+    "frontend/downloads/android-release.json": "525f36106048d8ed2c8a2bcff4d612350fc3b407fcfdfc1f0b49c44277bb0443",
+    "frontend/downloads/ios/manifest.plist": "f0c9014caf807a8a862f7fbfd64d0d14e209905879ac8b29f0c311c9c915ee16",
+    "frontend/src/admin-home.js": "c66a767ec82b4ee5c698fa9c13cbfcb438995c4b451079ae799ef599594549e0"
+  },
+  "freeze_sha256": "5df015a69df956450a6e1d8ec9c728324fce9c3bfa1be2863f18385aa3d551a6",
+  "scope": "Local source reconciliation only; retain local wallet security additions and exact live iOS identity. No network writes."
+}

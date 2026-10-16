@@ -1,0 +1,11 @@
+{
+  "status": "LOCAL_SOURCE_BACKFILL_PASS",
+  "files": {
+    "frontend/download.html": "a79c2eb04672964afa74b5be7712f79fe6340bb14d7f594315e24f85ae824dea",
+    "frontend/downloads/android-release.json": "525f36106048d8ed2c8a2bcff4d612350fc3b407fcfdfc1f0b49c44277bb0443",
+    "frontend/downloads/ios/manifest.plist": "f0c9014caf807a8a862f7fbfd64d0d14e209905879ac8b29f0c311c9c915ee16",
+    "frontend/src/admin-home.js": "c66a767ec82b4ee5c698fa9c13cbfcb438995c4b451079ae799ef599594549e0"
+  },
+  "publish_sha256": "972488af8f8a34fffd257aabbef7db504f639bf9e08cc227a9a2c1b407ce3f6a",
+  "audit_sha256": "a1b3b1316afe8b97c40f6f6e0d1f7e21185dfe95f4dc481730723e163ab00d5e"
+}

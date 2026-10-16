@@ -1,0 +1,38 @@
+{
+  "checked_at_utc": "2026-10-16T03:04:30.310956+00:00",
+  "freeze_sha256": "5df015a69df956450a6e1d8ec9c728324fce9c3bfa1be2863f18385aa3d551a6",
+  "operation": "audit",
+  "result": {
+    "audit_count": 3,
+    "audit_keys": [
+      "app_latest_build",
+      "app_latest_version",
+      "app_update_notes"
+    ],
+    "checked_at_utc": "2026-10-16T03:04:29.874845+00:00",
+    "projections": {
+      "android": {
+        "apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+        "configured": true,
+        "download_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+        "latest_build": 2216,
+        "latest_version": "0.4.47",
+        "min_supported_build": 3,
+        "notes": "\u4f18\u5316\u542f\u52a8\u548c\u804a\u5929\u8bb0\u5f55\u52a0\u8f7d\uff0c\u5b8c\u5584\u56fe\u7247\u3001\u89c6\u9891\u53ca GIF \u53d1\u9001\u9884\u89c8\uff0c\u6062\u590d\u8d85\u7ea7\u8868\u60c5\u81ea\u52a8\u64ad\u653e\uff0c\u6539\u8fdb\u6743\u9650\u63d0\u793a\u4f53\u9a8c\u3002",
+        "platform": "android"
+      },
+      "ios": {
+        "apk_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+        "configured": true,
+        "download_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+        "latest_build": 2215,
+        "latest_version": "0.4.46",
+        "min_supported_build": 3,
+        "notes": "\u4fee\u590d\u5927\u5386\u53f2\u4f1a\u8bdd\u5feb\u901f\u4e0a\u6ed1\u8df3\u8f6c\u3001\u5f31\u7f51\u65b0\u6d88\u606f\u6362\u4f4d\u548c\u8bed\u97f3\u9996\u6b21\u64ad\u653e\u95ee\u9898\uff0c\u4f18\u5316\u804a\u5929\u8bb0\u5f55\u52a0\u8f7d\u4e0e\u4ea4\u4e92\u6027\u80fd\u3002",
+        "platform": "ios"
+      }
+    },
+    "status": "ROUTE_AND_AUDIT_READBACK_PASS"
+  },
+  "status": "PASS"
+}

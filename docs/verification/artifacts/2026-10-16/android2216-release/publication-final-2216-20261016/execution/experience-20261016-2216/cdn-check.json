@@ -1,0 +1,19 @@
+{
+  "checked_at_utc": "2026-10-16T03:03:24.621625+00:00",
+  "freeze_sha256": "5df015a69df956450a6e1d8ec9c728324fce9c3bfa1be2863f18385aa3d551a6",
+  "operation": "cdn-check",
+  "result": {
+    "artifact_bytes": 73262170,
+    "artifact_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039",
+    "cloudfront": "complete",
+    "etag": "E138L1TOL8PIJT",
+    "origin": "installer-hong-kong",
+    "policy": "unchanged",
+    "public": {
+      "cors": "https://www.liuhetong888.com",
+      "head": 200
+    },
+    "status": "Deployed"
+  },
+  "status": "PASS"
+}

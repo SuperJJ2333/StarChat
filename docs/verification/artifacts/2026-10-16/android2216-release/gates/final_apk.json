@@ -1,0 +1,206 @@
+{
+  "status": "pass",
+  "binding": {
+    "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "source_manifest_sha256": "b07dfdc5a4632f338f27562ea32dd45e280c01fe4da7e4313be1bdb2d98a301f",
+    "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+    "artifact_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039"
+  },
+  "receipt": {
+    "mode": "standard-arm64-release",
+    "build": 2216,
+    "mobile_manifest_sha256": "b07dfdc5a4632f338f27562ea32dd45e280c01fe4da7e4313be1bdb2d98a301f",
+    "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+    "status": "PASS",
+    "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "started_utc": "2026-10-16T02:34:49.8420558+00:00",
+    "completed_utc": "2026-10-16T02:44:06.8894769+00:00",
+    "target": "lib/main.dart",
+    "version": "0.4.47",
+    "package": "com.liuhetong.mobile",
+    "abi": "arm64-v8a",
+    "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+    "final_apk_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039",
+    "final_apk_bytes": 73262170,
+    "scope": "ARM64 Release entry point; source build/rebuild/sign/semantic checks only; installation and native runtime are separate."
+  },
+  "steps": [
+    {
+      "step": "pub-get",
+      "exit_code": "0"
+    },
+    {
+      "step": "freeze-input",
+      "exit_code": "0"
+    },
+    {
+      "step": "registrant-correction",
+      "exit_code": "0"
+    },
+    {
+      "step": "source-build",
+      "exit_code": "0"
+    },
+    {
+      "step": "source-release-payload",
+      "exit_code": "0"
+    },
+    {
+      "step": "source-assets",
+      "exit_code": "0"
+    },
+    {
+      "step": "original-manifest",
+      "exit_code": "0"
+    },
+    {
+      "step": "decode",
+      "exit_code": "0"
+    },
+    {
+      "step": "rebuild",
+      "exit_code": "0"
+    },
+    {
+      "step": "align",
+      "exit_code": "0"
+    },
+    {
+      "step": "sign",
+      "exit_code": "0"
+    },
+    {
+      "step": "signature",
+      "exit_code": "0"
+    },
+    {
+      "step": "alignment",
+      "exit_code": "0"
+    },
+    {
+      "step": "identity",
+      "exit_code": "0"
+    },
+    {
+      "step": "final-release-payload",
+      "exit_code": "0"
+    },
+    {
+      "step": "final-assets",
+      "exit_code": "0"
+    },
+    {
+      "step": "frozen-after",
+      "exit_code": "0"
+    },
+    {
+      "step": "rebuilt-manifest",
+      "exit_code": "0"
+    },
+    {
+      "step": "verify-decode",
+      "exit_code": "0"
+    },
+    {
+      "step": "rebuild-verification",
+      "exit_code": "0"
+    }
+  ],
+  "native_libraries": {
+    "lib/arm64-v8a/libapp.so": "ea57453dcb0acaf6a87a9b8ce7ad4f84c7324508dbb569c30db182d06efa7137",
+    "lib/arm64-v8a/libbarhopper_v3.so": "ec09597e9eb3aee0eb55ae3366da0d4ba416f5aa35a1af0b3811f50ff46743a1",
+    "lib/arm64-v8a/libc++_shared.so": "cd61762848882a16c8244c964a6f396c0caa0b440588a210ce9cc4ab0e6d9f0c",
+    "lib/arm64-v8a/libcrypto.so": "13593ad654a00866f14a95c7bd07d6cb898c132817f92fd91adf6eb218842831",
+    "lib/arm64-v8a/libdartjni.so": "64c3e778b8dd164402a51f5f8e1cc63844a886548dfe1725da1e8a11ffa7823b",
+    "lib/arm64-v8a/libdatastore_shared_counter.so": "d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1",
+    "lib/arm64-v8a/libflutter.so": "151099d0b73b3025d7545c8431af4d7f23bf3e7fe5767d9fec6323fa372ef743",
+    "lib/arm64-v8a/libflutter_openssl_crypto.so": "8226504fe4ff476eb08436f34f829d82725947ba28bf39d3506642ca425ae1ac",
+    "lib/arm64-v8a/libimage_processing_util_jni.so": "f0e4611db0d6b68942d8ba6977519f3dd1cdbffa87b7fc16d8006696ba954af4",
+    "lib/arm64-v8a/libjingle_peerconnection_so.so": "3d6ab1175f5b1756f9bca11e7b9b6849ea5581c6e4a57ad360febc17dc8e4a45",
+    "lib/arm64-v8a/libolm.so": "3daa7a3a4142a58ec7507c2e2d123fb050f7da377b94775341c67572be029781",
+    "lib/arm64-v8a/libsqlcipher.so": "bc85746647ce4ea5f390eccd61e5236fbd11786a91802877b9fdbbb66a55192d",
+    "lib/arm64-v8a/libsurface_util_jni.so": "6cb2eac3c68e6a82ce2a5ea5aba86749eb8c609914392e125f6cdfbc208992f8",
+    "lib/arm64-v8a/libzxprotect.so": "af596cd5f46a6382039ebd16c617a160c322a1b5162723a5463f8017b9cd9772"
+  },
+  "changed_native_libraries": [
+    "lib/arm64-v8a/libapp.so"
+  ],
+  "source_final_native_identical": true,
+  "matrix_symbol_contract_unchanged": true,
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/receipt.json",
+      "sha256": "da5cc60355e33182d6065773b4e1104052fbb370c1c62a0efad909e7dd350ed2",
+      "bytes": 910
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/steps.tsv",
+      "sha256": "bbda743787e21c671ed1b310de738808608ebe2d29ff0aa0ba8bf0064a4b42fd",
+      "bytes": 321
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/source-build.log",
+      "sha256": "c2a100a5135c6f44cfe2e32238554d85e47a5a0015977a921d7640ff6c7e2d7a",
+      "bytes": 1805
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/source-release-payload.log",
+      "sha256": "1b07b6238c545bd180d70cf793bb062b0018c78d713a86e3408926830f850946",
+      "bytes": 149
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/source-assets.log",
+      "sha256": "b821b69f0ec81ed5a959ee16301aeaf9d4d17e8fc88433738f3ff8475cfc5221",
+      "bytes": 243
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/signature.log",
+      "sha256": "44b35da159f4a02db61632274fe0f11bd982f3b46ba1ced910b58a9115d7d415",
+      "bytes": 1002
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/alignment.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/identity.log",
+      "sha256": "8289d42691b84ae66d58b2f2301fadbe35b80363a79a87b432079261ed5db6ea",
+      "bytes": 9006
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/final-release-payload.log",
+      "sha256": "dc1acccf2f1292fbbf88837f445fa48da50cb81d07acba72f6528665c981275a",
+      "bytes": 149
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/final-assets.log",
+      "sha256": "04bc682c1b4fafebacdd375c76eb7df4ab9d9ed84f798fdc4793f6c4f9a2a908",
+      "bytes": 243
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/rebuild-verification.log",
+      "sha256": "dfd628b45d211750928b6eae7bdefefc573e2ddf73e28c065764da9540160988",
+      "bytes": 1368
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/frozen-after.log",
+      "sha256": "dc4d34dbb9c68fce117994d62e5834e3ffd8a09e328d9d6859d185f236ffe166",
+      "bytes": 206
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/native-inspection-receipt.json",
+      "sha256": "ebc684044e730351cbb1fc493d44a9d5af4e537a0c13aa766aceecc1a8915cf7",
+      "bytes": 79
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/android2216-release/native-static.json",
+      "sha256": "49a0531b6dedcd196373309de54f3d33853405b91029e6784ff8823cd61e1b88",
+      "bytes": 975859
+    }
+  ],
+  "limitations": [
+    "Existing libcrypto ELF16KiB/RELRO risk remains; native inspector exit1 is retained, not 16KiBPASS",
+    "Release APK not installed on ARM64 phone; emulator used matching-source Debug"
+  ]
+}

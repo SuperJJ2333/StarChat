@@ -1,0 +1,58 @@
+{
+  "status": "pass",
+  "binding": {
+    "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+    "source_manifest_sha256": "b07dfdc5a4632f338f27562ea32dd45e280c01fe4da7e4313be1bdb2d98a301f",
+    "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+    "artifact_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039"
+  },
+  "reused": true,
+  "receipt": {
+    "source_commit": "544b61b63f30273d3fd2e198d11bd809a8fd0090",
+    "exit_code": 0,
+    "started_utc": "2026-10-16T01:01:27.5790005+00:00",
+    "completed_utc": "2026-10-16T01:17:36.3791985+00:00",
+    "native_sha256": {
+      "task-3b-sqlcipher-build/libsqlcipher.dll": "7a1c979c4c64437280a3c50d6b906388beafd0f3c0772494e72de9a7a0bef1da",
+      "task-3a-windows-olm/libolm.dll": "3a6106dd77a1df25d4a4aeda742dc878612f70709e5229b5c5d7b16562f46c73"
+    },
+    "native_versions": "Olm3.2.15 / SQLCipher4.10.0 community / SQLite3.50.4",
+    "command": "flutter test --no-pub --concurrency=2 --reporter=json",
+    "working_directory": "Owned V:/apps/mobile_flutter mapping, removed after gate",
+    "scope": "Corrected host environment matches prior verified runtime hashes; actual Android/iOS native gates remain separate",
+    "lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+  },
+  "summary": {
+    "counts": {
+      "success": 6038,
+      "skip": 9
+    },
+    "errors": [],
+    "done": {
+      "success": true,
+      "type": "done",
+      "time": 963906
+    }
+  },
+  "mobile_diff": [],
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-16/super-emoji-autoplay/full-host/receipt.json",
+      "sha256": "5fd7dfb12b22293867a00249ecc3c7cd7393c469386c69653a461a04c665fd00",
+      "bytes": 899
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/super-emoji-autoplay/full-host/summary.json",
+      "sha256": "94afc6aee18309a283db271a81ab784b0e88a305c46954c36a9417f9190b80cb",
+      "bytes": 160
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-16/super-emoji-autoplay/full-host/flutter-full.log",
+      "sha256": "b20078963b4068db2fb2a8f1e7e24bcf63ba223a642f9feb81366653d427ceaf",
+      "bytes": 7236060
+    }
+  ],
+  "limitations": [
+    "Global verify.ps1 lacks local .env; not all-repository PASS"
+  ]
+}

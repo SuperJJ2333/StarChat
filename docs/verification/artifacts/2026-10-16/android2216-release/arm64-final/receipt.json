@@ -1,0 +1,18 @@
+{
+  "mode": "standard-arm64-release",
+  "build": 2216,
+  "mobile_manifest_sha256": "b07dfdc5a4632f338f27562ea32dd45e280c01fe4da7e4313be1bdb2d98a301f",
+  "pubspec_lock_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+  "status": "PASS",
+  "source_commit": "35f59abbb6bdaa0fe6c826aaff904130bb6dea76",
+  "started_utc": "2026-10-16T02:34:49.8420558+00:00",
+  "completed_utc": "2026-10-16T02:44:06.8894769+00:00",
+  "target": "lib/main.dart",
+  "version": "0.4.47",
+  "package": "com.liuhetong.mobile",
+  "abi": "arm64-v8a",
+  "signer_sha256": "75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff",
+  "final_apk_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039",
+  "final_apk_bytes": 73262170,
+  "scope": "ARM64 Release entry point; source build/rebuild/sign/semantic checks only; installation and native runtime are separate."
+}

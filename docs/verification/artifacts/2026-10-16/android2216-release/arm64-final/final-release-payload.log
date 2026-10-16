@@ -1,0 +1,7 @@
+{
+  "abis": [
+    "arm64-v8a"
+  ],
+  "size_bytes": 73262170,
+  "sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039"
+}

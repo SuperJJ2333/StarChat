@@ -1,5 +1,10 @@
 # 当前工作状态
 
+## 2026-10-16 Android2216正式包及普通更新已发布
+
+11:04:15+08发布Android0.4.47+2216，固定75b31签名ARM64 APK SHA db914f66…41039/73,262,170B，包含五项体验优化与超级表情自动播放。20构建门禁全0、共享6038PASS/9SKIP复用、实包与发布SPEC→QUALITY通过；官网/CDN与route/audit后验PASS，Android三键审计、iOS2215/min3/35容器保持。备份0700，旧APK保留，自建隧道已关闭。既有libcrypto16KiB与ARM64真机/客户端弹窗实测缺口保留。见[任务](tasks/2026-10-16-android2216-release.md)与[报告](../verification/2026-10-16-android2216-release.md)。
+
+
 ## 2026-10-16 超级表情自动播放已修复并安装模拟器
 
 用户新要求覆盖上一轮点击播放。源码544b61b6恢复可见自动播放，保留静态fallback、共享解码与后台/离屏控制；60专项、analyze0、全量6038PASS/9SKIP/0FAIL、SPEC→QUALITY及交付审查通过。固定签名0.4.47+2216 autoplay修订Debug SHA21553235…8ceab5已保数据install-r至5556，实际同3条消息旧0→新40帧/2秒、后台/离屏0、恢复50，3订阅共享2资源当前帧0.5MiB。新iOS unsigned SHA df32ef4f…4bd6d已完整验包并复制Downloads；device job成功，输入未变的重复存储job取消并保留旧21PASS/2ERROR限制。未改正式渠道/弹窗；签名iPhone与低内存真机Profile仍待。见[任务](tasks/2026-10-16-super-emoji-autoplay.md)和[报告](../verification/2026-10-16-super-emoji-autoplay.md)。

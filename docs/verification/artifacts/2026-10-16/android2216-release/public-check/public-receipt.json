@@ -1,0 +1,180 @@
+{
+  "status": "WORKSTATION_PUBLIC_LIGHTWEIGHT_PASS",
+  "started_utc": "2026-10-16T03:04:27.463229+00:00",
+  "completed_utc": "2026-10-16T03:04:30.011875+00:00",
+  "checker_sha256": "ce361f486496c86c6b98ff77f75e0fa93f727a4e5e9f86b2af221741b59ac8ac",
+  "socks_loopback_port": 43825,
+  "owned_tunnel_pid": 337672,
+  "root_publish_go": "PUBLISH_PASS 2026-10-16T03:04:15.545324Z freeze5df015a69df956450a6e1d8ec9c728324fce9c3bfa1be2863f18385aa3d551a6",
+  "expected_sha256": "db914f66229cffa79825954200845ac841fd10486c77fb8ecce94dbef7b41039",
+  "expected_bytes": 73262170,
+  "checks": {
+    "all_transport_tls_verified": true,
+    "direct_apk_head_identity": true,
+    "cdn_apk_head_identity": true,
+    "cdn_cors": true,
+    "registry_identity": true,
+    "registry_mime_no_store": true,
+    "download_page": true,
+    "ios_manifest_unchanged_identity": true,
+    "android_unauthorized_401": true,
+    "ios_unauthorized_401": true,
+    "legacy_unauthorized_401": true
+  },
+  "requests": [
+    {
+      "name": "direct_apk",
+      "url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+      "method": "HEAD",
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "effective_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "73262170",
+        "content-type": "application/octet-stream",
+        "etag": "\"6ad193a3-45de45a\"",
+        "last-modified": "Fri, 16 Oct 2026 03:01:55 GMT"
+      },
+      "download_bytes": 0,
+      "elapsed_seconds": 0.75,
+      "curl_error_present": false
+    },
+    {
+      "name": "cdn_apk",
+      "url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+      "method": "HEAD",
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "effective_url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.47-build2216-arm64.apk",
+      "ssl_verify_result": 0,
+      "headers": {
+        "content-type": "application/octet-stream",
+        "content-length": "73262170",
+        "cache-control": "no-store",
+        "etag": "\"6ad193a3-45de45a\"",
+        "last-modified": "Fri, 16 Oct 2026 03:01:55 GMT",
+        "x-cache": "Miss from cloudfront",
+        "access-control-allow-origin": "https://www.liuhetong888.com"
+      },
+      "download_bytes": 0,
+      "elapsed_seconds": 2.547,
+      "curl_error_present": false
+    },
+    {
+      "name": "registry",
+      "url": "https://www.liuhetong888.com/downloads/android-release.json",
+      "method": "GET",
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "effective_url": "https://www.liuhetong888.com/downloads/android-release.json",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "372",
+        "content-type": "application/json",
+        "etag": "\"6ad1942a-174\"",
+        "last-modified": "Fri, 16 Oct 2026 03:04:10 GMT"
+      },
+      "download_bytes": 372,
+      "elapsed_seconds": 0.75,
+      "curl_error_present": false,
+      "body_sha256": "525f36106048d8ed2c8a2bcff4d612350fc3b407fcfdfc1f0b49c44277bb0443"
+    },
+    {
+      "name": "download",
+      "url": "https://www.liuhetong888.com/download",
+      "method": "GET",
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "effective_url": "https://www.liuhetong888.com/download",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "9245",
+        "content-type": "text/html",
+        "etag": "\"6ad1942a-241d\"",
+        "last-modified": "Fri, 16 Oct 2026 03:04:10 GMT"
+      },
+      "download_bytes": 9245,
+      "elapsed_seconds": 0.75,
+      "curl_error_present": false,
+      "body_sha256": "a79c2eb04672964afa74b5be7712f79fe6340bb14d7f594315e24f85ae824dea"
+    },
+    {
+      "name": "ios_manifest",
+      "url": "https://www.liuhetong888.com/downloads/ios/manifest.plist",
+      "method": "GET",
+      "curl_exit_code": 0,
+      "http_status": 200,
+      "effective_url": "https://www.liuhetong888.com/downloads/ios/manifest.plist",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "793",
+        "content-type": "application/xml",
+        "etag": "\"6ad0d27b-319\"",
+        "last-modified": "Thu, 15 Oct 2026 13:17:47 GMT"
+      },
+      "download_bytes": 793,
+      "elapsed_seconds": 0.172,
+      "curl_error_present": false,
+      "body_sha256": "f0c9014caf807a8a862f7fbfd64d0d14e209905879ac8b29f0c311c9c915ee16"
+    },
+    {
+      "name": "android_unauthorized",
+      "url": "https://liuhetong888.com/api/v1/app-updates/latest?platform=android",
+      "method": "GET",
+      "curl_exit_code": 0,
+      "http_status": 401,
+      "effective_url": "https://liuhetong888.com/api/v1/app-updates/latest?platform=android",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "117",
+        "content-type": "application/json"
+      },
+      "download_bytes": 117,
+      "elapsed_seconds": 0.141,
+      "curl_error_present": false
+    },
+    {
+      "name": "ios_unauthorized",
+      "url": "https://liuhetong888.com/api/v1/app-updates/latest?platform=ios",
+      "method": "GET",
+      "curl_exit_code": 0,
+      "http_status": 401,
+      "effective_url": "https://liuhetong888.com/api/v1/app-updates/latest?platform=ios",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "117",
+        "content-type": "application/json"
+      },
+      "download_bytes": 117,
+      "elapsed_seconds": 0.11,
+      "curl_error_present": false
+    },
+    {
+      "name": "legacy_unauthorized",
+      "url": "https://liuhetong888.com/api/v1/app-updates/latest",
+      "method": "GET",
+      "curl_exit_code": 0,
+      "http_status": 401,
+      "effective_url": "https://liuhetong888.com/api/v1/app-updates/latest",
+      "ssl_verify_result": 0,
+      "headers": {
+        "cache-control": "no-store",
+        "content-length": "117",
+        "content-type": "application/json"
+      },
+      "download_bytes": 117,
+      "elapsed_seconds": 0.14,
+      "curl_error_present": false
+    }
+  ],
+  "full_installer_download": false,
+  "production_writes": false,
+  "limits": "HEAD checks access and size, not APK bytes/signature. Registry SHA is advertised metadata. Authenticated platform/minima settings require root route/audit receipt; 401 does not reveal them."
+}
