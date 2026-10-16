@@ -119,13 +119,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "initialize" -> {
-                        // 第二段初始化：preInit 已在 Application.onCreate（同意前安全）完成。
-                        try {
-                            PushManager.getInstance().initialize(this)
-                            result.success(true)
-                        } catch (_: Exception) {
-                            result.success(false)
-                        }
+                        // Native boundary also checks persisted consent; first consent
+                        // after startup must run preInit before registering a CID.
+                        result.success(GetuiConsent.initialize(this))
                     }
                     "getCid" -> result.success(GetuiBridgeState.currentCid())
                     "isPushEnabled" -> {

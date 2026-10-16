@@ -894,7 +894,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 通道优先级与隐私门槛：
   /// - Android 个推通道（getui-bridge，自建网关丢弃一切业务内容，通知只
   ///   显示"您有一条新消息/您有一个来电"）：要求①Android ②用户已持久化
-  ///   同意隐私政策（同意前 SDK 仅 preInit，无采集无联网）③网关地址已
+  ///   同意隐私政策（原生 preInit/initialize 均检查同意）③网关地址已
   ///   编译注入；CID 即 pushkey（Matrix 设备级绑定，登出=删 pusher，
   ///   绝不做手机号/用户名 alias）。
   /// - FCM/Sygnal 通道（凭据缺失时 Noop 降级，Matrix 同步通道照常）。

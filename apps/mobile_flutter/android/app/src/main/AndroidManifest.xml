@@ -68,8 +68,8 @@
         <!-- 个推推送（隐私合规配置，docs/PUSH_SETUP.md）：
              客户端只含公开 AppID（占位符来自 app/build.gradle.kts）；
              AppKey/AppSecret/签名密钥只存服务端 getui-bridge 环境变量。
-             合规：preInit 于 Application（同意前、不采集不联网），
-             initialize 由 Dart 在用户同意隐私政策后经 chatflow/getui 触发；
+             合规：preInit 与 initialize 均检查持久化隐私同意；
+             首次同意后经 chatflow/getui 补齐 preInit 再注册 CID；
              严禁调用个推的别名/标签绑定接口（不以手机号/用户名做标识）。 -->
         <meta-data
             android:name="GETUI_APPID"

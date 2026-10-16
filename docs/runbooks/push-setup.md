@@ -27,12 +27,16 @@
 - 客户端：`app_id=com.liuhetong.mobile.getui`，
   `data.url=<LIUHETONG_GETUI_URL>/_matrix/push/v1/notify?provider=getui`，
   pushkey=CID（**Matrix 设备级绑定**；登出/切号即删 pusher；
-  **从不** bindAlias/setTag）。隐私门槛：Application 仅 preInit（同意前
-  安全态），initialize 仅在登录勾选《隐私政策》成功后（持久化键
-  `privacy.agreement_accepted.v1`）由 Dart 触发；未同意不影响聊天。
+  **从不** bindAlias/setTag）。隐私门槛：preInit 和 initialize 均在
+  持久化同意后调用。Application 读取既有同意状态才执行 preInit；首次
+  同意后 Dart 调用原生入口，原生再次核验并按 preInit → initialize 执行。
+  持久化键仍是 `privacy.agreement_accepted.v1`（Android legacy prefs
+  文件 FlutterSharedPreferences 内带 flutter. 前缀），读取异常拒绝初始化。
+  本项只描述应用主动调用；不将它等同于全部第三方组件无网络行为的实测。
 - 权限红线：个推 SDK 合并的位置/READ_PHONE_STATE/QUERY_ALL_PACKAGES/
-  GET_TASKS/WIFI/蓝牙/存储等采集类权限已在 manifest 以 tools:node=remove
-  全部剥离；`usesCleartextTraffic=false` 以 tools:replace 压制 SDK 的 true。
+  GET_TASKS/WIFI/蓝牙采集类权限已在 manifest 以 tools:node=remove 剥离；
+  相册/保存媒体用途的分版本存储权限仍保留，因此不能宣称 SDK 无法读取
+  任何媒体。`usesCleartextTraffic=false` 以 tools:replace 压制 SDK 的 true。
 - 客户端只含**公开 AppID**（gradle 占位符 bL4tz01WK57ym4PVBGCUS1）；
   **AppKey/AppSecret(MasterSecret) 仅存服务器 .env**（chmod 600，
   绝不入仓库——tests/mobile/test_getui_privacy.py 全仓库扫描断言）。

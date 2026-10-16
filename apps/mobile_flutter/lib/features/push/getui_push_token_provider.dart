@@ -9,8 +9,8 @@ import 'push_token_provider.dart';
 ///
 /// 隐私门槛（构造前由组合根检查，本类不重复判断）：
 /// 1. 仅 Android；
-/// 2. 用户已持久化同意隐私政策（PrivacyConsentStore）——同意前 SDK 只
-///    处于 preInit 状态（无采集无联网）；
+/// 2. 用户已持久化同意隐私政策（PrivacyConsentStore）——原生入口也会
+///    核验此状态，同意后才调用 preInit 和 initialize；
 /// 3. 未同意/初始化失败 → token 为 null，不注册 pusher，聊天不受影响。
 ///
 /// CID 即 Matrix pusher 的 pushkey（设备级绑定；登出=删 pusher，
@@ -37,7 +37,7 @@ final class GetuiPushTokenProvider implements PushTokenProvider {
   bool? _initResult;
   StreamSubscription<dynamic>? _events;
 
-  /// 第二段初始化（preInit 已在 Application 完成且无需同意）。
+  /// 原生入口在同意后保证 preInit 已完成，再执行 CID 注册。
   /// 必须在持久化同意之后调用。失败后置 false，允许后续重试。
   Future<bool> initialize() async {
     if (_initResult == true) return true;
