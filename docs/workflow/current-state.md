@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-16 超级表情自动播放已修复并安装模拟器
+
+用户新要求覆盖上一轮点击播放。源码544b61b6恢复可见自动播放，保留静态fallback、共享解码与后台/离屏控制；60专项、analyze0、全量6038PASS/9SKIP/0FAIL、SPEC→QUALITY及交付审查通过。固定签名0.4.47+2216 autoplay修订Debug SHA21553235…8ceab5已保数据install-r至5556，实际同3条消息旧0→新40帧/2秒、后台/离屏0、恢复50，3订阅共享2资源当前帧0.5MiB。新iOS unsigned SHA df32ef4f…4bd6d已完整验包并复制Downloads；device job成功，输入未变的重复存储job取消并保留旧21PASS/2ERROR限制。未改正式渠道/弹窗；签名iPhone与低内存真机Profile仍待。见[任务](tasks/2026-10-16-super-emoji-autoplay.md)和[报告](../verification/2026-10-16-super-emoji-autoplay.md)。
+
 ## 2026-10-16 2215五项体验优化：2216 Debug已验证，iOS待匹配签名真机验收
 
 用户批准执行与模拟器 Debug；工作树 im-reliability，分支 codex/mobile-experience-2216-20261016，候选 0.4.47+2216。五项实现及整分支规格→质量审查完成；Android main Debug 已保数据安装，实际相册发送 9 JPEG + GIF + MP4，冷重启后 11 条均服务端 ACK、唯一消息/事务 ID，无 SDK 重复本地回声，视频播放通过。共享全量修正环境后 6035 PASS/9 SKIP/2夹具ERROR，测试-only修复后18项PASS；原全量退出1保留，verify因缺.env不完整。原生聚合初轮失败已隔离host/live binding，修订5用例设备包27b00b9f完整驱动PASS，之后恢复实际main并再次核验11ACK。iOS未签名IPA成功；21原生PASS/2保护目录ERROR，另同源能力探针4PASS/4SKIP验证模拟器缺DataProtection，真实iPhone仍待。用户固定原 APNs Team HY9Q7Q35S5；匹配回签、真实通知和跨Team保数据升级待验。05:27只读确认正式两端仍2215/min3；本任务没有发布2216或更改弹窗。详见[任务](tasks/2026-10-16-mobile-experience-2216.md)及[报告](../verification/2026-10-16-mobile-experience-2216.md)。
