@@ -45,3 +45,13 @@
 | D1重建安装 | 成品/安装收据/被动运行通过 | 正式发布未授权；无iOS包 |
 
 构建7分2.772秒、最终全量12分12.880秒、安装启动21.059秒；前序返工及计时见报告/progress。必要本地安全检查仍可能显示初始加载；早期队列仅文字。HTML全量6项既有基线失败、verify缺.env未启动、P3诊断归因延期均在报告说明。无运行命令或自有映射/服务；保留工作树及APK，不合并、不发布、不清数据。
+
+## 2026-10-17 用户验收反馈：S1冷启动加载感未达标
+
+用户反馈2218冷启动仍显示全屏加载，要求参考其他IM分析原因。本轮只读核实模拟器version0.4.49/2218；源码7747e54a（产品c29597e0）。不将上一轮自动通过等同用户验收通过，S1体验验收重新记为FAIL_USER_REPORT。
+
+源码确认：InstallationStartupGate.await widget.start()完成前不展示实际child，1秒显示spinner，3秒显示阶段文案（正在启动畅聊/正在打开本地聊天）。main.startApplication仍await openStartupMatrixClient→MatrixClientFactory.create→initializeClient。initializeClient只传waitForFirstSync:false，SDK默认waitUntilLoadCompletedLoaded:true，仍await设备密钥/rooms/accountData/discovery，并此前await加密初始化。因此2218主要解耦了后段恢复，未将独立首屏缓存展示移出前段整客户端初始化。启动门测试33/71附近还断言等待时应显示加载，故6075PASS不证明用户要求的无业务整页加载。
+
+未对各阶段作新设备计时，不把结构性阻塞推断成某一操作的毫秒占比。参考官方TDLib异步缓存与增量更新（https://core.telegram.org/tdlib/getting-started）、Matrix/Element X首屏最小数据+后台扩展（https://www.matrix.org/blog/2023/09/matrix-2-0/）、Android本地数据源驱动UI（https://developer.android.com/topic/architecture/data-layer/offline-first）。不声称知道微信/WhatsApp闭源内部实现。
+
+下一可执行方向：拆分最小账号安全检查/有界加密首屏投影与完整SDK恢复，首页不依赖后者；本地快照必须按账号/安装代次隔离并在退出撤销时失效。增加从真实应用入口、持有慢SDK恢复的验收：已有缓存直接显示真实列表，可导航进房/滚动，文字持久排队，不出现业务全屏加载。量测冷进程→首个缓存行可交互，而非只测am start或最终截图。不可仅删除文案、延长启动屏、展示不可交互截图，或盲目把SDK默认等待开关设false。

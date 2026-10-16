@@ -1,5 +1,10 @@
 # 当前工作状态
 
+## 2026-10-17 首屏本地投影修正实施中（2218冷启动体验未达标）
+
+用户报告2218仍有整页加载并明确批准四项修正：最小身份/密钥检查后有界加密缓存直接交互、完整SDK后台恢复、入房缓存滚动/文字持久待发、真实main入口延迟恢复验收。当前只读研究确认外层启动门及全量房间读取仍阻塞。复用interactive-cache-startup树7747e54a，尚未产生新包；2218安装事实保持，S1用户体验记FAIL_USER_REPORT。见[续办任务](tasks/2026-10-17-startup-local-projection.md)。
+
+
 ## 2026-10-16 交互缓存启动及入房：2218 Debug已安装
 
 用户批准实施。独立工作树interactive-cache-startup，产品源码c29597e0；首页缓存可导航、房间有界缓存与可滚动恢复、文字持久待发，必要身份/密钥检查保留。6075PASS/9SKIP/0FAIL、fullanalyze0、独立SPEC→QUALITY通过。固定75b31签名0.4.49+2218 x86_64常规重建成品SHAe5de14ae…6115a6/125983066B已于23:19+08保数据install-r至5556；UID/首次安装/设备APK哈希确认，启动及被动检查通过。人工冷启/滚动/发送待用户自行验收，未发布正式渠道。详见[任务](tasks/2026-10-16-interactive-cache-startup.md)；完整[验证报告](C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat/docs/verification/2026-10-16-interactive-cache-startup.md)。
