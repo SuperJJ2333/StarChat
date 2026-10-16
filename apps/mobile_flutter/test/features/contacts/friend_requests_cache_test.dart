@@ -213,6 +213,7 @@ void main() {
     final response = Completer<http.Response>();
     final api = await _client((_) => response.future,
         matrixUserId: '@bea:example', storage: delayedStorage);
+    delayedStorage.delayReads = true;
     FriendRequestSnapshotStores.shared = InMemoryFriendRequestSnapshotStore(
         FriendRequestSnapshot(
             scope: 'matrix:@alice:example',
@@ -295,10 +296,11 @@ void main() {
 
 final class _DelayedSessionReadStore extends fixtures.MemoryStore {
   final release = Completer<void>();
+  bool delayReads = false;
 
   @override
   Future<String?> read(String key) async {
-    await release.future;
+    if (delayReads) await release.future;
     return super.read(key);
   }
 }
