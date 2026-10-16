@@ -255,6 +255,14 @@ abstract class DatabaseApi {
   /// Restore required local room metadata without optional history repair.
   Future<List<Room>> getCachedRoomList(Client client) => getRoomList(client);
 
+  /// Bounded retained startup projection. Unsupported stores fall back to normal init.
+  Future<List<Room>?> getStartupRoomList(Client client,
+          {int limit = 40}) async =>
+      null;
+
+  Future<Map<String, BasicEvent>> getStartupAccountData(Client client) async =>
+      {};
+
   /// Optional local preview repair after the cached room list is published.
   Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
       {bool Function()? isCurrent}) async {}

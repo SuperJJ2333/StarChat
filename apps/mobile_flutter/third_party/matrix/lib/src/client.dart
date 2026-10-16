@@ -1873,6 +1873,58 @@ class Client extends MatrixApi {
     return event;
   }
 
+  final Set<String> startupAccountDataTypes = {'m.direct'};
+  final Set<String> startupRoomAccountDataTypes = {
+    'm.tag',
+    'm.marked_unread',
+    'm.fully_read'
+  };
+  final Set<String> startupStateEvents = {
+    EventTypes.RoomName,
+    EventTypes.RoomAvatar,
+    EventTypes.Encryption,
+    EventTypes.RoomCanonicalAlias,
+    EventTypes.RoomTombstone,
+    EventTypes.RoomCreate,
+    EventTypes.RoomPowerLevels,
+    EventTypes.RoomJoinRules,
+    'm.room.history_visibility',
+  };
+  Completer<void>? _localCacheCompleter;
+  Future<void> _initializationCompleted = Future<void>.value();
+  bool _localCacheFirst = false;
+  Future<void>? _startupBackgroundResume;
+  final _startupDisposed = Completer<void>();
+  int _startupInitializationGeneration = 0;
+  Future<void> get localCacheReady =>
+      _localCacheCompleter?.future ?? Future<void>.value();
+  Future<void> get initializationCompleted => _initializationCompleted;
+  bool get isInitializationPending => _localCacheFirst;
+
+  /// Restore a safe retained local projection before optional full SDK recovery.
+  /// Login and recovery without a retained Olm account keep the normal barrier.
+  Future<void> initLocalCache({Future<void>? resumeBackground}) {
+    if (_initLock || _disposed || _localCacheFirst) {
+      return Future<void>.error(
+          StateError('Client startup is already active or disposed'));
+    }
+    _localCacheFirst = true;
+    _startupBackgroundResume = resumeBackground;
+    final ready = _localCacheCompleter = Completer<void>();
+    final generation = ++_startupInitializationGeneration;
+    _initializationCompleted = init(waitForFirstSync: false).then((_) {
+      if (_disposed || generation != _startupInitializationGeneration) {
+        throw StateError('Client startup revoked');
+      }
+      if (!ready.isCompleted) ready.complete();
+    }, onError: (Object error, StackTrace stack) {
+      if (!ready.isCompleted) ready.completeError(error, stack);
+      Error.throwWithStackTrace(error, stack);
+    }).whenComplete(() => _localCacheFirst = false);
+    unawaited(_initializationCompleted.catchError((Object _) {}));
+    return ready.future;
+  }
+
   /// Sets the user credentials and starts the synchronisation.
   ///
   /// Before you can connect you need at least an [accessToken], a [homeserver],
@@ -2128,10 +2180,92 @@ class Client extends MatrixApi {
             encryption?.pickledOlmAccount,
           );
         }
-        userDeviceKeysLoading = database
-            .getUserDeviceKeys(this)
-            .then((keys) => _userDeviceKeys = keys);
+        final startupGeneration = _startupInitializationGeneration;
+        final startupIdentity = (this.userID, deviceID, homeserver);
+        bool startupCurrent() =>
+            !_disposed &&
+            startupGeneration == _startupInitializationGeneration &&
+            startupIdentity == (this.userID, deviceID, homeserver) &&
+            identical(this.database, database);
+        var projectedRooms = const <Room>[];
+        final projectedStateKeys = <String, Set<String>>{};
+        final projectedAccountKeys = <String, Set<String>>{};
+        final projectedHistory = <String, int>{};
+        if (_localCacheFirst && olmAccount != null && encryptionEnabled) {
+          final projection = await database.getStartupRoomList(this);
+          final localAccount = await database.getStartupAccountData(this);
+          if (startupCurrent()) _accountData = localAccount;
+          if (!startupCurrent()) throw StateError('Client startup revoked');
+          if (projection != null && projection.isNotEmpty) {
+            projectedRooms = List<Room>.of(projection, growable: false);
+            for (final room in projection) {
+              projectedStateKeys[room.id] = {
+                for (final type in room.states.entries)
+                  for (final key in type.value.keys) '${type.key}|$key'
+              };
+              projectedAccountKeys[room.id] = room.roomAccountData.keys.toSet();
+              projectedHistory[room.id] = room.historyGeneration;
+            }
+            _rooms = projection;
+            _sortRooms();
+            _localCacheCompleter?.complete();
+            // Publish local objects before starting the full-store work.
+            final resume = _startupBackgroundResume;
+            if (resume != null) {
+              await Future.any([resume, _startupDisposed.future]);
+            } else {
+              await Future<void>.delayed(Duration.zero);
+            }
+            if (!startupCurrent()) throw StateError('Client startup revoked');
+          }
+        }
+        userDeviceKeysLoading = database.getUserDeviceKeys(this).then((keys) {
+          if (!startupCurrent()) throw StateError('Client startup revoked');
+          _userDeviceKeys = keys;
+        });
+        if (projectedRooms.isNotEmpty) await userDeviceKeysLoading;
         roomsLoading = database.getCachedRoomList(this).then((rooms) {
+          if (!startupCurrent()) throw StateError('Client startup revoked');
+          if (projectedRooms.isNotEmpty) {
+            // The projected objects own active timelines and any local changes.
+            // Full loading contributes only rooms not already resident.
+            final retained = {for (final room in _rooms) room.id: room};
+            for (final restored in rooms) {
+              final live = retained[restored.id];
+              if (live == null ||
+                  projectedHistory[live.id] != live.historyGeneration) {
+                continue;
+              }
+              final original = projectedStateKeys[live.id] ?? const <String>{};
+              for (final type in restored.states.entries) {
+                for (final entry in type.value.entries) {
+                  if (!original.contains('${type.key}|${entry.key}') &&
+                      live.getState(type.key, entry.key) == null) {
+                    final event = entry.value;
+                    live.setState(event is Event
+                        ? Event.fromJson(event.toJson(), live)
+                        : StrippedStateEvent.fromJson(event.toJson()));
+                  }
+                }
+              }
+              final originalAccount =
+                  projectedAccountKeys[live.id] ?? const <String>{};
+              for (final entry in restored.roomAccountData.entries) {
+                if (!originalAccount.contains(entry.key)) {
+                  live.roomAccountData
+                      .putIfAbsent(entry.key, () => entry.value);
+                }
+              }
+            }
+            rooms = [
+              for (final room in rooms)
+                if (!projectedHistory.containsKey(room.id) ||
+                    retained.containsKey(room.id))
+                  retained.remove(room.id) ?? room,
+              ...retained.values.where(
+                  (room) => !projectedRooms.any((old) => old.id == room.id))
+            ];
+          }
           _rooms = rooms;
           _sortRooms();
           final account = this.userID;
@@ -2156,12 +2290,20 @@ class Client extends MatrixApi {
           }));
         });
         _accountDataLoading = database.getAccountData().then((data) {
+          if (!startupCurrent()) throw StateError('Client startup revoked');
           _accountData = data;
           _updatePushrules();
         });
         _discoveryDataLoading = database.getWellKnown().then((data) {
+          if (!startupCurrent()) throw StateError('Client startup revoked');
           _wellKnown = data;
         });
+        if (_localCacheFirst) {
+          unawaited(roomsLoading!.catchError((Object _) {}));
+          unawaited(userDeviceKeysLoading!.catchError((Object _) {}));
+          unawaited(_accountDataLoading!.catchError((Object _) {}));
+          unawaited(_discoveryDataLoading!.catchError((Object _) {}));
+        }
         // ignore: deprecated_member_use_from_same_package
         presences.clear();
         if (waitUntilLoadCompletedLoaded) {
@@ -2171,8 +2313,10 @@ class Client extends MatrixApi {
           await _discoveryDataLoading;
         }
       }
+      if (_disposed) throw StateError('Client startup disposed');
       _initLock = false;
       onLoginStateChanged.add(LoginState.loggedIn);
+      onRoomListUpdated.add(null);
       Logs().i(
         'Successfully connected as ${userID.localpart} with ${homeserver.toString()}',
       );
@@ -2186,6 +2330,7 @@ class Client extends MatrixApi {
     } on ClientInitPreconditionError {
       rethrow;
     } catch (e, s) {
+      if (_disposed) Error.throwWithStackTrace(e, s);
       Logs().wtf('Client initialization failed', e, s);
       onLoginStateChanged.addError(e, s);
       final clientInitException = ClientInitException(
@@ -3746,6 +3891,8 @@ class Client extends MatrixApi {
   /// you can safely make this Client instance null.
   Future<void> dispose({bool closeDatabase = true}) async {
     _disposed = true;
+    _startupInitializationGeneration++;
+    if (!_startupDisposed.isCompleted) _startupDisposed.complete();
     await abortSync();
     await encryption?.dispose();
     _encryption = null;

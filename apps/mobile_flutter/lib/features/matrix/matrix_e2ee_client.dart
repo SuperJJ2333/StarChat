@@ -118,6 +118,10 @@ abstract interface class MatrixSessionGateway {
   Future<void> clearLocalChatData();
 }
 
+abstract interface class MatrixInitializationGateway {
+  Future<void> get initializationCompleted;
+}
+
 abstract interface class MatrixE2eeClient
     implements
         MatrixSessionGateway,
@@ -2067,10 +2071,8 @@ final class MatrixRoomLease
           unawaited(() async {
             Timeline? hydrated;
             try {
-              hydrated = await room.getTimeline(onUpdate: onUpdate);
-              // SDK getTimeline decrypts its own default thirty rows. Retry the
-              // captured forty in the retained subscription, including its tail.
-              await timeline.hydrateCachedEvents(cachedEvents,
+              Future<void> hydrateLocal() => timeline.hydrateCachedEvents(
+                  cachedEvents,
                   retainedFragments: () {
                     final context = capability._contextTimeline;
                     return context == null ? const <Timeline>[] : [context];
@@ -2084,6 +2086,13 @@ final class MatrixRoomLease
                       identity ==
                           (client.userID, client.deviceID, client.homeserver) &&
                       generation == room.historyGeneration);
+              // The retained Olm identity is already validated. Decrypt only
+              // these forty cached rows with local keys before full recovery.
+              if (client.isInitializationPending) await hydrateLocal();
+              await client.initializationCompleted;
+              capability._ensureActive();
+              hydrated = await room.getTimeline(onUpdate: onUpdate);
+              await hydrateLocal();
               await _enableSdkResidentWindow(timeline);
               capability._ensureActive();
               if (generation != room.historyGeneration) {
@@ -6665,6 +6674,7 @@ final class _OutgoingSession {
 
 final class MatrixSdkE2eeClient
     implements
+        MatrixInitializationGateway,
         MatrixE2eeClient,
         MatrixMediaUploadLimitGateway,
         MatrixRecoveryClient,
@@ -8508,6 +8518,10 @@ final class MatrixSdkE2eeClient
   /// Recovery key is exposed only to the caller so it can be written to the
   /// platform secure store; it is never sent to the business API.
   String? get lastRecoveryKey => _lastRecoveryKey;
+  @override
+  Future<void> get initializationCompleted =>
+      _client?.initializationCompleted ?? Future<void>.value();
+
   @override
   bool get isLoggedIn =>
       _client?.isLogged() ??

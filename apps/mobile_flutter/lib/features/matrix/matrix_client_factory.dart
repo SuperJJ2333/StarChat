@@ -76,6 +76,8 @@ final class MatrixClientFactory {
     required this.homeserver,
     Future<String> Function()? supportDirectoryPath,
     MatrixClientOpener? opener,
+    MatrixClientOpener? startupOpener,
+    Future<void>? startupBackgroundResume,
     MatrixClientDisposer? disposer,
     MatrixDatabaseDeleter? databaseDeleter,
     MatrixClientMigrator? clientMigrator,
@@ -86,6 +88,15 @@ final class MatrixClientFactory {
     this.diagnosticHasher,
   })  : supportDirectoryPath = supportDirectoryPath ?? _defaultSupportPath,
         opener = opener ?? _openPersistentClient,
+        startupOpener = startupOpener ??
+            opener ??
+            (({required clientName, required databasePath, required cipher}) =>
+                _openPersistentClient(
+                    clientName: clientName,
+                    databasePath: databasePath,
+                    cipher: cipher,
+                    localCacheFirst: true,
+                    startupBackgroundResume: startupBackgroundResume)),
         disposer = disposer ?? _disposeClient,
         databaseDeleter = databaseDeleter ?? _deleteDatabase,
         clientMigrator = clientMigrator ?? _migrateHomeserver,
@@ -110,6 +121,7 @@ final class MatrixClientFactory {
   final Uri homeserver;
   final Future<String> Function() supportDirectoryPath;
   final MatrixClientOpener opener;
+  final MatrixClientOpener startupOpener;
   final MatrixClientDisposer disposer;
   final MatrixDatabaseDeleter databaseDeleter;
   final MatrixClientMigrator clientMigrator;
@@ -392,7 +404,31 @@ final class MatrixClientFactory {
     });
   }
 
-  Future<Client> create({StartupFailureObserver? onFailure}) async {
+  Future<Client> create({StartupFailureObserver? onFailure}) =>
+      _create(onFailure: onFailure);
+
+  Future<Client> createForStartup({StartupFailureObserver? onFailure}) {
+    final ready = Completer<Client>();
+    unawaited(_create(onFailure: onFailure, localReady: ready).then((client) {
+      if (!ready.isCompleted) ready.complete(client);
+    }, onError: (Object error, StackTrace stack) {
+      if (!ready.isCompleted) ready.completeError(error, stack);
+      // Late failures are owned by Client.initializationCompleted.
+    }));
+    return ready.future;
+  }
+
+  Future<Client> _create(
+      {StartupFailureObserver? onFailure,
+      Completer<Client>? localReady}) async {
+    final startupClock = Stopwatch()..start();
+    void markStartup(String phase) {
+      if (localReady != null && kDebugMode) {
+        debugPrint(
+            '[chatflow/startup] phase=$phase elapsed_ms=${startupClock.elapsedMilliseconds}');
+      }
+    }
+
     final directory = await supportDirectoryPath();
     MatrixStoredIdentitySnapshot snapshot;
     try {
@@ -446,6 +482,7 @@ final class MatrixClientFactory {
           databasePath: databasePath,
           snapshot: snapshot,
         );
+        markStartup('identity_preflight_complete');
         if (inspection.requiresAuthenticatedMigration &&
             _authorizedPlaintextScope != snapshot.scope) {
           throw const MatrixLocalIdentityPreflightException(
@@ -462,7 +499,7 @@ final class MatrixClientFactory {
           rethrow;
         }
         try {
-          client = await opener(
+          client = await (localReady == null ? opener : startupOpener)(
             clientName: clientName,
             databasePath: databasePath,
             cipher: cipher,
@@ -480,6 +517,13 @@ final class MatrixClientFactory {
       }
       try {
         await clientMigrator(client, homeserver);
+        if (localReady != null) {
+          markStartup('local_projection_ready');
+          localReady.complete(client);
+          // Keep the per-path lock until all startup work has settled.
+          await client.initializationCompleted;
+          markStartup('full_initialization_complete');
+        }
         return client;
       } catch (error) {
         notifyStartupFailure(
@@ -931,6 +975,8 @@ final class MatrixClientFactory {
     required String clientName,
     required String databasePath,
     required String cipher,
+    bool localCacheFirst = false,
+    Future<void>? startupBackgroundResume,
   }) async {
     final databaseFactory = createDatabaseFactoryFfi(
       ffiInit: SQfLiteEncryptionHelper.ffiInit,
@@ -1024,7 +1070,34 @@ final class MatrixClientFactory {
         return initializeDatabase(matrixDatabase, database.close);
       },
     );
-    return initializeClient(client);
+    return localCacheFirst
+        ? initializeStartupClient(client,
+            resumeBackground: startupBackgroundResume)
+        : initializeClient(client);
+  }
+
+  @visibleForTesting
+  static Future<Client> initializeStartupClient(Client client,
+      {Future<void>? resumeBackground}) async {
+    try {
+      client.startupAccountDataTypes.addAll(
+          {'com.changliao.emoji.vault', 'com.changliao.reminders.control'});
+      client.startupRoomAccountDataTypes.addAll({
+        'com.liuhetong.conversation.settings.v2',
+        'com.liuhetong.group_chat.settings.v1'
+      });
+      client.startupStateEvents.addAll({
+        'com.chatflow.conversation_kind',
+        'com.chatflow.direct_reservation',
+        'com.changliao.group.settings',
+        'com.changliao.group.announcement',
+      });
+      await client.initLocalCache(resumeBackground: resumeBackground);
+      return client;
+    } catch (_) {
+      await client.dispose();
+      rethrow;
+    }
   }
 
   @visibleForTesting

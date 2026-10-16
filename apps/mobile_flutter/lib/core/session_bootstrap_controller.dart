@@ -37,6 +37,7 @@ final class SessionBootstrapController extends ChangeNotifier {
     required this.business,
     required this.matrix,
     this.restoreLocalMatrixSession,
+    this.onLocalProjectionEligibility,
     this.onFailure,
     MatrixSecurityLogger? securityLogger,
     this.remoteLogoutTimeout = const Duration(seconds: 5),
@@ -57,6 +58,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   final MatrixSessionGateway matrix;
   final Future<void> Function(String? matrixUserId)? restoreLocalMatrixSession;
   final StartupFailureObserver? onFailure;
+  final void Function(bool eligible)? onLocalProjectionEligibility;
   bool canShowCachedMessages = false;
   int _generation = 0;
   Future<void>? _bootstrapFlight;
@@ -205,6 +207,18 @@ final class SessionBootstrapController extends ChangeNotifier {
           localIdentity != null &&
           localIdentity == matrix.userId;
       notifyListeners();
+      onLocalProjectionEligibility?.call(canShowCachedMessages);
+      final initializing = matrix;
+      if (initializing is MatrixInitializationGateway) {
+        try {
+          await (initializing as MatrixInitializationGateway)
+              .initializationCompleted;
+        } catch (_) {
+          // SDK recovery errors must never take the network-offline auth path.
+          throw StateError('Local Matrix initialization did not complete');
+        }
+        if (generation != _generation) return;
+      }
       final businessResult = await business.restoreSession();
       if (generation != _generation) return;
       if (businessResult == BusinessSessionRestore.absent ||

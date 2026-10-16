@@ -27,6 +27,13 @@ class _Client extends Client {
 class _EncryptedClient extends _Client {
   _EncryptedClient(super.store);
   late final crypto = _HeldLocalEncryption(client: this);
+  Completer<void>? startupRecovery;
+  @override
+  bool get isInitializationPending =>
+      startupRecovery != null && !startupRecovery!.isCompleted;
+  @override
+  Future<void> get initializationCompleted =>
+      startupRecovery?.future ?? super.initializationCompleted;
   @override
   Encryption get encryption => crypto;
   @override
@@ -67,7 +74,7 @@ void main() {
   setUpAll(SQfLiteEncryptionHelper.ffiInit);
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  for (final pin in ['none', 'before', 'during', 'hidden']) {
+  for (final pin in ['none', 'before', 'during', 'hidden', 'startup']) {
     test(
         'retained cached forty decrypt with local keys and no broadcast; pin=$pin',
         () async {
@@ -83,6 +90,7 @@ void main() {
         ..homeserver = Uri.parse('https://synthetic.test');
       final room = client.room;
       client.crypto.holdTail = pin == 'during';
+      if (pin == 'startup') client.startupRecovery = Completer<void>();
       room.setState(Event(
           room: room,
           eventId: 'encryption',
@@ -155,8 +163,23 @@ void main() {
           canDispatchNow: () => false);
       RoomMessageViewModel? anchor;
       try {
+        if (pin == 'startup') {
+          for (var i = 0; i < 100 && timeline.snapshot().length < 40; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          expect(timeline.snapshot(), hasLength(40));
+          expect(room.postLoadEntered.isCompleted, isFalse);
+          expect(client.startupRecovery!.isCompleted, isFalse);
+          client.startupRecovery!.complete();
+        }
         await room.postLoadEntered.future;
-        expect(timeline.snapshot(), hasLength(pin == 'none' ? 0 : 30));
+        expect(
+            timeline.snapshot(),
+            hasLength(pin == 'startup'
+                ? 40
+                : pin == 'none'
+                    ? 0
+                    : 30));
         if (pin != 'none') {
           controller.restoreOutboxMessage(OutboxMessage(
               localId: 'pending-local',
@@ -172,7 +195,9 @@ void main() {
         if (pin == 'hidden') {
           controller.setHiddenFilter((id, _) => id == 'encrypted-5');
         }
-        if (pin == 'before' || pin == 'hidden') controller.pinWindow();
+        if (pin == 'before' || pin == 'hidden' || pin == 'startup') {
+          controller.pinWindow();
+        }
         room.releasePostLoad.complete();
         if (pin == 'during') {
           await client.crypto.entered.future

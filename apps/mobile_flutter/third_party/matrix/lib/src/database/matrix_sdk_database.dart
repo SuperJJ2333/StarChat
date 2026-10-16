@@ -1076,6 +1076,77 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
       _loadRoomList(client, repairPreviews: false);
 
   @override
+  Future<List<Room>?> getStartupRoomList(Client client,
+      {int limit = 40}) async {
+    final sql = database;
+    if (sql == null) return null;
+    final count = limit.clamp(1, 40);
+    // SQLite may scan to sort; only this bounded result is decoded into Dart.
+    final rows = await sql.rawQuery(
+      'SELECT v FROM box_rooms WHERE length(v) <= 262144 AND json_valid(v) AND '
+      "json_extract(v, '\$.membership') IN ('join','invite','knock') "
+      "ORDER BY json_extract(v, '\$.last_event.origin_server_ts') DESC, k LIMIT ?",
+      [count],
+    );
+    final rooms = <Room>[];
+    for (final row in rows) {
+      final room = Room.fromJson(
+          Map<String, dynamic>.from(jsonDecode(row['v'] as String)), client);
+      final keys = [
+        for (final type in client.startupStateEvents.take(16))
+          TupleKey(room.id, type).toString()
+      ];
+      final placeholders = List.filled(keys.length, '?').join(',');
+      // Select only singleton state keys, not large space-child/member maps.
+      final states = await sql.rawQuery(
+          """SELECT json_extract(v, '\$.""') AS v FROM box_preload_room_states """
+          'WHERE k IN ($placeholders) AND json_valid(v) AND length(v) <= 262144 '
+          """UNION ALL SELECT json_extract(v, '\$.""') AS v FROM $_nonPreloadRoomStateBoxName """
+          'WHERE k IN ($placeholders) AND json_valid(v) AND length(v) <= 262144',
+          [...keys, ...keys]);
+      for (final state in states) {
+        final value = state['v'];
+        if (value is! String) continue;
+        final json = Map<String, dynamic>.from(jsonDecode(value));
+        room.setState(room.membership == Membership.invite
+            ? StrippedStateEvent.fromJson(json)
+            : Event.fromJson(json, room));
+      }
+      // Only the selected room's account data is materialized.
+      final accountKeys = [
+        for (final type in client.startupRoomAccountDataTypes.take(16))
+          TupleKey(room.id, type).toString()
+      ];
+      final accountRows = await sql.rawQuery(
+          "SELECT v FROM box_room_account_data WHERE k IN (${List.filled(accountKeys.length, '?').join(',')}) AND length(v) <= 65536",
+          accountKeys);
+      for (final row in accountRows) {
+        final event = BasicRoomEvent.fromJson(
+            Map<String, dynamic>.from(jsonDecode(row['v'] as String)));
+        room.roomAccountData[event.type] = event;
+      }
+      rooms.add(room);
+    }
+    return rooms;
+  }
+
+  @override
+  Future<Map<String, BasicEvent>> getStartupAccountData(Client client) async {
+    final sql = database;
+    if (sql == null) return {};
+    final keys = client.startupAccountDataTypes.take(8).toList();
+    final rows = await sql.rawQuery(
+        "SELECT k,v FROM box_account_data WHERE k IN (${List.filled(keys.length, '?').join(',')}) AND length(v) <= 262144 AND json_valid(v)",
+        keys);
+    return {
+      for (final row in rows)
+        row['k'] as String: BasicEvent(
+            type: row['k'] as String,
+            content: Map<String, dynamic>.from(jsonDecode(row['v'] as String)))
+    };
+  }
+
+  @override
   Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
           {bool Function()? isCurrent}) =>
       _restoreRoomPreviews(rooms, client, isCurrent: isCurrent);

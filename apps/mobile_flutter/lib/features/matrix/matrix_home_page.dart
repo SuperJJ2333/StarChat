@@ -213,7 +213,10 @@ final class _RoomSnapshot {
 /// short-lived UI reference, never a persistence layer or an access capability.
 final class MatrixHomeHandoff extends ChangeNotifier {
   MatrixHomeHandoff(
-      {required this.api, required this.matrix, required this.eligible})
+      {required this.api,
+      required this.matrix,
+      required this.eligible,
+      this.onPublished})
       : _epoch = api.sessionEpoch,
         _owner = matrix.sendPreparationIdentity,
         _account = matrix.userId;
@@ -221,6 +224,7 @@ final class MatrixHomeHandoff extends ChangeNotifier {
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final bool Function() eligible;
+  final void Function()? onPublished;
   final int _epoch;
   final Object _owner;
   final String? _account;
@@ -256,6 +260,7 @@ final class MatrixHomeHandoff extends ChangeNotifier {
       return;
     }
     _snapshot = snapshot;
+    onPublished?.call();
   }
 
   void invalidateIfUnavailable() {
@@ -825,6 +830,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         return;
       }
       if (!_hasClientSnapshot) setState(() => _localSnapshotFailed = true);
+      // An explicit local-cache failure must not deadlock full recovery.
+      if (widget.previewOnly) widget.startupHandoff?.onPublished?.call();
       if (!_initialSnapshotSettled) {
         _initialSnapshotSettled = true;
         _initialSnapshotFailed = true;

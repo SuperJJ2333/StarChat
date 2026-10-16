@@ -24,6 +24,7 @@ import 'core/installation_marker.dart';
 import 'core/installation_reconciler.dart';
 import 'core/installation_startup_gate.dart';
 import 'core/session_bootstrap_controller.dart';
+import 'core/outbox/outbox_store.dart';
 import 'core/session_store.dart';
 import 'core/startup_failure_metadata.dart';
 import 'core/startup_diagnostics.dart';
@@ -44,7 +45,24 @@ import 'features/settings/voice_auto_play_preferences.dart';
 import 'ui/theme/wechat_theme.dart';
 import 'ui/theme/theme_controller.dart';
 
-Future<void> main() async {
+/// Bottom-level startup adapters for isolated native/host acceptance fixtures.
+/// The production entry point, gates, composition and pages remain unchanged.
+class StartupDependencies {
+  const StartupDependencies(
+      {required this.store,
+      required this.matrixFactory,
+      required this.api,
+      required this.reconcile,
+      this.outboxStoreFactory});
+  final SecureSessionStore store;
+  final MatrixClientFactory Function(Future<void> resumeBackground)
+      matrixFactory;
+  final BusinessApiClient api;
+  final Future<InstallationResetOutcome> Function() reconcile;
+  final OutboxStore Function()? outboxStoreFactory;
+}
+
+Future<void> main({StartupDependencies? dependencies}) async {
   WidgetsFlutterBinding.ensureInitialized();
   final startupDiagnostics = StartupDiagnostics(
     spool: FileStartupDiagnosticsSpool(),
@@ -73,7 +91,8 @@ Future<void> main() async {
   WidgetsBinding.instance
       .addObserver(_StartupDiagnosticsLifecycle(startupDiagnostics));
   try {
-    await _startApplicationShell(startupDiagnostics, recordStartupFailure);
+    await _startApplicationShell(
+        startupDiagnostics, recordStartupFailure, dependencies);
   } catch (error) {
     recordStartupFailure(safeStartupFailure(error,
         boundary: StartupFailureBoundary.preferencesLoad));
@@ -81,8 +100,10 @@ Future<void> main() async {
   }
 }
 
-Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
-    StartupFailureObserver recordStartupFailure) async {
+Future<void> _startApplicationShell(
+    StartupDiagnostics startupDiagnostics,
+    StartupFailureObserver recordStartupFailure,
+    StartupDependencies? dependencies) async {
   scheduleAppStartupFirstFrame();
   installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: trimOptionalMediaMemoryCaches).install();
@@ -125,7 +146,7 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
     ));
     await voiceAutoPlayPreferences.load();
     diagnosticsSpool = SharedPreferencesChatDiagnosticSpoolStore(preferences);
-    store = SecureSessionStore();
+    store = dependencies?.store ?? SecureSessionStore();
     installationReconciler = InstallationReconciler(
       marker: SharedPreferencesInstallationMarker(
         preferences,
@@ -139,10 +160,11 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
   }
 
   Future<Widget> startApplication() async {
-    final api = BusinessApiClient(
-      baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
-      sessionStore: store,
-    );
+    final api = dependencies?.api ??
+        BusinessApiClient(
+          baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
+          sessionStore: store,
+        );
     // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
     // token 永远不出现在日志里。
     final diagnosticSalt = await observeStartupOperation(
@@ -150,11 +172,19 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         boundary: StartupFailureBoundary.diagnosticSalt);
     final diagnosticHasher =
         diagnosticSalt == null ? null : MatrixDiagnosticHasher(diagnosticSalt);
-    final matrixFactory = MatrixClientFactory(
-      sessionStore: store,
-      homeserver: Uri.parse(AppConfig.matrixHomeserver),
-      diagnosticHasher: diagnosticHasher,
-    );
+    final localPresentationClock = Stopwatch()..start();
+    final firstLocalFrame = Completer<void>();
+    void resumeInitialization() {
+      if (!firstLocalFrame.isCompleted) firstLocalFrame.complete();
+    }
+
+    final matrixFactory = dependencies?.matrixFactory(firstLocalFrame.future) ??
+        MatrixClientFactory(
+          startupBackgroundResume: firstLocalFrame.future,
+          sessionStore: store,
+          homeserver: Uri.parse(AppConfig.matrixHomeserver),
+          diagnosticHasher: diagnosticHasher,
+        );
     // Read/create the installation identifier before opening a DB handle so a
     // locked keychain cannot leave an initialized client behind on startup retry.
     final installationDeviceKey = await observeStartupOperation(
@@ -164,7 +194,7 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
       StartupFailureMetadata? databaseFailure;
       try {
         return await openStartupMatrixClient(
-          openRetained: () => matrixFactory.create(
+          openRetained: () => matrixFactory.createForStartup(
               onFailure: (failure) => databaseFailure = failure),
           createSafeShell: () => Client(MatrixClientFactory.clientName),
         );
@@ -206,6 +236,9 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
     final session = SessionBootstrapController(
       business: api,
       matrix: matrix,
+      onLocalProjectionEligibility: (eligible) {
+        if (!eligible) resumeInitialization();
+      },
       securityLogger: matrix.securityLogger,
       onFailure: (failure) {
         startupDiagnostics.record(
@@ -271,7 +304,17 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         startupHandoff = MatrixHomeHandoff(
             api: api,
             matrix: matrix,
-            eligible: () => session.canShowCachedMessages);
+            eligible: () => session.canShowCachedMessages,
+            onPublished: () {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!firstLocalFrame.isCompleted && kDebugMode) {
+                  debugPrint(
+                      '[chatflow/startup] phase=cached_snapshot_first_frame elapsed_ms=${localPresentationClock.elapsedMilliseconds}');
+                }
+                resumeInitialization();
+              });
+              WidgetsBinding.instance.scheduleFrame();
+            });
       }
       return startupHandoff;
     }
@@ -285,6 +328,10 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         _ => false,
       };
       startupHandoff?.invalidateIfUnavailable();
+      if (session.state.status != SessionBootstrapStatus.loading &&
+          !session.canShowCachedMessages) {
+        resumeInitialization();
+      }
     });
     final gate = SessionGate(
       controller: session,
@@ -307,6 +354,7 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
           key: ValueKey(
               (matrix, matrix.userId, matrix.deviceId, api.sessionEpoch)),
           localOnly: !verified,
+          outboxStoreFactory: dependencies?.outboxStoreFactory,
           verifiedSession: verifiedSession,
           startupHandoff: currentStartupHandoff(),
           api: api,
@@ -364,7 +412,8 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         ? LiuhetongApp(home: child, themeController: themeController)
         : CupertinoApp(title: '畅聊 ChatFlow', home: child),
     reconcile: () async {
-      final outcome = await installationReconciler.reconcile();
+      final outcome = await (dependencies?.reconcile() ??
+          installationReconciler.reconcile());
       if (outcome == InstallationResetOutcome.failed && kDebugMode) {
         debugPrint('[installation] generation reset did not settle');
       }
