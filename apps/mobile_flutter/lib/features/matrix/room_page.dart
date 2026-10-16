@@ -33,6 +33,7 @@ import 'media_load_scheduler.dart';
 import 'media_memory_budget.dart';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/scheduler.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -472,7 +473,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   bool _paymentEntryBusy = false;
 
   Future<ChatPaymentIntent?> _preparePayment() async {
-    if (_paymentEntryBusy) return null;
+    if (!_canDispatch || _paymentEntryBusy) return null;
     _paymentEntryBusy = true;
     try {
       return await prepareChatPayment(context, api: widget.api,
@@ -1230,12 +1231,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 未读状态机（BUG 5）：本房间进入"查看中"，收到新消息不计未读。
     _notificationAccount = roomInfo.currentUserId;
     _syncOpenNotificationRooms();
-    unawaited(_identityCache.preload().catchError((_) {}));
-    final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
-    if (!isGroup && supportPeerId != null) {
-      unawaited(_supportIdentities.warm([supportPeerId]));
-    }
-    unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
     unawaited(
         FlashPhotoViewedStore.load('matrix:${roomInfo.currentUserId ?? ''}')
             .then((store) {
@@ -1260,7 +1255,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     if (!identical(oldWidget.api, widget.api)) {
       _supportIdentities = widget.api.supportIdentities;
-      if (!isGroup && roomInfo.directPeerId != null) {
+      if (_canDispatch && !isGroup && roomInfo.directPeerId != null) {
         unawaited(_supportIdentities.warm([roomInfo.directPeerId]));
       }
     }
@@ -1487,10 +1482,50 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   bool get _canDispatch =>
       (widget.dispatchReady?.value ?? true) && !widget.roomLease.canceled;
 
+  bool _liveRoomWorkStarted = false;
+
+  void _startLiveRoomWork() {
+    if (_liveRoomWorkStarted ||
+        !_canDispatch ||
+        controller == null ||
+        !mounted ||
+        _disposing) {
+      return;
+    }
+    _liveRoomWorkStarted = true;
+    final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
+    if (!isGroup && supportPeerId != null) {
+      unawaited(_supportIdentities.warm([supportPeerId]));
+    }
+    unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
+    _syncReadReceiptWhileViewing(immediate: true);
+    unawaited(_trackMatrixOperation(_loadEmojiVault()));
+    unawaited(_trackMatrixOperation(_loadReminderService()));
+    unawaited(_trackMatrixOperation(_loadIdentities()));
+  }
+
   void _dispatchReadinessChanged() {
-    if (!mounted || _disposing || !_canDispatch) return;
-    unawaited(controller?.resumePendingDispatch());
-    widget.requestOutboxDrain?.call();
+    if (!mounted || _disposing) return;
+    void applyReadiness() {
+      if (!mounted || _disposing) return;
+      setState(() {
+        if (!_canDispatch) composerPanel = ComposerPanel.none;
+      });
+      if (!_canDispatch) return;
+      _startLiveRoomWork();
+      unawaited(controller?.resumePendingDispatch());
+      widget.requestOutboxDrain?.call();
+    }
+
+    // AppHome upgrades during its parent's build while this pushed route is a
+    // Navigator sibling. Transport closes synchronously; notifying timeline
+    // models and chrome waits until that frame ends.
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => applyReadiness());
+    } else {
+      applyReadiness();
+    }
   }
 
   void _onNavigationRequest() {
@@ -1632,10 +1667,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // The SDK's local timeline and privacy gates are ready. Optional network
     // work must neither hide that history nor serialize unrelated features.
     if (!mounted || widget.roomLease.canceled) return;
-    _syncReadReceiptWhileViewing(immediate: true);
-    unawaited(_trackMatrixOperation(_loadEmojiVault()));
-    unawaited(_trackMatrixOperation(_loadReminderService()));
-    unawaited(_trackMatrixOperation(_loadIdentities()));
+    _startLiveRoomWork();
     unawaited(_flushInitialOutbox());
   }
 
@@ -2354,6 +2386,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 规格§八：聊天详情页头像 → APP 自己的好友/用户资料页（禁止打开
   /// Matrix Profile）。好友直开；非好友走业务检索（同一 APP 页面）。
   Future<void> _openPeerProfile(String matrixUserId) {
+    if (!_canDispatch) return Future<void>.value();
     final member = _member(matrixUserId);
     return openGroupMemberProfile(
       context,
@@ -2377,6 +2410,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _openVideoViewer(RoomMessageViewModel message,
       {bool Function()? searchAccess}) async {
+    if (!_canDispatch) return;
     if (searchAccess != null && !searchAccess()) return;
     final localSent = SentVideoLocalRegistry.shared
         .findByTransactionId(message.transactionId);
@@ -3166,6 +3200,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _togglePanel(ComposerPanel panel) {
+    if (!_canDispatch) return;
     if (inputFocusNode.hasFocus) {
       _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
     }
@@ -3186,6 +3221,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _toggleVoice() {
+    if (!_canDispatch) {
+      unawaited(_showError('连接恢复并验证后可发送语音'));
+      return;
+    }
     if (inputFocusNode.hasFocus) {
       _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
     }
@@ -3288,6 +3327,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _toggleVoiceMessage(RoomMessageViewModel message) async {
+    if (!_canDispatch) return;
     if (!_canPlayVoice) {
       _showMediaMessage('通话或录音中暂时不能播放语音');
       return;
@@ -3565,24 +3605,27 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ),
       );
 
-  Future<void> _openContact(ContactDetails contact) => Navigator.push(
-        context,
-        MotionPageRoute(
-          builder: (_) => ContactProfilePage(
-            api: widget.api,
-            identityCache: _identityCache,
-            initialContact: contact,
-            onMessage: widget.onMessage,
-            onVoice: widget.onVoice,
-            onVideo: widget.onVideo,
-            onContactUpdated: (updated) =>
-                _identityCache.applyUpdatedContact(updated.toSummary()),
-            onContactDeleted: _identityCache.removeContact,
+  Future<void> _openContact(ContactDetails contact) => !_canDispatch
+      ? Future<void>.value()
+      : Navigator.push(
+          context,
+          MotionPageRoute(
+            builder: (_) => ContactProfilePage(
+              api: widget.api,
+              identityCache: _identityCache,
+              initialContact: contact,
+              onMessage: widget.onMessage,
+              onVoice: widget.onVoice,
+              onVideo: widget.onVideo,
+              onContactUpdated: (updated) =>
+                  _identityCache.applyUpdatedContact(updated.toSummary()),
+              onContactDeleted: _identityCache.removeContact,
+            ),
           ),
-        ),
-      );
+        );
 
   Future<void> _openConversationDetails() async {
+    if (!_canDispatch) return;
     if (isGroup) {
       final infoController = GroupChatInfoController(
         widget.roomLease.openGroupChatInfoGateway(),
@@ -4186,6 +4229,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _openFlashViewer(RoomMessageViewModel message) async {
+    if (!_canDispatch) return;
     final store = _flashViewed;
     if (store == null) return;
     if (store.isViewed(message.id)) {
@@ -4213,6 +4257,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// R7：打开全屏图片查看器（含转发/下载操作）。
   Future<void> _openImageViewerWithForward(RoomMessageViewModel message,
       {bool Function()? searchAccess}) async {
+    if (!_canDispatch) return;
     // 第二层保护：即使将来搜索/气泡过滤回归，闪照也绝不能进入普通查看器
     // 或普通原图 loader（只允许专用安全查看器 FlashPhotoViewerPage）。
     if (!_mediaPolicyFor(message).canUseOrdinaryViewer) {
@@ -4270,8 +4315,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   /// R7：打开全屏图片查看器（ContainImageBubble 的点击动作）。
-  Future<void> _openImageViewer(RoomMessageViewModel message) =>
-      _openImageViewerWithForward(message);
+  Future<void> _openImageViewer(RoomMessageViewModel message) => !_canDispatch
+      ? Future<void>.value()
+      : _openImageViewerWithForward(message);
 
   /// 媒体安全策略（闪照不属于普通媒体资产；集中规则见
   /// [MediaMessageAccessPolicy]，禁止在各处散落 isFlashPhoto 判断）。
@@ -4527,7 +4573,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             playback: voicePlayback,
             messageId: message.id,
           ),
-        RoomMessageKind.redPacket => message.packetId == null
+        RoomMessageKind.redPacket => (message.packetId == null || !_canDispatch)
             ? WeChatRedPacketCard(
                 greeting: message.greeting ?? '恭喜发财',
                 state: RedPacketVisualState.available,
@@ -4557,7 +4603,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 restrictedRecipientName: _financeCounterpartyName(
                     message.redPacketRecipientMatrixId),
               ),
-        RoomMessageKind.transfer => message.transferId == null
+        RoomMessageKind.transfer => (message.transferId == null ||
+                !_canDispatch)
             ? WeChatTransferCard(
                 amount: message.transferAmount ?? '--',
                 state: TransferCardState.pending,
@@ -4602,7 +4649,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             duration: message.callDuration,
             // BUG-14：点击通话摘要直接按原类型回拨；无对端资料
             // （群聊/资料未加载）时不动作。
-            onRedial: peer == null
+            onRedial: !_canDispatch || peer == null
                 ? null
                 : () {
                     // BUG-14 真机回归修订：拨打是异步的，立即给出可见反馈。
@@ -5119,6 +5166,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     RoomMessageViewModel message,
     LayerLink anchor,
   ) async {
+    if (!_canDispatch) return;
     MessageTextSelectionSession.dismissActive();
     unawaited(HapticFeedback.mediumImpact());
     // Opening a local menu must not wait for network time. Recall is checked
@@ -5261,6 +5309,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     MessageAction action, {
     String? overrideText,
   }) async {
+    if (!_canDispatch) return;
     if (message.deliveryState != RoomDeliveryState.sent &&
         action != MessageAction.copy) {
       return;
@@ -5734,6 +5783,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   int _readReceiptFailures = 0;
 
   bool get _canSyncReadReceipt =>
+      _canDispatch &&
       mounted &&
       !_disposing &&
       !widget.roomLease.canceled &&
@@ -6456,7 +6506,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         enableBackgroundFilterBlur: false,
         middle: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: peer == null ? null : () => _openContact(peer!),
+          onPressed:
+              !_canDispatch || peer == null ? null : () => _openContact(peer!),
           child: WeChatNavTitle(
             _navigationTitle,
             supportIdentities: isGroup ? null : _supportIdentities,
@@ -6470,7 +6521,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             CupertinoButton(
               key: const Key('chat-details'),
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              onPressed: () => _trackAction(_openConversationDetails),
+              onPressed: !_canDispatch
+                  ? null
+                  : () => _trackAction(_openConversationDetails),
               child: const Icon(ChangliaoIcons.more, size: 22),
             ),
           ],
@@ -6481,7 +6534,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           children: [
             Column(
               children: [
-                if (isGroup)
+                if (isGroup && _canDispatch)
                   GroupAnnouncementBanner(
                     service: announcementService,
                     dismissalScope: roomInfo.currentUserId == null
@@ -6572,8 +6625,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                                 color: CupertinoColors.systemGrey)),
                       ),
                     )
-                  else
+                  else ...[
+                    SizedBox(
+                      key: const Key('local-text-composer'),
+                      child: !_canDispatch
+                          ? const Padding(
+                              padding: EdgeInsets.only(top: 6),
+                              child: Text('文字将在本机保存，连接恢复后发送；其他功能等待验证',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: CupertinoColors.systemGrey)),
+                            )
+                          : null,
+                    ),
                     ChatComposerBar(
+                      key: const ValueKey('room-composer'),
                       controller: input,
                       focusNode: inputFocusNode,
                       panel: composerPanel,
@@ -6592,6 +6658,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                       ),
                       onInputTap: _dismissEmojiPanelForInput,
                     ),
+                  ],
                   if (composerPanel == ComposerPanel.more)
                     TapRegion(
                       // 点击面板内不收起；面板外（输入框/消息列表等）任何

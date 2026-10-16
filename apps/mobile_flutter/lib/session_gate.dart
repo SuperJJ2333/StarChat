@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import 'core/session_bootstrap_controller.dart';
+import 'core/business_auth_contracts.dart';
 import 'ui/components/modern_action_button.dart';
 import 'ui/components/network_status_capsule.dart';
 
@@ -11,6 +12,7 @@ final class SessionGate extends StatefulWidget {
     required this.unauthenticatedBuilder,
     required this.authenticatedBuilder,
     this.cachedMessagesBuilder,
+    this.localSessionBuilder,
     this.onConfirmNewDeviceRecovery,
   });
 
@@ -21,6 +23,11 @@ final class SessionGate extends StatefulWidget {
   /// This builder must expose only local, read-only presentation. Scrolling is
   /// allowed while the controller's existing identity eligibility is true.
   final WidgetBuilder? cachedMessagesBuilder;
+
+  /// Same account shell for eligible local loading and verified authentication.
+  /// The false phase permits only local navigation and durable text drafts.
+  final Widget Function(BuildContext context, bool verified)?
+      localSessionBuilder;
   final Future<void> Function()? onConfirmNewDeviceRecovery;
 
   @override
@@ -31,6 +38,7 @@ final class _SessionGateState extends State<SessionGate>
     with WidgetsBindingObserver {
   String? _shownSessionMessage;
   late bool _wasAuthenticated;
+  Object? _lastAccountIdentity;
   bool _rootResetPending = false;
   bool _recoveryBusy = false;
   bool _recoveryDeferred = false;
@@ -55,6 +63,20 @@ final class _SessionGateState extends State<SessionGate>
     }
   }
 
+  Object get _accountIdentity => (
+        widget.controller.matrix.userId,
+        widget.controller.matrix.deviceId,
+        switch (widget.controller.business) {
+          BusinessSessionMonitor monitor => monitor.sessionEpoch,
+          _ => null,
+        },
+      );
+
+  bool get _accountAccessible =>
+      _isAuthenticated ||
+      (widget.controller.state.status == SessionBootstrapStatus.loading &&
+          widget.controller.canShowCachedMessages);
+
   bool get _isAuthenticated => switch (widget.controller.state.status) {
         SessionBootstrapStatus.authenticated ||
         SessionBootstrapStatus.offlineAuthenticated =>
@@ -65,7 +87,8 @@ final class _SessionGateState extends State<SessionGate>
   @override
   void initState() {
     super.initState();
-    _wasAuthenticated = _isAuthenticated;
+    _wasAuthenticated = _accountAccessible;
+    _lastAccountIdentity = _accountIdentity;
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_changed);
     _showSessionMessage();
@@ -77,8 +100,9 @@ final class _SessionGateState extends State<SessionGate>
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_changed);
       widget.controller.addListener(_changed);
-      if (_wasAuthenticated && !_isAuthenticated) _clearOldAccountRoutes();
-      _wasAuthenticated = _isAuthenticated;
+      if (_wasAuthenticated) _clearOldAccountRoutes();
+      _lastAccountIdentity = _accountIdentity;
+      _wasAuthenticated = _accountAccessible;
     }
   }
 
@@ -103,8 +127,12 @@ final class _SessionGateState extends State<SessionGate>
       _recoveryDeferred = false;
       _recoveryError = null;
     }
-    final authenticated = _isAuthenticated;
-    if (_wasAuthenticated && !authenticated) _clearOldAccountRoutes();
+    final authenticated = _accountAccessible;
+    if (_wasAuthenticated &&
+        (!authenticated || _lastAccountIdentity != _accountIdentity)) {
+      _clearOldAccountRoutes();
+    }
+    _lastAccountIdentity = _accountIdentity;
     _wasAuthenticated = authenticated;
     setState(() {});
     _showSessionMessage();
@@ -153,6 +181,14 @@ final class _SessionGateState extends State<SessionGate>
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
+    final localBuilder = widget.localSessionBuilder;
+    if (localBuilder != null && _accountAccessible) {
+      return _AuthenticatedLayer(
+        offline: state.status != SessionBootstrapStatus.authenticated,
+        onRetry: widget.controller.bootstrap,
+        child: localBuilder(context, _isAuthenticated),
+      );
+    }
     // Authentication boundaries replace the old subtree immediately. A fading
     // outgoing account view must not remain visible or actionable after revoke.
     return switch (state.status) {

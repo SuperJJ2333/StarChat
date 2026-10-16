@@ -38,7 +38,6 @@ import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_home_page.dart';
-import 'ui/foundation/changliao_icons.dart';
 import 'session_gate.dart';
 import 'ui/motion/motion_preferences.dart';
 import 'features/settings/voice_auto_play_preferences.dart';
@@ -95,10 +94,18 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
   var shellPrepared = false;
 
   Future<void> prepareApplication() async {
-    await observeStartupOperation(AppConfig.loadRuntimeVersion,
-        boundary: StartupFailureBoundary.versionLoad);
-    startupDiagnostics.updateVersion(
-        AppConfig.appVersionName.split('-').first, AppConfig.appBuildNumber);
+    // Package metadata is optional presentation/diagnostics information. The
+    // compiled version remains accurate while the platform plugin responds;
+    // it must not serialize installation, key and account safety checks.
+    unawaited(observeStartupOperation(AppConfig.loadRuntimeVersion,
+            boundary: StartupFailureBoundary.versionLoad)
+        .then((_) {
+      startupDiagnostics.updateVersion(
+          AppConfig.appVersionName.split('-').first, AppConfig.appBuildNumber);
+    }).catchError((Object error) {
+      recordStartupFailure(safeStartupFailure(error,
+          boundary: StartupFailureBoundary.versionLoad));
+    }));
     final preferences = await SharedPreferences.getInstance();
     final loadedThemeController = ThemeController(
       store: SharedPreferencesThemePreferenceStore(
@@ -269,35 +276,18 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
       return startupHandoff;
     }
 
-    session.addListener(() => startupHandoff?.invalidateIfUnavailable());
+    final verifiedSession = ValueNotifier<bool>(false);
+    session.addListener(() {
+      verifiedSession.value = switch (session.state.status) {
+        SessionBootstrapStatus.authenticated ||
+        SessionBootstrapStatus.offlineAuthenticated =>
+          true,
+        _ => false,
+      };
+      startupHandoff?.invalidateIfUnavailable();
+    });
     final gate = SessionGate(
       controller: session,
-      cachedMessagesBuilder: (_) => Column(children: [
-        Expanded(
-            child: MatrixHomePage(
-          api: api,
-          matrix: matrix,
-          themeController: themeController,
-          onCreateGroup: () {},
-          previewOnly: true,
-          startupHandoff: currentStartupHandoff(),
-        )),
-        // A fixed tab shell preserves the familiar layout without exposing
-        // navigation or creating four independent previews during restoration.
-        ExcludeSemantics(
-            child: IgnorePointer(
-                child: CupertinoTabBar(
-          items: const [
-            BottomNavigationBarItem(
-                icon: Icon(ChangliaoIcons.messagesFilled), label: '消息'),
-            BottomNavigationBarItem(
-                icon: Icon(ChangliaoIcons.contacts), label: '通讯录'),
-            BottomNavigationBarItem(
-                icon: Icon(ChangliaoIcons.discover), label: '发现'),
-            BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
-          ],
-        ))),
-      ]),
       unauthenticatedBuilder: (_) => AuthenticationFlow(
         api: api,
         onLogin: login.login,
@@ -310,34 +300,42 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         onAuthenticated: session.bootstrap,
       ),
       onConfirmNewDeviceRecovery: login.confirmNewDeviceAndLogin,
-      authenticatedBuilder: (_) => ChatDiagnosticsScope(
-          sessionEpoch: api.sessionEpoch,
-          version:
-              '${AppConfig.appVersionName.split('-').first}+${AppConfig.appBuildNumber}',
-          platform: switch (defaultTargetPlatform) {
-            TargetPlatform.android => ChatDiagnosticPlatform.android,
-            TargetPlatform.iOS => ChatDiagnosticPlatform.ios,
-            _ => ChatDiagnosticPlatform.other,
+      authenticatedBuilder: (_) => const SizedBox.shrink(),
+      localSessionBuilder: (_, verified) =>
+          Stack(fit: StackFit.expand, children: [
+        AppHome(
+          key: ValueKey(
+              (matrix, matrix.userId, matrix.deviceId, api.sessionEpoch)),
+          localOnly: !verified,
+          verifiedSession: verifiedSession,
+          startupHandoff: currentStartupHandoff(),
+          api: api,
+          matrix: matrix,
+          onLogout: () async {
+            ChatDiagnostics.instance.stopSession();
+            try {
+              await MomentPublishQueues.revoke(api);
+            } catch (_) {}
+            await session.logout();
           },
-          upload: api.uploadChatDiagnostics,
-          spool: diagnosticsSpool,
-          spoolScope: api.diagnosticSpoolScope,
-          child: AppHome(
-            key: ValueKey((matrix, api.sessionEpoch)),
-            startupHandoff: currentStartupHandoff(),
-            api: api,
-            matrix: matrix,
-            onLogout: () async {
-              ChatDiagnostics.instance.stopSession();
-              try {
-                await MomentPublishQueues.revoke(api);
-              } catch (_) {
-                // Session revocation remains authoritative if queue restore failed.
-              }
-              await session.logout();
+          themeController: themeController,
+        ),
+        if (verified)
+          ChatDiagnosticsScope(
+            sessionEpoch: api.sessionEpoch,
+            version:
+                '${AppConfig.appVersionName.split('-').first}+${AppConfig.appBuildNumber}',
+            platform: switch (defaultTargetPlatform) {
+              TargetPlatform.android => ChatDiagnosticPlatform.android,
+              TargetPlatform.iOS => ChatDiagnosticPlatform.ios,
+              _ => ChatDiagnosticPlatform.other,
             },
-            themeController: themeController,
-          )),
+            upload: api.uploadChatDiagnostics,
+            spool: diagnosticsSpool,
+            spoolScope: api.diagnosticSpoolScope,
+            child: const SizedBox.shrink(),
+          ),
+      ]),
     );
     final bootstrap = session.bootstrap();
     unawaited(() async {

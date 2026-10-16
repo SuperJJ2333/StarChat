@@ -15,6 +15,9 @@ import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/session_gate.dart';
+import 'package:liuhetong_mobile/core/maintenance_activity.dart';
+import 'package:liuhetong_mobile/features/push/native_message_policy.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -64,7 +67,15 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final channels = <String>{};
+  setUpAll(() async {
+    // Initialize the process singleton outside per-test FakeAsync zones. Its
+    // initial serialized-write future must remain usable across widget tests.
+    NativeMessagePolicy.shared;
+    await Future<void>.delayed(Duration.zero);
+  });
   setUp(() {
+    ConversationReadState.shared().resetForTest();
+    MaintenanceActivity.instance.resetForTesting();
     SharedPreferences.setMockInitialValues(
         {'keepalive.battery_prompted_v1': true});
     AndroidFlutterLocalNotificationsPlugin.registerWith();
@@ -105,6 +116,8 @@ void main() {
     }
   });
   tearDown(() {
+    ConversationReadState.shared().resetForTest();
+    MaintenanceActivity.instance.resetForTesting();
     for (final name in channels) {
       messenger.setMockMethodCallHandler(MethodChannel(name), null);
     }
@@ -238,8 +251,12 @@ void main() {
         await tester.pump();
       }
       expect(heldProfile.isCompleted, isFalse);
-      expect(find.text('Cached row 0'), findsOneWidget);
+      expect(find.textContaining('Cached row'), findsWidgets);
+      expect(scroll.position.pixels, greaterThan(100),
+          reason: 'live handoff preserves scroll');
       expect(tester.widget<CupertinoButton>(search).onPressed, isNotNull);
+      scroll.position.jumpTo(0);
+      await tester.pump();
       (client.snapshotRooms.first as _CachedRoom).label = 'Live updated row';
       client.onRoomListUpdated.add(null);
       await tester.pump();

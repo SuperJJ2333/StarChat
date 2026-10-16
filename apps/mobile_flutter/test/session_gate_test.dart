@@ -72,6 +72,127 @@ final class _HeldGateBusiness extends GateBusiness {
 }
 
 void main() {
+  testWidgets(
+      'eligible local shell preserves tabs and pushed room at verification',
+      (tester) async {
+    final business = _HeldGateBusiness();
+    final controller = SessionBootstrapController(
+        business: business, matrix: GateMatrix(true));
+    final flight = controller.bootstrap();
+    final phases = <bool>[];
+    await tester.pumpWidget(CupertinoApp(
+        home: SessionGate(
+      controller: controller,
+      localSessionBuilder: (_, verified) {
+        phases.add(verified);
+        return CupertinoTabScaffold(
+          tabBar: CupertinoTabBar(items: const [
+            BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.chat_bubble), label: 'CHAT TAB'),
+            BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.person), label: 'CONTACT TAB'),
+          ]),
+          tabBuilder: (_, index) => CupertinoTabView(
+              builder: (context) => CupertinoPageScaffold(
+                  child: Center(
+                      child: CupertinoButton(
+                          onPressed: () => Navigator.of(context,
+                                  rootNavigator: true)
+                              .push(CupertinoPageRoute<void>(
+                                  builder: (_) => const Text('LOCAL ROOM'))),
+                          child: Text('OPEN TAB $index'))))),
+        );
+      },
+      authenticatedBuilder: (_) => const Text('UNUSED'),
+      unauthenticatedBuilder: (_) => const Text('LOGIN'),
+    )));
+    await tester.pump();
+    expect(phases.last, isFalse);
+    await tester.tap(find.text('CONTACT TAB'));
+    await tester.pump();
+    final shell = tester.state(find.byType(CupertinoTabScaffold));
+    await tester.tap(find.text('OPEN TAB 1'));
+    await tester.pumpAndSettle();
+    final roomRoute = ModalRoute.of(tester.element(find.text('LOCAL ROOM')));
+    business.release.complete(BusinessSessionRestore.authenticated);
+    await flight;
+    await tester.pump();
+    expect(phases.last, isTrue);
+    expect(tester.state(find.byType(CupertinoTabScaffold, skipOffstage: false)),
+        same(shell));
+    expect(ModalRoute.of(tester.element(find.text('LOCAL ROOM'))),
+        same(roomRoute));
+    Navigator.of(tester.element(find.text('LOCAL ROOM'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('OPEN TAB 1'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('replacing an accessible controller clears old cached routes',
+      (tester) async {
+    final business = _HeldGateBusiness();
+    final first = SessionBootstrapController(
+        business: business, matrix: GateMatrix(true));
+    final flight = first.bootstrap();
+    Widget build(SessionBootstrapController controller) => CupertinoApp(
+            home: SessionGate(
+          controller: controller,
+          localSessionBuilder: (context, _) => CupertinoButton(
+              onPressed: () => Navigator.of(context).push(
+                  CupertinoPageRoute<void>(
+                      builder: (_) => const Text('OLD ROOM'))),
+              child: const Text('OPEN')),
+          authenticatedBuilder: (_) => const Text('HOME'),
+          unauthenticatedBuilder: (_) => const Text('LOGIN'),
+        ));
+    await tester.pumpWidget(build(first));
+    await tester.pump();
+    await tester.tap(find.text('OPEN'));
+    await tester.pumpAndSettle();
+    final second = SessionBootstrapController(
+        business: GateBusiness(BusinessSessionRestore.authenticated),
+        matrix: GateMatrix(true));
+    await second.bootstrap();
+    await tester.pumpWidget(build(second));
+    await tester.pumpAndSettle();
+    expect(find.text('OLD ROOM'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    business.release.complete(BusinessSessionRestore.invalid);
+    await flight;
+    first.dispose();
+    second.dispose();
+  });
+  testWidgets('losing local eligibility clears a pushed cached account route',
+      (tester) async {
+    final business = _HeldGateBusiness();
+    final controller = SessionBootstrapController(
+        business: business, matrix: GateMatrix(true));
+    final flight = controller.bootstrap();
+    await tester.pumpWidget(CupertinoApp(
+        home: SessionGate(
+      controller: controller,
+      cachedMessagesBuilder: (context) => CupertinoButton(
+          onPressed: () => Navigator.of(context, rootNavigator: true).push(
+              CupertinoPageRoute<void>(
+                  builder: (_) => const Text('CACHED ROOM'))),
+          child: const Text('OPEN CACHE')),
+      authenticatedBuilder: (_) => const Text('HOME'),
+      unauthenticatedBuilder: (_) => const Text('LOGIN'),
+    )));
+    await tester.pump();
+    await tester.tap(find.text('OPEN CACHE'));
+    await tester.pumpAndSettle();
+    expect(find.text('CACHED ROOM'), findsOneWidget);
+    business.release.complete(BusinessSessionRestore.invalid);
+    await flight;
+    await tester.pumpAndSettle();
+    expect(find.text('CACHED ROOM'), findsNothing);
+    expect(find.text('LOGIN'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
   testWidgets('eligible cached list scrolls while remote restore is pending',
       (tester) async {
     final business = _HeldGateBusiness();

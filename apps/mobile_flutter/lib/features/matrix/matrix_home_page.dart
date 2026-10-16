@@ -283,6 +283,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onVideo,
     this.identityCache,
     this.previewOnly = false,
+    this.localNavigation = false,
     this.onUnreadChanged,
     this.onOpenRoom,
     this.snapshotLoader,
@@ -302,6 +303,9 @@ class MatrixHomePage extends StatefulWidget {
   final ContactAction? onVideo;
   final ProfileRepository? identityCache;
   final bool previewOnly;
+
+  /// Eligible local shell may open cached rooms while live actions stay gated.
+  final bool localNavigation;
   final PerformanceTrace? performanceTrace;
   final MatrixHomeHandoff? startupHandoff;
   final VoidCallback? onUnreadChanged;
@@ -1204,7 +1208,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     String? anchorEventId,
     RoomOpenSource source = RoomOpenSource.search,
   }) async {
-    if (roomId.isEmpty || widget.previewOnly) return;
+    if (roomId.isEmpty || (widget.previewOnly && !widget.localNavigation)) {
+      return;
+    }
     // 离线优先：本地会话列表里已经有这个房间时**立即**走统一入口打开，
     // 不再先 `waitForJoinedRoom`（旧实现在离线/弱网下让用户点了没反应，
     // 并且是最长 12 秒的静默等待）。
@@ -1231,6 +1237,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
 
   Future<void> _warmChatIdentity(
       [Iterable<String> matrixUserIds = const []]) async {
+    if (widget.previewOnly) return;
     final cache = _identityCache;
     final matrix = widget.matrix;
     try {
@@ -1256,7 +1263,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       RoomOpenSource source = RoomOpenSource.conversationList}) async {
     // 只读占位页（启动期缓存列表）与未注入统一导航时不打开房间。
     final openRoom = widget.onOpenRoom;
-    if (widget.previewOnly || openRoom == null) return;
+    if ((widget.previewOnly && !widget.localNavigation) || openRoom == null) {
+      return;
+    }
     // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
     // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
     if (!_openingRooms.add(snapshot.id)) {
@@ -1286,10 +1295,12 @@ class _MatrixHomePageState extends State<MatrixHomePage>
           _openingRooms.remove(snapshot.id);
           _readState.setRoomOpen(snapshot.id, open: true);
           _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
-          unawaited(widget.matrix.conversations
-              .markReadOnOpen(snapshot.id)
-              .catchError((_) {}));
-          widget.onUnreadChanged?.call();
+          if (!widget.previewOnly) {
+            unawaited(widget.matrix.conversations
+                .markReadOnOpen(snapshot.id)
+                .catchError((_) {}));
+          }
+          if (!widget.previewOnly) widget.onUnreadChanged?.call();
         },
         // 页面退出（或打开失败）后恢复列表态。
         onRoomClosed: () {
@@ -1301,7 +1312,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
                   : latest.first.lastEventId);
           if (mounted) {
             unawaited(_refreshClientSnapshot());
-            widget.onUnreadChanged?.call();
+            if (!widget.previewOnly) widget.onUnreadChanged?.call();
           }
         },
       )).timeout(const Duration(seconds: 15));
@@ -1363,7 +1374,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         unreadCount: room.unread,
         muted: room.muted,
         pinnedGroup: room.preference.pinned,
-        onTap: widget.previewOnly ? null : () => _openRoom(room),
+        onTap: widget.previewOnly && !widget.localNavigation
+            ? null
+            : () => _openRoom(room),
         onLongPress: widget.previewOnly
             ? null
             : () => _conversationActions(room, _conversationAnchor(room.id)),

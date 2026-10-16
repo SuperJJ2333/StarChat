@@ -206,6 +206,9 @@ final class AppHome extends StatefulWidget {
     this.syncWatchdogFactory,
     this.localFrameRecorder,
     this.startupHandoff,
+    this.localOnly = false,
+    this.outboxStoreFactory,
+    this.verifiedSession,
   });
 
   final BusinessApiClient api;
@@ -221,6 +224,13 @@ final class AppHome extends StatefulWidget {
       syncWatchdogFactory;
   final PerformanceTraceRecorder? localFrameRecorder;
   final MatrixHomeHandoff? startupHandoff;
+
+  /// Local identity is eligible, but business restoration is still pending.
+  final bool localOnly;
+  final OutboxStore Function()? outboxStoreFactory;
+
+  /// Synchronous revocation signal; transport closes before the next UI frame.
+  final ValueListenable<bool>? verifiedSession;
 
   @override
   State<AppHome> createState() => _AppHomeState();
@@ -651,20 +661,84 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.messages);
+    WidgetsBinding.instance.addObserver(this);
+    widget.verifiedSession?.addListener(_syncSessionReadiness);
+    unawaited(_identityCache().then<void>((_) {}, onError: (Object _) {}));
+    if (widget.localOnly) {
+      unawaited(_prepareLocalOutbox().catchError((Object _) {}));
+    }
+    if (!widget.localOnly) _startAuthorizedHome();
+  }
+
+  final ValueNotifier<bool> _dispatchReady = ValueNotifier(false);
+  bool get _hasVerifiedSession =>
+      !widget.localOnly && (widget.verifiedSession?.value ?? true);
+  void _syncSessionReadiness() =>
+      _dispatchReady.value = _hasVerifiedSession && !_disposed;
+  bool _authorizedHomeStarted = false;
+  Future<void>? _localOutboxFlight;
+
+  Future<void> _prepareLocalOutbox() => _localOutboxFlight ??= () async {
+        final account = widget.matrix.userId;
+        if (account == null || account.isEmpty) {
+          throw StateError('Missing local account');
+        }
+        var outbox = PersistentOutboxManager.shared;
+        if (outbox == null ||
+            outbox.isDisposed ||
+            outbox.accountId != account) {
+          outbox = PersistentOutboxManager(
+              widget.outboxStoreFactory?.call() ?? SqliteOutboxStore(),
+              accountId: account);
+        }
+        // Open the durable store before a route can expose its composer. Never
+        // substitute an in-memory queue when local persistence is unavailable.
+        await outbox.store.query(accountId: account, limit: 1);
+        if (!mounted || _disposed || widget.matrix.userId != account) return;
+        _outbox = outbox;
+        PersistentOutboxManager.shared = outbox;
+      }();
+
+  void _startAuthorizedHome() {
+    if (_authorizedHomeStarted || widget.localOnly || _disposed) return;
+    _authorizedHomeStarted = true;
     widget.matrix.authorizeRoomSend = _authorizeRoomSend;
     widget.matrix.prepareRoomSend = (account, room, peer) async {
-      if (account != widget.matrix.userId) throw StateError('Account changed');
+      if (widget.localOnly || account != widget.matrix.userId) {
+        throw StateError('Account authorization changed');
+      }
       return _resolveNewDirectSend(peer);
     };
-    WidgetsBinding.instance.addObserver(this);
     unawaited(_resumeMomentUploads());
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
-    unawaited(_identityCache());
+    unawaited(_identityCache().then<void>((cache) {
+      if (mounted && !widget.localOnly) {
+        unawaited(cache.preload().catchError((_) {}));
+      }
+    }, onError: (Object _) {}));
     unawaited(_hydrateBlockedContacts());
     _unreadSubscription = widget.matrix.syncEvents.listen((_) {
       unawaited(_refreshUnreadCount());
     });
+    // This notifier opens only after existing business session verification;
+    // Matrix room/E2EE and relationship gates remain authoritative at dispatch.
+    _syncSessionReadiness();
+  }
+
+  @override
+  void didUpdateWidget(covariant AppHome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.verifiedSession, widget.verifiedSession)) {
+      oldWidget.verifiedSession?.removeListener(_syncSessionReadiness);
+      widget.verifiedSession?.addListener(_syncSessionReadiness);
+    }
+    _syncSessionReadiness();
+    if (widget.localOnly) {
+      _dispatchReady.value = false;
+    } else if (oldWidget.localOnly) {
+      _startAuthorizedHome();
+    }
   }
 
   /// BUG-10：登录后同步一次拉黑名单。「聊天发送门」读取同一份投影，
@@ -1189,6 +1263,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (widget.localOnly) return;
     _pushTapRouter?.setForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       unawaited(NativeMessagePolicy.shared
@@ -1546,6 +1621,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   Future<void> _clearAllUnread() async {
+    if (!_hasVerifiedSession) return;
     await widget.matrix.conversations.clearAllUnread();
     await _refreshUnreadCount();
   }
@@ -1696,7 +1772,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<bool> _authorizeRoomSend(
       String accountId, String roomId, String? peerId) async {
-    if (!mounted || _disposed || accountId != widget.matrix.userId) {
+    if (!_hasVerifiedSession ||
+        !mounted ||
+        _disposed ||
+        accountId != widget.matrix.userId) {
       return false;
     }
     if (peerId == null || peerId.isEmpty) return true;
@@ -1989,9 +2068,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 绝不允许消息/通讯录停留在加载态（Mi 6 SQLite 故障教训）。
       cache = ProfileRepository(widget.api, accountKey: accountKey);
     }
+    if (!mounted || _disposed || widget.matrix.userId != accountKey) {
+      cache.dispose();
+      throw StateError('Local account changed');
+    }
     _chatIdentityCache = cache;
     if (mounted) setState(() {});
-    unawaited(cache.preload().catchError((_) {}));
+    if (!widget.localOnly) unawaited(cache.preload().catchError((_) {}));
     return cache;
   }
 
@@ -2208,6 +2291,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
+    if (!_hasVerifiedSession) return;
     final account = widget.matrix.sendPreparationIdentity;
     final apiEpoch = widget.api.sessionEpoch;
     bool ownerCurrent() =>
@@ -2647,6 +2731,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
 
     try {
+      if (widget.localOnly || _localOutboxFlight != null) {
+        await _prepareLocalOutbox();
+      }
       final identityCache = await _identityCache();
       trace.mark(PerformanceStage.identityLookupDone);
       final name = request.roomName.trim().isEmpty
@@ -2669,6 +2756,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       route = MotionPageRoute<void>(
           builder: (_) => RoomPage(
                 api: widget.api,
+                dispatchReady: _dispatchReady,
                 performanceTrace: trace,
                 roomRouteProbe: localFrameProbe,
                 onPerformanceContentReady:
@@ -2766,7 +2854,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
       final contact = request.initialContact ??
           identityCache.contactsByMatrixId[lease.roomInfo.directPeerId];
-      unawaited(_reconcileOpenedDirectRoom(roomId, contact));
+      if (!widget.localOnly) {
+        unawaited(_reconcileOpenedDirectRoom(roomId, contact));
+      }
       await landed.future;
       stage = 'landed';
       // 路由已落地：通知调用方移除打开期反馈遮罩（转圈），由房间页自身
@@ -2908,10 +2998,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    widget.verifiedSession?.removeListener(_syncSessionReadiness);
+    _dispatchReady.value = false;
     _disposed = true;
     unawaited(_closeMediaPrefetch());
     ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.unknown);
     _profileEntryRevision.dispose();
+    _dispatchReady.dispose();
+    if (!_syncWatchdogStarted) _disposeOutbox();
     WidgetsBinding.instance.removeObserver(this);
     _unreadSubscription?.cancel();
     _friendRequestPollTimer?.cancel();
@@ -3123,31 +3217,25 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   Widget _buildMessagesTab() {
-    if (!_matrixReady) {
-      final handoff = widget.startupHandoff;
-      if (handoff?.read(widget.api, widget.matrix) != null) {
-        return MatrixHomePage(
-          key: const ValueKey('home-cached-messages'),
-          api: widget.api,
-          matrix: widget.matrix,
-          themeController: widget.themeController,
-          onCreateGroup: () {},
-          previewOnly: true,
-          identityCache: _chatIdentityCache,
-          startupHandoff: handoff,
-        );
-      }
+    final handoff = widget.startupHandoff;
+    if (!_matrixReady && !widget.localOnly && handoff == null) {
       return const _HomeWarmupPane(
           key: ValueKey('home-matrix-warmup'), message: '正在连接，稍候即可查看消息');
     }
-    // Separate live identity guarantees all live initState subscriptions and
-    // background work start, even when the fallback was visible before attach.
+    if (!_matrixReady &&
+        handoff != null &&
+        handoff.read(widget.api, widget.matrix) == null &&
+        !handoff.isCurrent) {
+      return const _HomeWarmupPane(message: '正在连接，稍候即可查看消息');
+    }
     return MatrixHomePage(
-      key: const ValueKey('home-live-messages'),
+      key: const ValueKey('home-messages'),
       startupHandoff: widget.startupHandoff,
       api: widget.api,
       matrix: widget.matrix,
       themeController: widget.themeController,
+      previewOnly: widget.localOnly || !_matrixReady,
+      localNavigation: true,
       onCreateGroup: _createGroupChat,
       onMessage: _openMessage,
       onVoice: (contact) => _openCall(contact, CallMediaType.audio),
@@ -3155,9 +3243,41 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       reminderService: reminderService,
       identityCache: _chatIdentityCache,
       onUnreadChanged: () => unawaited(_refreshUnreadCount()),
-      // 消息列表不再自建 RoomLease/RoomPage：统一交给
-      // AppHome 的房间导航协调器（同一 roomId 只有一个页面）。
       onOpenRoom: _openManagedRoomRequest,
+    );
+  }
+
+  Widget _buildLocalTab(int index) {
+    final cache = _chatIdentityCache;
+    final title = switch (index) { 1 => '通讯录', 2 => '发现', _ => '我' };
+    return CupertinoPageScaffold(
+      key: Key(switch (index) {
+        1 => 'local-contacts',
+        2 => 'local-discovery',
+        _ => 'local-profile'
+      }),
+      navigationBar: CupertinoNavigationBar(middle: Text(title)),
+      child: SafeArea(
+          child: ListView(children: [
+        if (index == 1) ...[
+          for (final contact in cache?.contacts ?? <ContactSummary>[])
+            WeChatListTile(title: Text(contact.displayName)),
+          if (cache == null || cache.contacts.isEmpty)
+            const Padding(padding: EdgeInsets.all(24), child: Text('暂无本地通讯录')),
+        ] else if (index == 2)
+          WeChatListTile(
+              title: const Text('外观'),
+              onTap: () =>
+                  showThemePickerSheet(context, widget.themeController))
+        else ...[
+          Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(cache?.profile?.nickname ?? '我')),
+          const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24),
+              child: Text('正在恢复连接，账号功能将在验证完成后可用')),
+        ],
+      ])),
     );
   }
 
@@ -3174,8 +3294,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                   3 => ChatDiagnosticTab.me,
                   _ => ChatDiagnosticTab.unknown,
                 });
-                if (index == 2) unawaited(_momentsUnread?.refresh());
-                if (index == 0) unawaited(_refreshUnreadCount());
+                if (!widget.localOnly && index == 2) {
+                  unawaited(_momentsUnread?.refresh());
+                }
+                if (!widget.localOnly && index == 0) {
+                  unawaited(_refreshUnreadCount());
+                }
                 if (index == 3) _profileEntryRevision.value++;
               },
               activeColor: const Color(0xff07c160),
@@ -3212,74 +3336,77 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               ],
             ),
             tabBuilder: (_, index) => CupertinoTabView(
-              builder: (_) => switch (index) {
-                0 => widget.startupHandoff == null
-                    ? _buildMessagesTab()
-                    : ListenableBuilder(
-                        listenable: widget.startupHandoff!,
-                        builder: (_, __) => _buildMessagesTab()),
-                1 => _chatIdentityCache == null
-                    ? const _HomeWarmupPane(
-                        key: ValueKey('home-contacts-warmup'),
-                        message: '正在准备通讯录',
-                      )
-                    : ContactsTabPage(
-                        api: widget.api,
-                        matrix: widget.matrix,
-                        pendingFriendRequests: pendingFriendRequests,
-                        onFriendRequests: _openFriendRequests,
-                        directChats: directChats,
-                        // 通讯录好友资料「发消息」使用与朋友圈/群聊同一个
-                        // 统一入口（唯一实现，见 _openMessage）。
-                        onMessage: _openMessage,
-                        onVoice: (contact) =>
-                            _openCall(contact, CallMediaType.audio),
-                        onVideo: (contact) =>
-                            _openCall(contact, CallMediaType.video),
-                        onGroupChat: _createGroupChat,
-                        onScan: _scanFromTab,
-                        onAppearance: () => showThemePickerSheet(
-                            context, widget.themeController),
-                        onGroupAddressList: _openGroupAddressList,
-                        identityCache: _chatIdentityCache,
-                        // 搜索（群聊/聊天记录）三 Tab 能力一致：同一个回调。
-                        onOpenRoom: _openSearchRoom,
-                      ),
-                2 => DiscoveryPage(
-                    onOpenRoom: _openSearchRoom,
-                    contactActions: ContactActions(
-                      onMessage: _openMessage,
-                      onVoice: (contact) =>
-                          _openCall(contact, CallMediaType.audio),
-                      onVideo: (contact) =>
-                          _openCall(contact, CallMediaType.video),
-                    ),
-                    onCreateGroup: _createGroupChat,
-                    onAddFriend: _addFriendFromTab,
-                    onScan: _scanFromTab,
-                    onAppearance: () =>
-                        showThemePickerSheet(context, widget.themeController),
-                    unreadController: _momentsUnread,
-                    matrix: widget.matrix,
-                    api: widget.api,
-                    identityCache: _chatIdentityCache,
-                  ),
-                _ => ProfileTabPage(
-                    matrix: widget.matrix,
-                    contactActions: ContactActions(
-                      onMessage: _openMessage,
-                      onVoice: (contact) =>
-                          _openCall(contact, CallMediaType.audio),
-                      onVideo: (contact) =>
-                          _openCall(contact, CallMediaType.video),
-                    ),
-                    api: widget.api,
-                    onLogout: widget.onLogout,
-                    onClearLocalChatData: widget.matrix.clearLocalChatData,
-                    identityCache: _chatIdentityCache,
-                    refreshSignal: _profileEntryRevision,
-                  ),
-              },
+              builder: (_) => widget.localOnly && index != 0
+                  ? _buildLocalTab(index)
+                  : switch (index) {
+                      0 => widget.startupHandoff == null
+                          ? _buildMessagesTab()
+                          : ListenableBuilder(
+                              listenable: widget.startupHandoff!,
+                              builder: (_, __) => _buildMessagesTab()),
+                      1 => _chatIdentityCache == null
+                          ? const _HomeWarmupPane(
+                              key: ValueKey('home-contacts-warmup'),
+                              message: '正在准备通讯录',
+                            )
+                          : ContactsTabPage(
+                              api: widget.api,
+                              matrix: widget.matrix,
+                              pendingFriendRequests: pendingFriendRequests,
+                              onFriendRequests: _openFriendRequests,
+                              directChats: directChats,
+                              // 通讯录好友资料「发消息」使用与朋友圈/群聊同一个
+                              // 统一入口（唯一实现，见 _openMessage）。
+                              onMessage: _openMessage,
+                              onVoice: (contact) =>
+                                  _openCall(contact, CallMediaType.audio),
+                              onVideo: (contact) =>
+                                  _openCall(contact, CallMediaType.video),
+                              onGroupChat: _createGroupChat,
+                              onScan: _scanFromTab,
+                              onAppearance: () => showThemePickerSheet(
+                                  context, widget.themeController),
+                              onGroupAddressList: _openGroupAddressList,
+                              identityCache: _chatIdentityCache,
+                              // 搜索（群聊/聊天记录）三 Tab 能力一致：同一个回调。
+                              onOpenRoom: _openSearchRoom,
+                            ),
+                      2 => DiscoveryPage(
+                          onOpenRoom: _openSearchRoom,
+                          contactActions: ContactActions(
+                            onMessage: _openMessage,
+                            onVoice: (contact) =>
+                                _openCall(contact, CallMediaType.audio),
+                            onVideo: (contact) =>
+                                _openCall(contact, CallMediaType.video),
+                          ),
+                          onCreateGroup: _createGroupChat,
+                          onAddFriend: _addFriendFromTab,
+                          onScan: _scanFromTab,
+                          onAppearance: () => showThemePickerSheet(
+                              context, widget.themeController),
+                          unreadController: _momentsUnread,
+                          matrix: widget.matrix,
+                          api: widget.api,
+                          identityCache: _chatIdentityCache,
+                        ),
+                      _ => ProfileTabPage(
+                          matrix: widget.matrix,
+                          contactActions: ContactActions(
+                            onMessage: _openMessage,
+                            onVoice: (contact) =>
+                                _openCall(contact, CallMediaType.audio),
+                            onVideo: (contact) =>
+                                _openCall(contact, CallMediaType.video),
+                          ),
+                          api: widget.api,
+                          onLogout: widget.onLogout,
+                          onClearLocalChatData:
+                              widget.matrix.clearLocalChatData,
+                          identityCache: _chatIdentityCache,
+                          refreshSignal: _profileEntryRevision,
+                        ),
+                    },
             ),
           ),
           // 来电页不再作为 Stack 覆盖层：CallUiManager 经根 Navigator

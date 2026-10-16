@@ -164,6 +164,7 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
     WidgetTester tester, _LifecycleClient client,
     {bool pushRoute = false,
     ValueNotifier<bool>? dispatchReady,
+    List<String>? businessRequests,
     SharedPreferencesStorePlatform? preferences}) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
@@ -191,7 +192,10 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
   final api = BusinessApiClient(
       baseUri: Uri.parse('https://business.test'),
       sessionStore: SecureSessionStore(),
-      client: MockClient((_) async => http.Response('{}', 503)));
+      client: MockClient((request) async {
+        businessRequests?.add(request.url.path);
+        return http.Response('{}', 503);
+      }));
   final page = RoomPage(
       api: api,
       dispatchReady: dispatchReady,
@@ -229,8 +233,16 @@ void main() {
     client.store.events = client.localRoom.timeline.events;
     client.localRoom.heldTimeline = Completer<Timeline>();
     final ready = ValueNotifier(false);
-    final lease =
-        await _mountLifecycleRoom(tester, client, dispatchReady: ready);
+    final businessRequests = <String>[];
+    final lease = await _mountLifecycleRoom(tester, client,
+        dispatchReady: ready, businessRequests: businessRequests);
+    expect(businessRequests, isEmpty,
+        reason: 'local-only room must not call business APIs');
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const Key('chat-details')))
+            .onPressed,
+        isNull);
     final page = tester.state(find.byType(RoomPage)) as dynamic;
     expect(page.controller, isNotNull);
     expect(page.controller.messages.length, 40);

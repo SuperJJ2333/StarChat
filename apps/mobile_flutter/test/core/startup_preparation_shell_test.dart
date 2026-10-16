@@ -26,8 +26,11 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('正在启动畅聊'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
-    expect(find.text('正在读取本地设置，请稍候'), findsOneWidget);
-    expect(find.byKey(const Key('installation-startup-retry')), findsNothing);
+    expect(find.text('正在读取本地设置，请稍候'), findsNothing,
+        reason:
+            'optional package metadata cannot delay installation/account safety checks');
+    // Missing secure-store plugins may fail the necessary installation probe;
+    // that is independent of the deliberately held optional metadata request.
     await tester.pumpWidget(const SizedBox.shrink());
     packageInfo.complete({
       'appName': 'test',
