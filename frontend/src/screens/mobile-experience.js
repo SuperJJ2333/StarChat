@@ -102,7 +102,15 @@ export function mobileExperienceDemo(definition) {
       const body=element('div','c-conversation-row__body');
       body.append(element('h2','c-conversation-row__title',name),element('p','c-conversation-row__preview',text));
       row.append(component('app-avatar',{name,size:'conversation'}),body,element('time','c-conversation-row__time','09:41'));
-      action(`open-room-${index+1}`,'进入会话',()=>openRoom(String(index+1)),row);
+      row.dataset.control=`open-room-${index+1}`;
+      row.setAttribute('role','button'); row.setAttribute('tabindex','0');
+      row.setAttribute('aria-label',`进入${name}会话`);
+      row.addEventListener('click',()=>openRoom(String(index+1)));
+      row.addEventListener('keydown',event=>{
+        if (event.key==='Enter' || event.key===' ') {
+          event.preventDefault(); openRoom(String(index+1));
+        }
+      });
     }
     rows.append(row);
   }
