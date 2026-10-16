@@ -84,6 +84,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   }
 
   bool _matrixRestorePending = false;
+  bool _startupRetirementPending = false;
 
   Future<void> checkSessionValidity() async {
     final gateway = business;
@@ -189,6 +190,13 @@ final class SessionBootstrapController extends ChangeNotifier {
       _set(const SessionBootstrapState(SessionBootstrapStatus.loading));
     }
     try {
+      if (_startupRetirementPending) {
+        if (!await _bestEffortMatrixSuspend()) {
+          throw StateError('Failed startup client could not be retired');
+        }
+        if (generation != _generation) return;
+        _startupRetirementPending = false;
+      }
       final localIdentity = await business.currentMatrixUserId();
       if (generation != _generation) return;
       if (resumingConfirmedRecovery &&
@@ -214,6 +222,17 @@ final class SessionBootstrapController extends ChangeNotifier {
           await (initializing as MatrixInitializationGateway)
               .initializationCompleted;
         } catch (_) {
+          // A published client can fail after local presentation. Retire its
+          // capabilities and require the existing online-authorized restore
+          // path on Retry; never await the same failed future indefinitely.
+          if (generation != _generation) return;
+          _matrixRestorePending = true;
+          _startupRetirementPending = true;
+          canShowCachedMessages = false;
+          notifyListeners();
+          if (await _bestEffortMatrixSuspend()) {
+            _startupRetirementPending = false;
+          }
           // SDK recovery errors must never take the network-offline auth path.
           throw StateError('Local Matrix initialization did not complete');
         }

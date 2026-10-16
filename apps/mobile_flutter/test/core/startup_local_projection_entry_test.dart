@@ -414,8 +414,35 @@ void registerStartupProjectionEntryTests(
         final txid = rows!.single.txid;
         expect(transportSends, 0);
         expect(held.release.isCompleted, isFalse);
+        final viewportBounds = tester.getRect(viewport);
+        final visibleMessages = find
+            .descendant(of: viewport, matching: find.byType(Text))
+            .evaluate()
+            .where((element) =>
+                (element.widget as Text).data?.startsWith('Cached message ') ==
+                true)
+            .where((element) {
+          final bounds = tester.getRect(find.byElementPredicate(
+              (candidate) => identical(candidate, element)));
+          return viewportBounds.contains(bounds.topLeft) &&
+              viewportBounds.contains(bounds.bottomRight);
+        }).toList();
+        expect(visibleMessages, isNotEmpty,
+            reason: 'capture an actually visible stable cached bubble');
+        final anchorText =
+            (visibleMessages[visibleMessages.length ~/ 2].widget as Text).data!;
+        final anchor =
+            find.descendant(of: viewport, matching: find.text(anchorText));
+        final anchorY = tester.getTopLeft(anchor).dy - viewportBounds.top;
         held.release.complete();
         await flush(100);
+        expect(anchor, findsOneWidget);
+        final restoredViewport = tester.getRect(viewport);
+        expect(restoredViewport.overlaps(tester.getRect(anchor)), isTrue);
+        expect(tester.getTopLeft(anchor).dy - restoredViewport.top,
+            closeTo(anchorY, 8.0),
+            reason:
+                'same stable cached message must retain its viewport reading position');
         expect(tester.state(find.byType(RoomPage)), same(roomState));
         expect(
             client.getRoomById('!room-64:synthetic.test'), same(retainedRoom));
