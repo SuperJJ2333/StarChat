@@ -553,6 +553,25 @@ void registerStartupProjectionEntryTests(
             expect(utf8.decode(projection.encode()),
                 isNot(contains('forbidden-authority')));
           }
+          if (!allHidden) {
+            // Canonical head advances after the last committed projection, with
+            // no event replay in the resumed mock sync.
+            await full.database!.storeEventUpdate(
+                EventUpdate(
+                    roomID: '!room-64:synthetic.test',
+                    type: EventUpdateType.timeline,
+                    content: {
+                      'event_id': 'canonical-new-head',
+                      'type': EventTypes.Message,
+                      'sender': user,
+                      'origin_server_ts': 10060,
+                      'content': {
+                        'msgtype': 'm.text',
+                        'body': 'Canonical newer head'
+                      }
+                    }),
+                full);
+          }
           await held.previewSettled.future.timeout(const Duration(seconds: 5));
           await full.dispose();
           store.startupProjectionCoordinator =
@@ -741,6 +760,18 @@ void registerStartupProjectionEntryTests(
         expect(tester.state(find.byType(RoomPage)), same(roomState));
         expect(
             client.getRoomById('!room-64:synthetic.test'), same(retainedRoom));
+        if (independent) {
+          final dynamic activePage = roomState;
+          expect(activePage.controller.findMessage('cached-57').packetId,
+              'forbidden-authority',
+              reason: 'decrypted media retains canonical content');
+          expect(activePage.controller.findMessage('canonical-new-head').text,
+              'Canonical newer head');
+          expect(activePage.controller.findMessage('cached-52').packetId,
+              'forbidden-authority',
+              reason:
+                  'same active timeline must adopt canonical custom metadata without replay');
+        }
         expect(transportTxids, [txid],
             reason: 'transport retains durable transaction identity');
         if (independent) {

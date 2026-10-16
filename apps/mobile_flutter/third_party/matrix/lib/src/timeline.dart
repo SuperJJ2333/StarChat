@@ -957,6 +957,77 @@ class Timeline {
     }
   }
 
+  /// Adopt at most forty verified local head rows into an existing display
+  /// timeline. Projected object identity and redaction checks preserve newer
+  /// live updates; removed baseline IDs are never resurrected. Reading forks
+  /// receive replacements only, so their window and viewport stay intact.
+  void reconcileStartupHead(Iterable<Event> canonical,
+      {required Map<String, Event> projectedEvents,
+      required int historyGeneration,
+      required bool Function() isActive,
+      Iterable<Timeline> Function()? retainedFragments}) {
+    if (_pinnedDisposed ||
+        room.historyGeneration != historyGeneration ||
+        !isActive()) {
+      return;
+    }
+    final head = canonical.take(40).toList(growable: false);
+    for (final target in [this, ...?retainedFragments?.call()]) {
+      if (target._pinnedDisposed ||
+          !identical(target.room, room) ||
+          (!identical(target, this) &&
+              target._pinnedGeneration != historyGeneration)) {
+        continue;
+      }
+      var changed = false;
+      for (final restored in head) {
+        final index =
+            target.events.indexWhere((e) => e.eventId == restored.eventId);
+        final original = projectedEvents[restored.eventId];
+        if (index >= 0) {
+          if (original == null ||
+              !identical(target.events[index], original) ||
+              original.redacted ||
+              !original.status.isSynced) {
+            continue;
+          }
+          target.events[index] = restored;
+          target.onChange?.call(index);
+          changed = true;
+        } else if (identical(target, this) && original == null) {
+          // Preserve existing local pending rows and insert by canonical head
+          // order without sorting or replacing the current reading window.
+          final next = head
+              .skipWhile((e) => !identical(e, restored))
+              .skip(1)
+              .map((e) => target.events
+                  .indexWhere((current) => current.eventId == e.eventId))
+              .firstWhere((i) => i >= 0, orElse: () {
+            final previous = head
+                .takeWhile((e) => !identical(e, restored))
+                .toList()
+                .reversed
+                .map((e) => target.events
+                    .indexWhere((current) => current.eventId == e.eventId))
+                .firstWhere((i) => i >= 0, orElse: () => -1);
+            if (previous >= 0) return previous + 1;
+            final firstSynced =
+                target.events.indexWhere((e) => e.status.isSynced);
+            return firstSynced < 0 ? target.events.length : firstSynced;
+          });
+          target.events.insert(next, restored);
+          target.onInsert?.call(next);
+          changed = true;
+        }
+      }
+      if (changed) {
+        target._presentationRevision++;
+        target._rebuildAggregatedEvents();
+        target.onUpdate?.call();
+      }
+    }
+  }
+
   /// Retry local decryption for a captured bounded cache without replacing the
   /// subscribed timeline or admitting events that have since left its window.
   /// [retainedFragments] supplies only current reading forks, including forks

@@ -2084,6 +2084,10 @@ final class MatrixRoomLease
               originServerTs: DateTime.fromMillisecondsSinceEpoch(e.timestamp),
               content: e.displayContent)
       ];
+      final generation = room.historyGeneration;
+      final projectedEvents = {
+        for (final event in events) event.eventId: event
+      };
       final timeline = Timeline(
           room: room,
           chunk: TimelineChunk(events: events),
@@ -2095,8 +2099,30 @@ final class MatrixRoomLease
         try {
           await owner.initializationCompleted;
           capability._ensureActive();
-          final restored = await room.getTimeline(onUpdate: onUpdate);
-          restored.cancelSubscriptions();
+          await room.postLoad();
+          final restored =
+              await room.client.database!.getEventList(room, limit: 40);
+          capability._ensureActive();
+          bool active() =>
+              !capability._disposed &&
+              !canceled &&
+              !owner._accessRevoked &&
+              identical(owner._client, room.client) &&
+              identical(_room, room) &&
+              generation == room.historyGeneration;
+          Iterable<Timeline> fragments() {
+            final context = capability._contextTimeline;
+            return context == null ? const <Timeline>[] : [context];
+          }
+
+          timeline.reconcileStartupHead(restored,
+              projectedEvents: projectedEvents,
+              historyGeneration: generation,
+              isActive: active,
+              retainedFragments: fragments);
+          await timeline.hydrateCachedEvents(restored,
+              isActive: active, retainedFragments: fragments);
+          if (!active()) return;
           await _enableSdkResidentWindow(timeline);
           capability._ensureActive();
           onHydrated?.call();

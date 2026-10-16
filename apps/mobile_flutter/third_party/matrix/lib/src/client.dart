@@ -1925,6 +1925,7 @@ class Client extends MatrixApi {
   Future<void>? _projectionInitialization;
   bool _projectionPending = false;
   List<Room>? _startupSeededRooms;
+  final _startupSeedScalars = <String, (int, int, String?, String, int)>{};
   Future<void> get initializationCompleted =>
       _projectionInitialization ?? _initializationCompleted;
   bool get isInitializationPending => _localCacheFirst || _projectionPending;
@@ -1947,6 +1948,15 @@ class Client extends MatrixApi {
       throw StateError('Invalid startup room seed');
     }
     _startupSeededRooms = List<Room>.of(rooms);
+    for (final room in rooms) {
+      _startupSeedScalars[room.id] = (
+        room.notificationCount,
+        room.highlightCount,
+        room.prev_batch,
+        jsonEncode(room.summary.toJson()),
+        room.historyGeneration
+      );
+    }
     _rooms = List<Room>.of(rooms);
     _projectionPending = true;
     _projectionInitialization = Future.any([
@@ -2255,7 +2265,7 @@ class Client extends MatrixApi {
           for (final room in seeded) {
             projectedStateKeys[room.id] = {};
             projectedAccountKeys[room.id] = {};
-            projectedHistory[room.id] = room.historyGeneration;
+            projectedHistory[room.id] = _startupSeedScalars[room.id]!.$5;
           }
         }
         if (_localCacheFirst && olmAccount != null && encryptionEnabled) {
@@ -2302,6 +2312,23 @@ class Client extends MatrixApi {
               if (live == null ||
                   projectedHistory[live.id] != live.historyGeneration) {
                 continue;
+              }
+              // Only independent display seeds lack canonical scalar metadata.
+              // A change after seeding, including before init starts, wins.
+              final scalar = _startupSeedScalars[live.id];
+              if (scalar != null) {
+                if (live.notificationCount == scalar.$1) {
+                  live.notificationCount = restored.notificationCount;
+                }
+                if (live.highlightCount == scalar.$2) {
+                  live.highlightCount = restored.highlightCount;
+                }
+                if (live.prev_batch == scalar.$3) {
+                  live.prev_batch = restored.prev_batch;
+                }
+                if (jsonEncode(live.summary.toJson()) == scalar.$4) {
+                  live.summary = restored.summary;
+                }
               }
               final original = projectedStateKeys[live.id] ?? const <String>{};
               for (final type in restored.states.entries) {

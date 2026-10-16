@@ -42,6 +42,129 @@ class HeldStartupDatabase extends MatrixSdkDatabase {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final mutation in ['none', 'scalars', 'history']) {
+    test('independent seed restores canonical scalars: $mutation', () async {
+      await olm.init();
+      final factory =
+          createDatabaseFactoryFfi(ffiInit: SQfLiteEncryptionHelper.ffiInit);
+      final sql = await factory.openDatabase(inMemoryDatabasePath,
+          options: OpenDatabaseOptions(onConfigure: (db) async {
+        await db.execute("PRAGMA key = 'synthetic-startup-fixture'");
+      }));
+      final db = HeldStartupDatabase('seed-scalars',
+          database: sql, sqfliteFactory: factory);
+      await db.open();
+      final account = olm.Account()..create();
+      await db.insertClient(
+          'seed-scalars',
+          'https://synthetic.test',
+          'synthetic-token',
+          null,
+          null,
+          '@startup:synthetic.test',
+          'SYNTHETIC',
+          'fixture',
+          null,
+          account.pickle('@startup:synthetic.test'));
+      account.free();
+      var historyRequests = 0;
+      final client = Client('seed-scalars',
+          databaseBuilder: (_) async => db,
+          httpClient: MockClient((request) async {
+            if (request.url.path.endsWith('/messages')) {
+              historyRequests++;
+              expect(request.url.queryParameters['from'], 'older-page');
+              return http.Response(
+                  jsonEncode({
+                    'chunk': [],
+                    'start': 'older-page',
+                    'end': 'older-page'
+                  }),
+                  200);
+            }
+            return http.Response('{}', 404);
+          }))
+        ..backgroundSync = false;
+      final canonical = Room(
+          id: '!seed:synthetic.test',
+          client: client,
+          notificationCount: 7,
+          highlightCount: 3,
+          prev_batch: 'older-page',
+          summary: RoomSummary.fromJson(
+              {'m.joined_member_count': 9, 'm.invited_member_count': 2}));
+      await sql.insert('box_rooms',
+          {'k': canonical.id, 'v': jsonEncode(canonical.toJson())});
+      final seed = Room(id: canonical.id, client: client);
+      final ready = Completer<void>();
+      client.seedStartupRooms([seed], ready.future);
+      final init = client.init();
+      await db.entered.future;
+      if (mutation == 'scalars') {
+        seed.notificationCount = 12;
+        seed.highlightCount = 5;
+        seed.prev_batch = 'newer-page';
+        seed.summary = RoomSummary.fromJson({'m.joined_member_count': 17});
+      }
+      if (mutation == 'history') seed.invalidateHistoryFragment();
+      db.release.complete();
+      await init;
+      ready.complete();
+      await db.previewSettled.future;
+      try {
+        expect(client.getRoomById(seed.id), same(seed));
+        expect(
+            seed.notificationCount,
+            mutation == 'none'
+                ? 7
+                : mutation == 'scalars'
+                    ? 12
+                    : 0);
+        expect(
+            seed.highlightCount,
+            mutation == 'none'
+                ? 3
+                : mutation == 'scalars'
+                    ? 5
+                    : 0);
+        expect(
+            seed.prev_batch,
+            mutation == 'none'
+                ? 'older-page'
+                : mutation == 'scalars'
+                    ? 'newer-page'
+                    : null);
+        expect(
+            seed.summary.mJoinedMemberCount,
+            mutation == 'none'
+                ? 9
+                : mutation == 'scalars'
+                    ? 17
+                    : 0);
+        if (mutation == 'none') {
+          expect(seed.isUnread, isTrue);
+          final timeline = Timeline(
+              room: seed,
+              chunk: TimelineChunk(events: [
+                Event(
+                    room: seed,
+                    eventId: 'older',
+                    type: EventTypes.Message,
+                    senderId: '@startup:synthetic.test',
+                    originServerTs: DateTime.fromMillisecondsSinceEpoch(1),
+                    content: {'body': 'older'})
+              ]));
+          await timeline.requestHistory(historyCount: 1);
+          expect(historyRequests, 1,
+              reason:
+                  'canonical cursor permits remote history after local exhaustion');
+          timeline.cancelSubscriptions();
+        }
+      } finally {
+        await client.dispose();
+      }
+    });
+  }
   for (final scenario in [
     'ready',
     'failure',
