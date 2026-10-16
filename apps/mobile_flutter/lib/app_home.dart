@@ -680,6 +680,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<void> _prepareLocalOutbox() => _localOutboxFlight ??= () async {
         final account = widget.matrix.userId;
+        final device = widget.matrix.deviceId;
+        final sessionEpoch = widget.api.sessionEpoch;
         if (account == null || account.isEmpty) {
           throw StateError('Missing local account');
         }
@@ -694,7 +696,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         // Open the durable store before a route can expose its composer. Never
         // substitute an in-memory queue when local persistence is unavailable.
         await outbox.store.query(accountId: account, limit: 1);
-        if (!mounted || _disposed || widget.matrix.userId != account) return;
+        if (!mounted ||
+            _disposed ||
+            widget.matrix.userId != account ||
+            widget.matrix.deviceId != device ||
+            widget.api.sessionEpoch != sessionEpoch) {
+          return;
+        }
         _outbox = outbox;
         PersistentOutboxManager.shared = outbox;
       }();
@@ -1716,6 +1724,40 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   ///   等下次进入会话），房间号未知的等 pending conversation 绑定。
   void _bindOutbox(NetworkStateManager network) {
     unawaited(_bindMediaOutbox(network));
+    final localOpen = _localOutboxFlight;
+    if (localOpen == null) {
+      _bindTextOutbox(network);
+      return;
+    }
+    final generation = _startup.generation;
+    final account = widget.matrix.userId;
+    final device = widget.matrix.deviceId;
+    final sessionEpoch = widget.api.sessionEpoch;
+    // A locally eligible home already owns this storage open. Verification
+    // may attach live resources first, but must not create another manager
+    // whose scheduler admission is invalidated by the late local completion.
+    unawaited(localOpen.then<void>((_) {
+      if (!_currentStartup(generation) ||
+          !_hasVerifiedSession ||
+          widget.matrix.userId != account ||
+          widget.matrix.deviceId != device ||
+          widget.api.sessionEpoch != sessionEpoch ||
+          _outbox == null ||
+          !identical(PersistentOutboxManager.shared, _outbox)) {
+        return;
+      }
+      _bindTextOutbox(network);
+    }, onError: (Object _) {
+      // Failed durable storage stays unavailable; do not bind a fallback queue.
+      widget.matrix.securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.homeResourceDisposeFailed,
+      );
+    }));
+  }
+
+  void _bindTextOutbox(NetworkStateManager network) {
     final accountId = widget.matrix.userId ?? '';
     var outbox = PersistentOutboxManager.shared;
     if (outbox == null || outbox.accountId != accountId) {
