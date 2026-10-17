@@ -1,5 +1,11 @@
 # 当前工作状态
 
+## 2026-10-18 Android2222冷启动已实测，2223 Debug修正群资料并安装模拟器
+
+2222测试群两轮可靠实测：入房236/241ms，发送至确认1495/1597ms，SDK sendEvent1236/1516ms为主要跨度，其中一次真实消息HTTP245.603ms；HTTP外约990ms尚未逐子阶段计时。缓存内容1687/1754ms、SDKready5140/5489ms均从Dart入口，自动化冷启动→确认13.23～14.81s含查找/输入开销，不称纯APP延迟。roomInfo缓存头遮住canonical成员导致非好友头像缺失/人数0，已按display-only缓存成员→canonical资料同页交接修正，未知人数不显示0，timeline缓存保留。
+
+冻结df395145：40专项、6160全量PASS/9旧诊断开关SKIP/0FAIL、analyze0、独立SPEC→QUALITY、原生五场景和114头像审计帧通过。固定签名0.4.54+2223普通main Debug SHA d91510a4…fed716（126081370B）已install-r至5556，设备hash/UID10090/firstInstall保持。真实冷启动无发送进入测试群，未知人数自动变7；非好友自定义头像首观察/恢复后均显示，资料页同图及“添加到通讯录”确认，未加好友。模拟器留在测试群供自行测试。未宣称2223发送性能改善；聚合verify缺.env及iOS真机未验保留。正式渠道仍已回退Android2216/iOS2215，未改弹窗/下载入口。见[任务](tasks/2026-10-18-android2222-cold-send-profile.md)与[报告](../verification/2026-10-18-android2222-cold-send-profile.md)，证据仅保留在interactive-cache-startup工作树。
+
 ## 2026-10-18 Android2221正式分发已撤回，公开版本恢复2216
 
 用户明确要求暂停0.4.52+2221更新弹窗和下载入口。02:26:14+08已恢复Android0.4.47+2216及旧说明，真实路由/三审计确认，iOS2215/min3保持；官网/registry/latest及两工作区两静态回填2216。2221源站APK移入0700私有备份保留SHA，CDN精确撤下一条路由并完成缓存失效；剩19路由/35容器/schema/其他配置不变。公网2216双线路HEAD200/长度及精确元数据PASS；2221 CDN403、origin旧路径200HTML小页面而非APK（不称404）。8保护测试及root顺序规格→质量复核通过，首次状态码预期失败保留，r2验收通过；无移动源码/构建/模拟器降级，已装2221设备不会自动降级。自建隧道停止。下一步等待反馈，重新发布2221需新授权。见[任务](tasks/2026-10-18-android2221-withdraw.md)及[报告](../verification/2026-10-18-android2221-withdraw.md)。
