@@ -85,3 +85,11 @@ Ruling: AppHome中央路由在真实本地头/隐藏过滤准备完成后推入R
 头像扩展设计审查PASS已落实ADR追加条款。startup_pipeline独占新增产品范围：core/startup_projection/startup_projection.dart、features/matrix/matrix_e2ee_client.dart和matrix_user_avatar.dart、ui/foundation/avatar_cache.dart及必要ui/components/user_avatar.dart，加对应tests/native入口。先RED后GREEN，现有账号identity命名域/清理保持，禁止新namespace和unscoped回退；详细验收遵循task4-avatar-design-review.md。原生报告新增完整恢复后入房、群头像成员、无误离线断言，真实账号新cache形成后第二次冷启动必须复查。
 
 头像接口范围补充：允许features/matrix/avatar_url_resolver.dart纯canonical authenticated thumbnail URL构造公开函数及对应test，复用既有_thumbnail规则仅做磁盘键，禁止假token/网络请求/伪loggedin；local/full同URI输入应选同URL版本。
+
+真实2221交接修正：首帧头像正确但local→full清空已paint FileImage，远程provider首次解码透明露出灰背景。仅MatrixUserAvatar/UserAvatar及对应tests可改：当前owner/scopedidentity/effectiveURI一致时保留已成功paint图片作widget内桥接，完整provider就绪后正常显示；撤销/跨账号/URI变更或移除立即失效，不新增全局缓存。RED/GREEN逐帧验证图像和mosaic成员映射，native报告新增avatar_handoff_continuous。审查后重建2221修订；先前真实cold失败保留。
+
+交接验收澄清：原nonempty场景解除SDK时位于RoomPage，offstage列表不能证明可见头像连续。因此保留原4场景及原队列/锚点断言，增加第5场景actual-main-avatar-handoff，始终显示列表跨SDK解除，逐帧证明成员稳定和图片不断档，networkheld/after均0，avatar_handoff_continuous=true。root runner已按5IDs及单独handoff证据门禁更新，旧4场景结果仍保留其原范围。
+
+交接范围最终补充（7ada9f1d）：真实第五场景证明 MatrixHomePage 把 previewOnly 变化误当成 owner 变化并清除 row GlobalKey，故授权该文件与既有 matrix_home_snapshot_refresh_test.dart。仅同 owner 模式切换保留 key/自建 ProfileRepository；真正 account/API/Matrix/identityCache 更换仍清理。组件已paint图片桥接与父级状态连续性共同通过第五场景；独立 SPEC→QUALITY 审查通过。
+
+取消重入竞态补充：真实SQL held→切tab/返回→再点同房的意图不能并入已取消opening。授权MatrixHomePage/AppHome/RoomNavigationCoordinator及既有entry/coordinator tests：取消只退休尚未register的attempt，token保护晚到register/push/error/finally，不影响active或跳过lease清理；origin非根route popped退休仅匹配pending，pre-association前捕获origin/intentepoch。移除列表重复去重后由coordinator统一处理doubletap/anchor。真实RED、相关回归及独立SPEC→QUALITY后重建，两次native失败保留。

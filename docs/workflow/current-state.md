@@ -1,9 +1,8 @@
 # 当前工作状态
 
-## 2026-10-17 首屏本地投影：2220用户反馈修复中
+## 2026-10-17 首屏本地投影：2221 Debug已完成反馈修复并安装
 
-当前模拟器安装0.4.51+2220普通Debug。用户反馈冷启动群头像回退默认、网络不可用提示，以及在列表等待后入房依旧加载；真实已恢复账号入房录像确认加载页出现在路由动画中。先前原生held-SDK四场景PASS没有覆盖完整恢复后的数据库入房分支，不能作为本轮完成依据。startup_pipeline负责诊断/真实行为RED与修复，root负责设备、版本和交付，独立SPEC→QUALITY审查。无正式发布/真人发送。见[任务](tasks/2026-10-17-startup-local-projection.md)和[既有验证报告](../verification/2026-10-17-startup-local-projection.md)。
-
+最终产品45355d5f，普通0.4.52+2221 Debug固定75b31签名APK042e2be1…6f1289e于17:46+08保数据安装5556，UID/首次安装/设备SHA确认。修复缓存群头像、误离线、入房加载页及取消重入吞点击；native4五场景全PASS、头像112帧连续、原队列/锚点/首帧断言保留。真实cold-r4 HIT/头像交接/无误离线、暖入房首帧气泡/滚动通过；postinstall首次admissionRejected保留非fastpath证据。最终56相关覆盖（15新+41复用）、fullanalyze0、SPEC→QUALITY通过；原全量6134PASS9SKIP2旧夹具FAIL与后续修正记录均保留，不称原命令exit0。未发布生产或发送真实消息。等待用户自行测试。见[任务](tasks/2026-10-17-startup-local-projection.md)和[反馈报告](../verification/2026-10-17-startup-feedback.md)。
 ## 2026-10-16 交互缓存启动及入房：2218 Debug已安装
 
 用户批准实施。独立工作树interactive-cache-startup，产品源码c29597e0；首页缓存可导航、房间有界缓存与可滚动恢复、文字持久待发，必要身份/密钥检查保留。6075PASS/9SKIP/0FAIL、fullanalyze0、独立SPEC→QUALITY通过。固定75b31签名0.4.49+2218 x86_64常规重建成品SHAe5de14ae…6115a6/125983066B已于23:19+08保数据install-r至5556；UID/首次安装/设备APK哈希确认，启动及被动检查通过。人工冷启/滚动/发送待用户自行验收，未发布正式渠道。详见[任务](tasks/2026-10-16-interactive-cache-startup.md)；完整[验证报告](C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat/docs/verification/2026-10-16-interactive-cache-startup.md)。
@@ -2712,4 +2711,3 @@ iOS0.4.25/2194于21:54 +08发布，最终SHA552a07a4；用户对当前包三项�
 
 
 用户审核 Three.js HTML 与美化 APP 图标后授权静态发布。www 首页及 /download 已切 orbit-20261005-v1，532 前端测试、UI契约、6项发布器恢复、两侧严格TLS资源SHA/安装包HEAD、线上390/1440px检查通过。Android2202/iOS2194包、manifest、十项设置、选线模块、nginx与容器不变；0700回退备份已保存，临时SOCKS已关闭。[任务](tasks/2026-10-05-orbit-website-publication.md) · [验证](../verification/2026-10-05-orbit-website-publication.md)。
-
