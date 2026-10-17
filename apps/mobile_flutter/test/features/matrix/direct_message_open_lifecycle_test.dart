@@ -69,12 +69,17 @@ void main() {
     harness._counters.canonicalAvailable = true;
     harness._counters.canonicalRoomId = next.id;
     final dynamic state = tester.state(find.byType(RoomPage));
+    expect(harness.client.encryptionEnabled, isFalse,
+        reason:
+            'local durable admission precedes encryption transport readiness');
     final Future<dynamic> sending =
         state.controller.sendText('new recovery text');
     await tester.pumpAndSettle();
     await sending;
     final rows = await PersistentOutboxManager.shared!.unsent();
     expect(rows.single.roomId, next.id, reason: rows.single.lastError);
+    expect(harness.matrixHttpRequests, 0,
+        reason: 'canonical binding cannot bypass encryption readiness to send');
     expect(find.byType(RoomPage, skipOffstage: false), findsOneWidget);
     expect(harness.roomLeaseOf(tester).roomId, next.id);
     Navigator.of(tester.element(find.byType(RoomPage))).pop();

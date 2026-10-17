@@ -22,6 +22,165 @@ class _EchoClient extends Client {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues({});
+  test('pending unadmitted room cannot queue with only restored credentials',
+      () async {
+    final client = _EchoClient()..setUserId('@synthetic:test');
+    final room = Room(
+        id: '!synthetic:test', client: client, membership: Membership.join);
+    client.rooms.add(room);
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://synthetic.test'));
+    final lease = await owner.openRoomLease(room.id);
+    final full = Completer<void>();
+    client.seedStartupRooms([room], full.future);
+    try {
+      expect(lease.canQueueLocalText, isFalse);
+      client.accessToken = 'synthetic-token';
+      expect(client.isLogged(), isTrue);
+      expect(client.encryptionEnabled, isFalse);
+      expect(lease.canQueueLocalText, isFalse,
+          reason:
+              'credentials alone do not prove canonical local SDK recovery');
+    } finally {
+      full.complete();
+      await lease.cancel();
+      owner.outgoingWork.dispose();
+      await client.dispose();
+    }
+  });
+  test('local queue permission is independent of crypto transport readiness',
+      () async {
+    final client = LogoutTrackingClient('queue',
+        loggedIn: true,
+        matrixUserId: '@synthetic:test',
+        matrixDeviceId: 'DEVICE');
+    final room = Room(
+        id: '!synthetic:test', client: client, membership: Membership.join);
+    client.roomOverride = room;
+    room.setState(Event(
+        room: room,
+        eventId: 'synthetic-state',
+        senderId: '@synthetic:test',
+        originServerTs: DateTime.utc(2026),
+        type: EventTypes.Encryption,
+        stateKey: '',
+        content: {'algorithm': AlgorithmTypes.megolmV1AesSha2}));
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://synthetic.test'),
+        readContinuityMetadata: (active) async =>
+            MatrixClientContinuityMetadata(
+                isLoggedIn: true,
+                userId: active.userID,
+                deviceId: active.deviceID,
+                ed25519Fingerprint: 'synthetic',
+                databaseGeneration: 'synthetic'),
+        suspendClient: (_) async {});
+    final lease = await owner.openRoomLease(room.id);
+    try {
+      expect(client.encryptionEnabled, isFalse);
+      expect(lease.canQueueLocalText, isTrue,
+          reason: 'durable admission does not require encryption transport');
+      room.membership = Membership.leave;
+      expect(lease.canQueueLocalText, isFalse);
+      room.membership = Membership.join;
+      room.setState(Event(
+          room: room,
+          eventId: 'synthetic-state',
+          senderId: '@synthetic:test',
+          originServerTs: DateTime.utc(2026),
+          type: EventTypes.RoomPowerLevels,
+          stateKey: '',
+          content: {
+            'events': {EventTypes.Encrypted: 100}
+          }));
+      expect(lease.canQueueLocalText, isFalse);
+      room.setState(Event(
+          room: room,
+          eventId: 'synthetic-state',
+          senderId: '@synthetic:test',
+          originServerTs: DateTime.utc(2026),
+          type: EventTypes.RoomPowerLevels,
+          stateKey: '',
+          content: {
+            'events': {EventTypes.Encrypted: 0}
+          }));
+      expect(lease.canQueueLocalText, isTrue);
+      client.roomOverride =
+          Room(id: room.id, client: client, membership: Membership.join);
+      expect(lease.canQueueLocalText, isFalse,
+          reason: 'a replaced canonical Room cannot authorize an old lease');
+      client.roomOverride = room;
+      expect(lease.canQueueLocalText, isTrue);
+      await lease.cancel();
+      expect(lease.canQueueLocalText, isFalse);
+      final another = await owner.openRoomLease(room.id);
+      final suspension = owner.suspend();
+      expect(another.canQueueLocalText, isFalse,
+          reason: 'owner revocation denies queue admission synchronously');
+      await suspension;
+    } finally {
+      owner.outgoingWork.dispose();
+      await client.dispose();
+    }
+  });
+  test('revoked preinit projection cannot use seeded default send power',
+      () async {
+    final client = _EchoClient()..setUserId('@synthetic:test');
+    client.testDevice = 'DEVICE';
+    final room = Room(
+        id: '!synthetic:test', client: client, membership: Membership.join);
+    final full = Completer<void>();
+    client.seedStartupRooms([room], full.future);
+    final secure = SecureSessionStore(MemorySecureKeyValueStore());
+    final epoch = base64Url.encode(List.filled(32, 1)).replaceAll('=', '');
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://synthetic.test'),
+        secureSessionStore: secure,
+        startupProjection: StartupProjection([
+          StartupProjectionRoom(
+              id: room.id,
+              name: 'Synthetic',
+              direct: false,
+              peer: null,
+              unread: 0,
+              pinned: false,
+              muted: false,
+              canSend: true,
+              activity: 0,
+              events: [])
+        ]),
+        startupAdmission: StartupProjectionAdmission(
+            scope: '',
+            homeserver: 'https://synthetic.test',
+            userId: '@synthetic:test',
+            deviceId: 'DEVICE',
+            fingerprint: 'synthetic',
+            databaseGeneration: 'synthetic',
+            installationId: epoch,
+            epoch: epoch,
+            databaseKey: base64Url.encode(List.filled(32, 2)),
+            registrationKey: 'synthetic'));
+    final lease = await owner.openRoomLease(room.id);
+    try {
+      expect(lease.canQueueLocalText, isTrue);
+      final mutation = secure.startupProjectionCoordinator!
+          .beginMutation('synthetic-revoke');
+      await mutation.beforeApply;
+      mutation.finish(applied: true);
+      expect(client.isInitializationPending, isTrue);
+      expect(lease.canQueueLocalText, isFalse,
+          reason:
+              'invalid preinit display cannot fall through to seeded room power');
+      full.complete();
+      await client.initializationCompleted;
+      expect(lease.canQueueLocalText, isTrue);
+    } finally {
+      if (!full.isCompleted) full.complete();
+      await lease.cancel();
+      owner.outgoingWork.dispose();
+      await client.dispose();
+    }
+  });
   test('same identity resume cannot revive the original admitted room head',
       () async {
     final first = LogoutTrackingClient('first',

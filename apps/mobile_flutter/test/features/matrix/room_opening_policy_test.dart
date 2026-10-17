@@ -521,8 +521,7 @@ void main() {
       expect(appHome, contains('_roomOpenFailureVisible'));
       final duplicateFeedbackGate = appHome.substring(
         appHome.indexOf('if (_roomOpenFailureVisible) {'),
-        appHome.indexOf(
-            'prepare: widget.matrix.prepareConversationAssociations,',
+        appHome.indexOf('await _roomOpening.openPrepared(',
             appHome.indexOf('if (_roomOpenFailureVisible) {')),
       );
       expect(duplicateFeedbackGate,

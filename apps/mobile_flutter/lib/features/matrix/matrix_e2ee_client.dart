@@ -1897,13 +1897,33 @@ final class MatrixRoomLease
   @override
   bool canceled = false;
 
-  bool get canQueueLocalText =>
-      !canceled &&
-      !owner._accessRevoked &&
-      (owner.hasLocalDisplayProjection
-          ? owner._projectionRoom(roomId)?.canSend == true
-          : _room?.membership == Membership.join &&
-              _room?.canSendDefaultMessages == true);
+  bool get canQueueLocalText {
+    final room = _room;
+    final client = owner._client;
+    if (canceled ||
+        owner._accessRevoked ||
+        room == null ||
+        client == null ||
+        !identical(room.client, client) ||
+        !identical(client.getRoomById(roomId), room) ||
+        room.membership != Membership.join) {
+      return false;
+    }
+    if (client.isInitializationPending) {
+      if (owner.startupProjection != null) {
+        return owner.hasLocalDisplayProjection &&
+            owner._projectionRoom(roomId)?.canSend == true;
+      }
+      // Legacy local-first startup publishes canonical DB rooms only after
+      // restoring credentials and the retained Olm account. A seeded display
+      // without that admission cannot use default event power as permission.
+      if (!client.isLogged() || !client.encryptionEnabled) return false;
+    }
+    // Durable local admission checks membership and event power. Encryption
+    // engine readiness is enforced separately when dispatching the transaction.
+    return room.canSendEvent(
+        room.encrypted ? EventTypes.Encrypted : EventTypes.Message);
+  }
 
   Future<void> runLocalHistoryMutation(Future<void> Function() apply) =>
       owner.runLocalHistoryMutation(apply);

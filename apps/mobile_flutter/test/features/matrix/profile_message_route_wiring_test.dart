@@ -30,8 +30,10 @@ void main() {
     expect(source, isNot(contains('setOnRevoked(')),
         reason: 'revoke 生命周期由统一入口负责');
     expect(source, contains('widget.onOpenRoom'), reason: '房间打开委托给 AppHome');
-    expect(source, contains('final Set<String> _openingRooms'),
-        reason: '同一房间重复点击按 roomId 去重（不再用全局 bool）');
+    expect(source, contains('await openRoom(RoomOpenRequest('),
+        reason: '重复点击、取消和再进入由统一协调器处理');
+    expect(source, isNot(contains('_openingRooms')),
+        reason: '页面本地去重不得吞掉取消后的新请求');
     expect(source, isNot(contains('bool _openingRoom =')),
         reason: '全局 _openingRoom 会吞掉其它房间的打开请求');
   });
@@ -44,9 +46,19 @@ void main() {
     // The policy now measures the existing association preparation before it
     // awaits; room navigation still uses the same policy and coordinator.
     expect(source, contains('_roomOpening.openPrepared('));
-    expect(source,
-        contains('prepare: widget.matrix.prepareConversationAssociations'));
-    expect(source, contains('navigate: _roomNavigation.open'));
+    final request = source.substring(
+        source.indexOf('Future<void> _openManagedRoomRequest('),
+        source.indexOf('Future<bool> _awaitLocalRoom('));
+    expect(request, contains('final matrixOwner = widget.matrix;'));
+    expect(request,
+        contains('if (!matrixOwner.hasCachedRoomDisplay(request.roomId))'));
+    expect(request,
+        contains('await matrixOwner.prepareConversationAssociations();'));
+    expect(
+        request,
+        contains(
+            "if (!current()) throw StateError('ROOM_OPEN_INTENT_RETIRED');"));
+    expect(request, contains('current() ? _roomNavigation.open(next)'));
     expect(source, contains('_openManagedRoomRequest(RoomOpenRequest('));
     expect(source, contains('onOpenRoom: _openManagedRoomRequest'));
     // 账号切换/退出登录清理登记。
