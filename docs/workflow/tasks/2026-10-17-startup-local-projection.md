@@ -1,11 +1,11 @@
 # 冷启动首屏本地投影
 
 - 用户授权：2026-10-17四项明确实施要求，延续上一轮模拟器Debug安装；无公开发布/真人发送。
-- 状态：最终0.4.51+2220普通Debug已保数据安装；原生四场景逐帧验收及真实缓存命中冷启检查PASS，供用户测试。准入拒绝/缺失缓存仍使用安全恢复流程。
+- 状态：用户2220反馈重新打开：群头像缓存缺失、启动网络提示、完整SDK恢复后入房仍显示加载页。真实模拟器暖入房已复现；先前合成PASS不足以验收此路径。
 - 工作树：C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat；最终产品d7ee45ed、测试4bd61e99，已安装APK117230f0…af83c0。
 - 负责人：root文档/构建/交付；startup_pipeline独占计划Task1产品文件；冻结后独立审查。
 - 规格：[首屏本地投影](../../superpowers/specs/2026-10-17-startup-local-projection-design.md)。前序：[2218任务](2026-10-16-interactive-cache-startup.md)。
-- 下一操作：用户在模拟器自行测试；本任务无待执行构建/安装，无正式发布、iOS构建或真人发送。保留缓存未命中与引擎启动耗时限制。
+- 下一操作：startup_pipeline诊断与行为RED；root真实设备证据及计划/版本/交付。确认范围后修复、独立审查、原生验收及保数据安装普通Debug；无正式发布或真人发送。
 - 精确起始：首次本轮工具时间未单独记时；03:46:29+08工具时间已记录，后续实时追加，不估造主动工时。
 
 2026-10-17T03:57:18.6839115+08:00 方案0e1f3ad3已冻结并按用户授权实施。采用同Client.initLocalCache()分阶段（替代init新增参数，保持override兼容），Factory.createForStartup返回安全本地40房间投影，完整恢复Future约束派发。startup_pipeline独占产品文件，root独占版本/文档/交付；V映射root管理。候选0.4.50+2219元数据61909dbf，6版本检查通过。Task1 SDK首个RED运行中；无新APK。
@@ -59,3 +59,9 @@ Ruling: 采用独立有界 AEAD 首屏缓存，替代首屏依赖整库 SQLCiphe
 
 
 2026-10-17T11:59:22.7759271+08:00 DELIVERED: ordinarymainr2 fixedsigned117230f0..af83c0/126064986B installed5556 UID/firstInstall/deviceSHA MATCH. Native r5 four scenarios PASS, explicit3framebooleans true. Actualcoldr2 admissionRejected retainedasnonfastpath; regeneratedcache r3 HIT1128/content1450/preflight1804/SDK3977ms, visible native→realcachedlist andcanonicalpreviewretained. Finalpassivesmoke stableforeground/fatal0. No all-starts/no-engine-delay claim. Rootdocsfinalization only; no productionpublish/realrecipient sends.
+
+
+2026-10-17T14:09:17.7750586+08:00 REOPENED user2220feedback. Root actual fully-restored ordinarymain warm-room.mp4 reproduces transient roomloader in route transition then bubbles. Existing held-SDK firstroom tests did not cover ordinary database branch. Evidence user-feedback-2220 local screenshots/video private. Productwriter diagnostic+test RED only until bounded scope declared; root owns docs/build/device.
+
+
+2026-10-17T14:13:21.5869549+08:00 Feedback rootcause confirmed: warm-room getEventList delayed after routepush, projection applies only while SDKpending; actualmain realDB RED feedback-warm-room-red.log exit1. Avatar null→emptyURI wrongbranch + missingmembers + resolver needsunrestoredclient. SessionGate status!=authenticated wronglylabels loading asoffline. Approved room/network product scope AppHome/RoomPage/SessionGate+tests; avatar AEAD optional boundedmembers and existingcache readonly design under independentDOMAIN→QUALITY review. Candidate793217b7 0.4.52+2221 reserved; versioncontract3PASS; no newAPK. Coldbaseline confirms initials+offlinecapsule; concurrenthosttest meansnotlatencybenchmark.

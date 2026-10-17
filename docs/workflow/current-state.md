@@ -1,9 +1,8 @@
 # 当前工作状态
 
-## 2026-10-17 首屏本地投影：2220 Debug已安装并通过缓存命中验收
+## 2026-10-17 首屏本地投影：2220用户反馈修复中
 
-用户批准的四项缓存优先方案已实施。最终0.4.51+2220普通Debug（产品d7ee45ed/测试4bd61e99，APK117230f0…af83c0）已固定签名、保数据覆盖安装5556，设备哈希/UID/首次安装一致。原生四场景与三个首帧断言PASS；真实缓存命中录像r3显示main入口后1450ms已有列表，完整SDK3977ms就绪，同页摘要保持。另一次r2准入拒绝走原恢复路径，原因未细分，不计入快路径PASS；不承诺所有启动命中或零引擎等待。独立SPEC→QUALITY及完整analyze通过，旧失败与门禁复用限制保留。当前供用户自行测试，无待执行安装或正式发布。见[任务](tasks/2026-10-17-startup-local-projection.md)和[验证报告](../verification/2026-10-17-startup-local-projection.md)。
-
+当前模拟器安装0.4.51+2220普通Debug。用户反馈冷启动群头像回退默认、网络不可用提示，以及在列表等待后入房依旧加载；真实已恢复账号入房录像确认加载页出现在路由动画中。先前原生held-SDK四场景PASS没有覆盖完整恢复后的数据库入房分支，不能作为本轮完成依据。startup_pipeline负责诊断/真实行为RED与修复，root负责设备、版本和交付，独立SPEC→QUALITY审查。无正式发布/真人发送。见[任务](tasks/2026-10-17-startup-local-projection.md)和[既有验证报告](../verification/2026-10-17-startup-local-projection.md)。
 
 ## 2026-10-16 交互缓存启动及入房：2218 Debug已安装
 
@@ -2713,3 +2712,4 @@ iOS0.4.25/2194于21:54 +08发布，最终SHA552a07a4；用户对当前包三项�
 
 
 用户审核 Three.js HTML 与美化 APP 图标后授权静态发布。www 首页及 /download 已切 orbit-20261005-v1，532 前端测试、UI契约、6项发布器恢复、两侧严格TLS资源SHA/安装包HEAD、线上390/1440px检查通过。Android2202/iOS2194包、manifest、十项设置、选线模块、nginx与容器不变；0700回退备份已保存，临时SOCKS已关闭。[任务](tasks/2026-10-05-orbit-website-publication.md) · [验证](../verification/2026-10-05-orbit-website-publication.md)。
+
