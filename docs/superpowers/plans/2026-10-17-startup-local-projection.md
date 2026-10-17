@@ -13,6 +13,14 @@ User explicitly requested “好的，请你推送Android新版本更新弹窗�
 
 ## Constraints / ownership
 
+### Approved 2222 Debug follow-up: cached room navigation
+
+User approved the five-point explanation and requested implementation plus emulator Debug installation on2026-10-17. Existing flow correction: valid account-scoped room display cache remains usable across SDK readiness until authoritative hydration/mutation invalidates or replaces it; display eligibility must not broaden SDK lifecycle or sending permissions. Cache-hit navigation must not await full SDK, background SQL, association enrichment or optional identity work before showing real cached bubbles. Keep same page/timeline and anchor; local text becomes actionable only with existing durable queue ready, transport retains all full authorization barriers. No-cache rooms use truthful safe state; no fake message content or unrestricted permissions.
+
+Cache population follows actual message-list ordering (pinned, drafts, activity), max40rooms/40events and existing byte limits; clicked eligible room receives priority over bulk hydration. Preserve hidden/deleted/redacted history, account/device/session generation, revoke, room removal/membership changes and cancel/reentry guards. Tests hold actual SQL/SDK both before and after SDK-ready transitions and assert room route plus real bubbles while held, not just eventual screenshot. Explicit >40-room priority test. Extend same production-main native fixture; keep previous queue/anchor/avatar proofs.
+
+Single implementer cached_room_entry owns AppHome/matrix client/room timeline/list ordering/coordinator and related tests; root owns version/docs/build/delivery; independent SPEC then QUALITY/security review before frozen verification. Evidence new docs/verification/artifacts/2026-10-17/cached-room-entry/. Candidate0.4.53+2222 subject fresh device/source check. No production popup or server writes authorized for this follow-up.
+
 - Same isolated tree7747e54a (productc29597e0). Root docs/version/packaging; startup_pipeline sole product writer; reviewer read-only after freeze. No child agents by implementer.
 - Preserve normal create/login defaults and security/crypto semantics. No new plaintext persistence, destructive migrations, schema/financial/auth contracts. Migration/missing/corrupt identity may use existing safe recovery UI; validcached path must not await fullSDK.
 - Initial room projection<=40; room recent event head<=40 reused. Full hydration never replaces active Room/controller/page/anchor/pendingtxid; cancels stale account/generation/disposal results. Remaining rooms may expand in background.

@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-17 缓存房间即时进入：2222 Debug实施中
+
+用户批准继续修正点击前等待并交付模拟器Debug。基线049c2f9b，版本已预留0.4.53+2222/e2330d48；单实施者cached_room_entry修改产品，独立entry_safety_review审查，root交付。拆分有效房间展示缓存和SDK/发送权限，保留跨SDKready可用缓存，置顶/草稿/列表前部优先；实际main持有SQL前后都须点击即出现气泡。证据cached-room-entry；未构建/安装2222，正式2221不变。见[任务](tasks/2026-10-17-cached-room-entry.md)。
+
 ## 2026-10-17 Android2221正式包及普通更新已发布
 
 20:53:44+08发布0.4.52+2221 ARM64，SHAab4652c0…9e572/73,524,314B/固定75b31；含冷启动头像、误离线、入房加载页及取消重入修复。20构建门禁0，独立SPEC→QUALITY通过；共享失败6134/9/2及后续29修正、15+41/原生五场景同源证据保留复用。CDN/公开HEAD元数据/三审计/真实路由/35容器保持全部PASS，iOS2215/min3/URL不变，备份0700。两工作区两静态文件精确回填，primary旧2213registry已按已审查CAS纠正；自建隧道关闭。旧K80告警、libcrypto16KiB及ARM64真机/旧版可见弹窗缺口保留。已装2221Debug不重复提示同build。见[任务](tasks/2026-10-17-android2221-release.md)及[报告](../verification/2026-10-17-android2221-release.md)。
