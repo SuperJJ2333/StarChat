@@ -65,3 +65,9 @@ Ruling: 采用独立有界 AEAD 首屏缓存，替代首屏依赖整库 SQLCiphe
 
 
 2026-10-17T14:13:21.5869549+08:00 Feedback rootcause confirmed: warm-room getEventList delayed after routepush, projection applies only while SDKpending; actualmain realDB RED feedback-warm-room-red.log exit1. Avatar null→emptyURI wrongbranch + missingmembers + resolver needsunrestoredclient. SessionGate status!=authenticated wronglylabels loading asoffline. Approved room/network product scope AppHome/RoomPage/SessionGate+tests; avatar AEAD optional boundedmembers and existingcache readonly design under independentDOMAIN→QUALITY review. Candidate793217b7 0.4.52+2221 reserved; versioncontract3PASS; no newAPK. Coldbaseline confirms initials+offlinecapsule; concurrenthosttest meansnotlatencybenchmark.
+
+2026-10-17T14:17:35.9694372+08:00 Avatar design DOMAIN/SPEC→QUALITY/SECURITY PASS task4-avatar-design-review.md; rootapproved exact5productfiles plus focusedtests under solewriter, ADR extended. Rejectednewnamespace wouldbypassinvalidation; acceptedexistingidentitykeys + scopedrawgroups/foreignprefixreject. No credentials/newplaintextcache/no localnetwork. Implementation and source review stillpending.
+
+2026-10-17T14:22:10.2178722+08:00 Warm room actualSQL RED→GREEN1PASS, changed5filesanalyze0 workerreported/rootlogidentityobserved; cancellation/doubletap/tab testsongoing. AvatarURLresolver extraownedfileapproved purecanonicalkey API,no faketoken/network. Native2221runner nowrequires3newfeedbackbooleans inadditionold4scenarios/firstframechecks; scriptsyntaxPASS. Newbuildnotstarted.
+
+2026-10-17T14:25:00.5541270+08:00 Room/network frozen e0a09bfa independentlySPEC→QUALITY PASS feedback-room-review.md; rootconfirmed38PASS/analyze0. OnlyprodRoomPage constructor centralized; preparetransfer/disposal/tab/originroute cancellation verified. Avatar RED correctlyfails unknownmembers, implementationongoing. Native/main2221 notbuilt; installed2220 remainsuserreportedFAIL.

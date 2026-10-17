@@ -81,3 +81,7 @@ Canonical lastEvent must be adopted onto the same retained Room under baseline/l
 真实已恢复账号入房录像确认路由动画中仍显示本地消息加载页。先前RoomPage暂停决定被这一真实反例替代。继续唯一产品实施者及独立SPEC→QUALITY审查：先分别确立真实DB等待入房、群头像成员/图片缓存、启动网络未知状态的RED；冻结最小产品文件范围；实现首屏缓存交接、头像连续展示及准确网络提示。不得仅删文案留空，不允许把SDK未就绪当断网，也不能屏蔽真实网络错误。root负责设备证据、版本与构建安装。原验收保留但不作为新增路径通过证据。
 
 Ruling: AppHome中央路由在真实本地头/隐藏过滤准备完成后推入RoomPage，准备资源一次移交，失败/取消/切账号清理；RoomPage首帧使用准备数据，不新增整页loading或空白替身。所有现有入房入口仍沿中央路由。保留即时SDK缓存路径；普通完整恢复路径纳入native验收。SessionGate只对真正offlineAuthenticated显示该离线banner；缓存恢复状态不伪造联网或派发权限。头像方案独立审查后追加，不提前放宽媒体边界。
+
+头像扩展设计审查PASS已落实ADR追加条款。startup_pipeline独占新增产品范围：core/startup_projection/startup_projection.dart、features/matrix/matrix_e2ee_client.dart和matrix_user_avatar.dart、ui/foundation/avatar_cache.dart及必要ui/components/user_avatar.dart，加对应tests/native入口。先RED后GREEN，现有账号identity命名域/清理保持，禁止新namespace和unscoped回退；详细验收遵循task4-avatar-design-review.md。原生报告新增完整恢复后入房、群头像成员、无误离线断言，真实账号新cache形成后第二次冷启动必须复查。
+
+头像接口范围补充：允许features/matrix/avatar_url_resolver.dart纯canonical authenticated thumbnail URL构造公开函数及对应test，复用既有_thumbnail规则仅做磁盘键，禁止假token/网络请求/伪loggedin；local/full同URI输入应选同URL版本。
