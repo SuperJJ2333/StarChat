@@ -36,6 +36,8 @@ void main() {
       'global_search_models.dart': '搜索结果模型字段，非 client 枚举',
       'group_address_list_page.dart': '消费去重后的 snapshot.rooms（通讯录群聊页）',
       // —— 纯内部控制（非展示） ——
+      'matrix_client_factory.dart':
+          '内部启动对象播种：消费已验证的有界加密 projection.rooms（写入源为已身份解析的 conversations.snapshot），最多40个 Room，不直接枚举原始 client.rooms 或新增会话选择出口',
       'matrix_recovery_vault.dart': '账号内密钥信号与本机密钥保护调度，不生成用户可见会话选择入口',
       'recent_history_coordinator.dart': '账号内已加入房间的独立历史游标和近期密文重放调度，不生成会话展示入口',
       'conversation_preferences.dart': '偏好 reconcile/ack 清理',

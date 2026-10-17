@@ -12,12 +12,14 @@ import '../../core/account_credentials_client_test.dart' show MemoryStore;
 void main() {
   late BusinessApiClient api;
   late Completer<http.Response> oldWrite;
+  late Completer<void> retriedPutEntered;
   var writes = 0, reads = 0;
   var oldValue = false;
   var expiredToken = false;
   var refreshes = 0;
   setUp(() async {
     oldWrite = Completer<http.Response>();
+    retriedPutEntered = Completer<void>();
     writes = 0;
     reads = 0;
     oldValue = false;
@@ -52,6 +54,10 @@ void main() {
                   headers: {'content-type': 'application/json; charset=utf-8'});
             }
             if (!newer) {
+              if (request.headers['authorization'] == 'Bearer refreshed' &&
+                  !retriedPutEntered.isCompleted) {
+                retriedPutEntered.complete();
+              }
               return oldWrite.future;
             }
             return http.Response('{"auto_allow_group_join":false}', 200);
@@ -69,11 +75,24 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> startPending(WidgetTester tester) async {
+  Future<void> startPending(WidgetTester tester,
+      {bool waitForRetriedPut = false}) async {
     await tester.pumpWidget(CupertinoApp(home: ChatSettingsPage(api: api)));
     await tester.pumpAndSettle();
     await tester.tap(find.byType(CupertinoSwitch));
     await flush(tester);
+    if (waitForRetriedPut) {
+      // Session persistence queues originate in async setUp. Advance both
+      // real and fake zones until the actual authenticated retry is held,
+      // rather than assuming one frame drains every secure-store await.
+      for (var turn = 0; turn < 100 && !retriedPutEntered.isCompleted; turn++) {
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+      }
+      expect(retriedPutEntered.isCompleted, isTrue,
+          reason:
+              'refresh must reach the actual retried PUT without releasing its transport');
+    }
     await tester.pump(const Duration(seconds: 9));
   }
 
@@ -121,7 +140,7 @@ void main() {
       'an explicit 401 refreshes once and holds the write lock through the actual retried PUT',
       (tester) async {
     expiredToken = true;
-    await startPending(tester);
+    await startPending(tester, waitForRetriedPut: true);
     expect(refreshes, 1);
     expect(writes, 2);
     expect(api.hasPendingAutoAllowGroupJoinWrite, isTrue);
