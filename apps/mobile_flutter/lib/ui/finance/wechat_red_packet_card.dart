@@ -31,7 +31,7 @@ final class WeChatRedPacketCard extends StatelessWidget {
           key: const Key('wechat-red-packet-card'),
           // 与转账卡片同宽（demo 定稿统一 220）。
           width: 220,
-          height: 96,
+          constraints: const BoxConstraints(minHeight: 96),
           decoration: BoxDecoration(
               // E2-F4：非可领状态（已领取/已领完/已过期/已撤回）统一
               // 灰粉色封面；仅「可领取」保持红色。
@@ -39,8 +39,9 @@ final class WeChatRedPacketCard extends StatelessWidget {
                   ? WeChatColors.warning
                   : WeChatColors.redPacketMuted,
               borderRadius: BorderRadius.circular(WeChatRadius.redPacket)),
-          child: Column(children: [
-            Expanded(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 72),
                 child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(children: [
@@ -49,6 +50,7 @@ final class WeChatRedPacketCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                           child: Column(
+                              mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                             Text(greeting,

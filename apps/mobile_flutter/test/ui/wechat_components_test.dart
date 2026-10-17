@@ -134,6 +134,32 @@ void main() {
         .pumpWidget(const CupertinoApp(home: WeChatUnreadBadge(count: 100)));
     expect(find.text('99+'), findsOneWidget);
   });
+  for (final scale in [1.0, 1.6]) {
+    testWidgets('red packet header accommodates text metrics at scale $scale',
+        (tester) async {
+      var taps = 0;
+      await tester.pumpWidget(CupertinoApp(
+          home: Center(
+              child: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: WeChatRedPacketCard(
+                      greeting: '恭喜发财',
+                      state: RedPacketVisualState.available,
+                      onTap: () => taps++)))));
+      expect(tester.takeException(), isNull);
+      final card =
+          tester.getRect(find.byKey(const Key('wechat-red-packet-card')));
+      final footer = tester.getRect(find.text('畅聊点钻红包'));
+      expect(card.width, 220);
+      expect(card.height, greaterThanOrEqualTo(96));
+      expect(tester.getRect(find.text('领取红包')).bottom,
+          lessThanOrEqualTo(footer.top));
+      expect(tester.getRect(find.text('恭喜发财')).top,
+          greaterThanOrEqualTo(card.top));
+      await tester.tap(find.byKey(const Key('wechat-red-packet-card')));
+      expect(taps, 1);
+    });
+  }
   testWidgets('expired red packet displays its authoritative visual state',
       (tester) async {
     await tester.pumpWidget(const CupertinoApp(

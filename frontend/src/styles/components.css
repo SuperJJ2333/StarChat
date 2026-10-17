@@ -739,7 +739,7 @@
 
 .c-red-packet {
   width: var(--size-red-packet-width);
-  height: var(--size-red-packet-height);
+  min-height: var(--size-red-packet-height);
   border: 0;
   overflow: hidden;
   border-radius: var(--radius-red-packet);
@@ -755,7 +755,7 @@
   display: grid;
   grid-template-columns: var(--size-icon-xl) 1fr;
   gap: var(--space-sm);
-  height: calc(var(--size-red-packet-height) - var(--space-xl));
+  min-height: calc(var(--size-red-packet-height) - var(--space-xl));
   padding: var(--space-md);
   color: var(--color-on-accent);
 }

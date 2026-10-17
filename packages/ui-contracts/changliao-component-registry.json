@@ -2012,6 +2012,7 @@
     },
     {
       "id": "red-packet-card",
+      "layout": "Fixed 220 width, minimum 96 height, 24 footer; header grows naturally for font metrics and wrapped greeting/status without clipping text.",
       "flutter": {
         "name": "WeChatRedPacketCard",
         "file": "apps/mobile_flutter/lib/ui/finance/wechat_red_packet_card.dart",
