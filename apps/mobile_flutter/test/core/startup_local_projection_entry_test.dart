@@ -539,6 +539,9 @@ void registerStartupProjectionEntryTests(
           firstVisibleContent = true;
         }
         if (!firstRoomContent && find.byType(RoomPage).evaluate().isNotEmpty) {
+          expectSync(find.textContaining(RegExp(r'Synthetic room \d+（0）$')),
+              findsNothing,
+              reason: 'unknown membership must not be presented as zero');
           expectSync(find.text('Cached message 59'), findsWidgets,
               reason:
                   'the first room frame must already contain cached bubbles');
@@ -564,12 +567,15 @@ void registerStartupProjectionEntryTests(
           if (!allHidden) {
             final room = full.getRoomById('!room-64:synthetic.test')!;
             for (var member = 0; member < 2; member++) {
+              final memberId = !avatarHandoff && member == 1
+                  ? user
+                  : '@avatar-$member:synthetic.test';
               room.setState(Event(
                   room: room,
                   eventId: 'avatar-member-$member',
                   type: EventTypes.RoomMember,
                   originServerTs: DateTime.utc(2026, 10, 17),
-                  stateKey: '@avatar-$member:synthetic.test',
+                  stateKey: memberId,
                   senderId: user,
                   content: {
                     'membership': 'join',
@@ -935,7 +941,7 @@ void registerStartupProjectionEntryTests(
               reason: 'absent custom avatar must preserve mosaic selection');
           expect(
               group.members.where((member) => member.id.startsWith('@avatar-')),
-              hasLength(2));
+              hasLength(avatarHandoff ? 2 : 1));
           expect(find.byType(GroupAvatarMosaic), findsWidgets);
           bool localAvatarPainted() => tester
               .widgetList<RawImage>(find.descendant(
@@ -969,6 +975,28 @@ void registerStartupProjectionEntryTests(
             'mxc://synthetic.test/avatar-0',
             'mxc://synthetic.test/avatar-1'
           };
+          bool allExpectedAvatarsPainted() {
+            final elements = members.evaluate().toList();
+            return elements.length == expectedUris.length &&
+                elements.every((element) => find
+                    .descendant(
+                        of: find.byWidget(element.widget),
+                        matching: find.byType(RawImage))
+                    .evaluate()
+                    .map((element) => element.widget as RawImage)
+                    .any((image) => image.image != null));
+          }
+
+          // Both disk images must have decoded before testing continuity.
+          // The list-wide first-paint check above deliberately accepts any
+          // image; that does not establish this stronger audit's precondition.
+          for (var attempt = 0;
+              attempt < 200 && !allExpectedAvatarsPainted();
+              attempt++) {
+            await flush(1);
+          }
+          expect(allExpectedAvatarsPainted(), isTrue);
+          expect(preflight.release.isCompleted, isFalse);
           var auditing = true;
           var auditedFrames = 0;
           final avatarStates = <String, State>{};
@@ -1057,6 +1085,17 @@ void registerStartupProjectionEntryTests(
           auditVisibleFrames = false;
         }
         final roomState = tester.state(find.byType(RoomPage));
+        if (independent) {
+          final cachedInfo =
+              tester.widget<RoomPage>(find.byType(RoomPage)).roomLease.roomInfo;
+          expect(cachedInfo.members.where((m) => m.id != user), hasLength(1),
+              reason:
+                  'a group with one cached nonfriend must still queue text');
+          expect(cachedInfo.members.where((m) => m.isJoined), isEmpty);
+          expect(cachedInfo.canMentionAll, isFalse);
+          expect(cachedInfo.members.firstWhere((m) => m.id != user).avatarUri,
+              Uri.parse('mxc://synthetic.test/avatar-0'));
+        }
         final retainedRoom = client.getRoomById('!room-64:synthetic.test');
         if (independent) {
           expect(retainedRoom!.encrypted, isTrue);

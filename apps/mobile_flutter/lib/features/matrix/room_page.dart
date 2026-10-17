@@ -1545,7 +1545,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   String get _navigationTitle => isGroup
-      ? groupRoomNavigationTitle(roomInfo.name, joinedMemberCount)
+      ? (joinedMemberCount > 0
+          ? groupRoomNavigationTitle(roomInfo.name, joinedMemberCount)
+          : (roomInfo.name.trim().isEmpty ? '群聊' : roomInfo.name.trim()))
       : directRoomNavigationTitle(
           peerMatrixUserId: roomInfo.directPeerId,
           contactsByMatrixId: contactsByMatrixId,
@@ -2507,6 +2509,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 在途去重防双击双载；播放器直接使用缓存文件。
   /// 对端是否仍是好友（身份缓存权威；群聊不适用此门）。
   bool _peerIsFriend() {
+    if (isGroup) return true;
     final selfId = roomInfo.currentUserId;
     final peers =
         roomInfo.members.where((m) => m.id != selfId).toList(growable: false);
@@ -2517,6 +2520,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 单聊对端的业务 userId（拉黑状态以业务 userId 为键；群聊返回 null）。
   String? _peerUserId() {
+    if (isGroup) return null;
     final selfId = roomInfo.currentUserId;
     final peers =
         roomInfo.members.where((m) => m.id != selfId).toList(growable: false);

@@ -105,3 +105,5 @@ Ruling: AppHome中央路由在真实本地头/隐藏过滤准备完成后推入R
 交接范围最终补充（7ada9f1d）：真实第五场景证明 MatrixHomePage 把 previewOnly 变化误当成 owner 变化并清除 row GlobalKey，故授权该文件与既有 matrix_home_snapshot_refresh_test.dart。仅同 owner 模式切换保留 key/自建 ProfileRepository；真正 account/API/Matrix/identityCache 更换仍清理。组件已paint图片桥接与父级状态连续性共同通过第五场景；独立 SPEC→QUALITY 审查通过。
 
 取消重入竞态补充：真实SQL held→切tab/返回→再点同房的意图不能并入已取消opening。授权MatrixHomePage/AppHome/RoomNavigationCoordinator及既有entry/coordinator tests：取消只退休尚未register的attempt，token保护晚到register/push/error/finally，不影响active或跳过lease清理；origin非根route popped退休仅匹配pending，pre-association前捕获origin/intentepoch。移除列表重复去重后由coordinator统一处理doubletap/anchor。真实RED、相关回归及独立SPEC→QUALITY后重建，两次native失败保留。
+
+2026-10-18 2222用户反馈纠正：root独占 matrix_e2ee_client.dart、room_page.dart、startup_room_member_handoff_test.dart 和既有 startup_local_projection_entry_test.dart。延续已批准的缓存→canonical同页交接：pending阶段使用有界缓存成员作展示（非membership/权限），SDKready后roomInfo读取canonical成员，保留timeline缓存。refresh后重验lease/client/Room并逐房淘汰成员投影；群聊不走好友数量推断；未知人数省略0。新测试须RED/GREEN，SPEC后QUALITY审查及变更影响验证；不扩展缓存schema，不改加密、认证、金融或正式版分发。

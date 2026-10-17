@@ -1975,7 +1975,7 @@ final class MatrixRoomLease
   MatrixRoomInfoSnapshot get roomInfo {
     final room = _activeRoom;
     final cached = owner._roomDisplayHead(roomId);
-    if (cached != null) {
+    if (cached != null && owner.hasLocalDisplayProjection) {
       return MatrixRoomInfoSnapshot(
           id: roomId,
           name: cached.name,
@@ -1987,7 +1987,18 @@ final class MatrixRoomLease
           homeserver: owner.homeserver,
           preference: ConversationPreference(
               pinned: cached.pinned, muted: cached.muted),
-          members: const []);
+          // The bounded cache is display data, not complete membership or
+          // permission state. Canonical members take over after SDK recovery.
+          members: [
+            for (final member in cached.members)
+              MatrixRoomMemberSnapshot(
+                  id: member.id,
+                  displayName: member.name,
+                  avatarUri: member.avatar == null
+                      ? null
+                      : Uri.tryParse(member.avatar!),
+                  isJoined: false),
+          ]);
     }
     final value = _snapshotRoomInfo(room,
         members: owner._memberProjectionCache
@@ -2095,6 +2106,14 @@ final class MatrixRoomLease
   Future<MatrixRoomInfoSnapshot> refreshRoomInfo() =>
       _withLeaseOperation((room) async {
         await room.requestParticipants([Membership.join]);
+        if (canceled ||
+            owner._accessRevoked ||
+            !identical(_room, room) ||
+            !identical(owner._client, room.client) ||
+            !identical(room.client.getRoomById(roomId), room)) {
+          throw StateError('Matrix room lease is not active');
+        }
+        owner._memberProjectionCache.invalidateRoom(roomId);
         return roomInfo;
       });
 
@@ -6149,6 +6168,11 @@ final class _ConversationMemberProjectionCache {
       })> _roomEntries = {};
   StreamSubscription<({String roomId, StrippedStateEvent state})>? _changes;
   String? _accountId;
+
+  void invalidateRoom(String roomId) {
+    _entries.remove(roomId);
+    _roomEntries.remove(roomId);
+  }
 
   void attach(Client client) {
     _changes?.cancel();
