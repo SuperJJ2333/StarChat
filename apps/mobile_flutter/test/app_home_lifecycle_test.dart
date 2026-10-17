@@ -39,9 +39,21 @@ final class _EmptyTimeline extends Fake implements Timeline {
   @override
   bool get canRequestHistory => false;
   @override
+  bool get canRequestFuture => false;
+  @override
+  bool get isFragmentedTimeline => false;
+  @override
+  Future<void> setReadMarker({String? eventId, bool? public}) async {}
+  @override
   void cancelSubscriptions() {}
   @override
   Future<Event?> getEventById(String eventId) async => null;
+}
+
+final class _GroupClient extends Client {
+  _GroupClient() : super('app-home-group');
+  @override
+  String? get userID => '@owner:synthetic.test';
 }
 
 final class _GroupRoom extends Room {
@@ -359,7 +371,8 @@ void main() {
 
   testWidgets('group entry reaches GroupChatPage while profile preload is held',
       (tester) async {
-    final client = Client('app-home-group');
+    SharedPreferences.setMockInitialValues({});
+    final client = _GroupClient();
     final matrix = MatrixSdkE2eeClient(client,
         homeserver: Uri.parse('https://matrix.test'));
     client.rooms.add(_GroupRoom(client));
@@ -392,6 +405,10 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byType(RoomPage), findsOneWidget);
+    final dynamic roomState = tester.state(find.byType(RoomPage));
+    expect(roomState.controller, isNotNull,
+        reason: 'the room must have adopted its ready local timeline');
+    expect(find.text('正在读取本机消息…'), findsNothing);
     expect(heldProfile.isCompleted, isFalse);
     heldProfile.complete(const ProfileData(
         username: 'owner',
