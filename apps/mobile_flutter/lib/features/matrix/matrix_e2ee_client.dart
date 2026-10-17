@@ -7173,19 +7173,14 @@ final class MatrixSdkE2eeClient
             timeline.cancelSubscriptions();
           }
           final preview = row.lastEvent;
+          final members = <StartupProjectionMember>[];
           final projected = StartupProjectionRoom(
               id: row.id,
               name: row.displayName,
               direct: row.isDirect,
               peer: row.directPeerId,
               avatar: row.avatar?.toString(),
-              members: [
-                for (final member in row.members.take(9))
-                  StartupProjectionMember(
-                      id: member.id,
-                      name: member.displayName,
-                      avatar: member.avatar?.toString())
-              ],
+              members: members,
               unread: row.notificationCount,
               pinned: row.preference.pinned,
               muted: row.preference.muted,
@@ -7215,6 +7210,26 @@ final class MatrixSdkE2eeClient
               events: events);
           try {
             StartupProjectionRoom.fromJson(projected.toJson());
+            // Optional mosaic metadata must never displace a valid room.
+            // Validate the base first, then admit each bounded member only if
+            // both its record and the aggregate room metadata still fit.
+            for (final member in row.members.take(9)) {
+              final candidate = StartupProjectionMember(
+                  id: member.id,
+                  name: member.displayName,
+                  avatar: member.avatar?.toString());
+              try {
+                StartupProjectionMember.fromJson(candidate.toJson());
+              } on FormatException {
+                continue;
+              }
+              members.add(candidate);
+              try {
+                StartupProjectionRoom.fromJson(projected.toJson());
+              } on FormatException {
+                members.removeLast();
+              }
+            }
             rows.add(projected);
           } on FormatException {
             /* Oversized metadata cannot enter the projection. */

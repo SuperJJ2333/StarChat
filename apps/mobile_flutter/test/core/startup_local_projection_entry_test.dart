@@ -587,6 +587,36 @@ void registerStartupProjectionEntryTests(
               secureSessionStore: store,
               readContinuityMetadata: factory.continuityMetadata);
           if (!allHidden) {
+            for (final index in [63, 62]) {
+              final room = full.getRoomById('!room-$index:synthetic.test')!;
+              if (index == 62) {
+                room.setState(Event(
+                    room: room,
+                    eventId: 'budget-name',
+                    type: EventTypes.RoomName,
+                    stateKey: '',
+                    senderId: user,
+                    originServerTs: DateTime.utc(2026, 10, 17),
+                    content: {'name': List.filled(4000, 'n').join()}));
+              }
+              for (var member = 0; member < (index == 63 ? 1 : 9); member++) {
+                room.setState(Event(
+                    room: room,
+                    eventId: 'budget-member-$index-$member',
+                    type: EventTypes.RoomMember,
+                    stateKey:
+                        '@${List.filled(170, 'u').join()}$member:synthetic.test',
+                    senderId: user,
+                    originServerTs: DateTime.utc(2026, 10, 17),
+                    content: {
+                      'membership': 'join',
+                      'displayname':
+                          List.filled(index == 63 ? 257 : 200, 'm').join(),
+                      'avatar_url':
+                          'mxc://synthetic.test/${List.filled(980, 'a').join()}'
+                    }));
+              }
+            }
             for (var member = 0; member < 2; member++) {
               final url = MatrixAvatarUrlResolver.authenticatedCacheUrl(
                   avatarUri: Uri.parse('mxc://synthetic.test/avatar-$member'),
@@ -615,6 +645,24 @@ void registerStartupProjectionEntryTests(
           final projection = await cache.read(admitted!);
           expect(projection!.rooms, allHidden ? isEmpty : isNotEmpty);
           if (!allHidden) {
+            expect(projection.rooms.map((room) => room.id),
+                contains('!room-63:synthetic.test'),
+                reason:
+                    'one oversized member must not remove a valid cached room');
+            expect(projection.rooms.map((room) => room.id),
+                contains('!room-62:synthetic.test'),
+                reason:
+                    'aggregate member budget must trim members, not remove the room');
+            expect(
+                projection.rooms
+                    .singleWhere((room) => room.id == '!room-63:synthetic.test')
+                    .members,
+                isEmpty);
+            final boundedMembers = projection.rooms
+                .singleWhere((room) => room.id == '!room-62:synthetic.test')
+                .members;
+            expect(boundedMembers, isNotEmpty);
+            expect(boundedMembers.length, lessThan(9));
             final head = projection.rooms
                 .firstWhere((r) => r.id == '!room-64:synthetic.test');
             expect(head.encrypted, isTrue);
