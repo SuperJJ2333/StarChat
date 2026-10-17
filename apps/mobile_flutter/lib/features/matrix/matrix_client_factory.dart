@@ -420,16 +420,23 @@ final class MatrixClientFactory {
   Future<Client> create({StartupFailureObserver? onFailure}) =>
       _create(onFailure: onFailure);
 
-  Future<Client> createForStartup({StartupFailureObserver? onFailure}) async {
+  Future<Client> createForStartup(
+      {StartupFailureObserver? onFailure,
+      void Function()? checkCurrent,
+      void Function()? onCacheMiss}) async {
+    checkCurrent?.call();
     final directory = await supportDirectoryPath();
+    checkCurrent?.call();
     final cache = projectionStore = StartupProjectionStore(
         Directory(p.join(directory, 'startup_projection_v1')));
     final installation = await cache.readInstallation();
+    checkCurrent?.call();
     var missReason = StartupProjectionReason.markerAbsent;
     if (installation != null) {
       missReason = StartupProjectionReason.admissionRejected;
       final admission =
           await sessionStore.readStartupProjectionAdmission(installation);
+      checkCurrent?.call();
       if (admission != null && admission.homeserver == homeserver.toString()) {
         final projection = await cache.read(admission);
         missReason = projection == null
@@ -437,6 +444,7 @@ final class MatrixClientFactory {
             : StartupProjectionReason.recheckRejected;
         final rechecked =
             await sessionStore.readStartupProjectionAdmission(installation);
+        checkCurrent?.call();
         if (projection != null &&
             rechecked != null &&
             admission.sameIdentity(rechecked) &&
@@ -470,8 +478,10 @@ final class MatrixClientFactory {
           unawaited(() async {
             try {
               await client.awaitStartupResume(startupBackgroundResume);
+              checkCurrent?.call();
               final current = await sessionStore
                   .readStartupProjectionAdmission(installation);
+              checkCurrent?.call();
               if (current == null ||
                   !admission.sameIdentity(current) ||
                   current.digest != admission.digest) {
@@ -490,6 +500,8 @@ final class MatrixClientFactory {
       }
     }
 
+    checkCurrent?.call();
+    onCacheMiss?.call();
     markStartupProjection(
         StartupProjectionPhase.cacheAdmissionMiss, startupClock,
         reason: missReason);

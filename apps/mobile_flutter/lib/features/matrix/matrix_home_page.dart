@@ -254,6 +254,12 @@ final class MatrixHomeHandoff extends ChangeNotifier {
     return _snapshot;
   }
 
+  /// Seeds an authorized memory snapshot before mounting; no content frame has
+  /// happened yet, so this must not release the full SDK continuation.
+  void prepare(MatrixConversationSnapshot snapshot) {
+    if (isCurrent) _snapshot = snapshot;
+  }
+
   void publish(MatrixConversationSnapshot snapshot) {
     if (!isCurrent) {
       retire();
@@ -659,7 +665,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _identityAccountId = widget.matrix.userId;
     _supportIdentities = widget.api.supportIdentities;
     final initial = widget.startupHandoff?.read(widget.api, widget.matrix);
-    if (initial != null) _applyClientSnapshot(initial);
+    if (initial != null) {
+      _applyClientSnapshot(initial);
+      widget.startupHandoff?.onPublished?.call();
+    }
     conversationPreferencesChanged.addListener(_preferencesChanged);
     // BUG-20（真机回归修订）：仅当房间进入/离开草稿态时重排列表
     // （文本编辑由逐 tile 通知器处理，不重建列表）。

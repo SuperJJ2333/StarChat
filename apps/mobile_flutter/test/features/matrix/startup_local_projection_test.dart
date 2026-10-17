@@ -21,10 +21,12 @@ class HeldStartupDatabase extends MatrixSdkDatabase {
   }
 
   final previewSettled = Completer<void>();
+  Completer<void>? previewRelease;
   @override
   Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
       {bool Function()? isCurrent}) async {
     try {
+      await previewRelease?.future;
       await super.refreshRoomListPreviews(rooms, client, isCurrent: isCurrent);
     } finally {
       if (!previewSettled.isCompleted) previewSettled.complete();
@@ -54,6 +56,7 @@ void main() {
       final db = HeldStartupDatabase('seed-scalars',
           database: sql, sqfliteFactory: factory);
       await db.open();
+      if (mutation == 'none') db.previewRelease = Completer<void>();
       final account = olm.Account()..create();
       await db.insertClient(
           'seed-scalars',
@@ -93,6 +96,16 @@ void main() {
           prev_batch: 'older-page',
           summary: RoomSummary.fromJson(
               {'m.joined_member_count': 9, 'm.invited_member_count': 2}));
+      canonical.lastEvent = Event(
+          room: canonical,
+          eventId: 'persisted-preview-only',
+          type: EventTypes.Message,
+          senderId: '@other:synthetic.test',
+          originServerTs: DateTime.fromMillisecondsSinceEpoch(5000),
+          content: {
+            'msgtype': 'm.text',
+            'body': 'Synthetic canonical preview'
+          });
       await sql.insert('box_rooms',
           {'k': canonical.id, 'v': jsonEncode(canonical.toJson())});
       final seed = Room(id: canonical.id, client: client);
@@ -101,6 +114,13 @@ void main() {
       final init = client.init();
       await db.entered.future;
       if (mutation == 'scalars') {
+        seed.lastEvent = Event(
+            room: seed,
+            eventId: 'newer-live-head',
+            type: EventTypes.Message,
+            senderId: '@other:synthetic.test',
+            originServerTs: DateTime.fromMillisecondsSinceEpoch(6000),
+            content: {'msgtype': 'm.text', 'body': 'Synthetic newer preview'});
         seed.notificationCount = 12;
         seed.highlightCount = 5;
         seed.prev_batch = 'newer-page';
@@ -110,9 +130,33 @@ void main() {
       db.release.complete();
       await init;
       ready.complete();
+      try {
+        if (mutation == 'none') {
+          expect(db.previewRelease!.isCompleted, isFalse);
+          expect(seed.lastEvent?.eventId, 'persisted-preview-only',
+              reason:
+                  'canonical preview must survive before optional repair reads any head rows');
+          expect(seed.lastEvent?.room, same(seed));
+        }
+      } finally {
+        db.previewRelease?.complete();
+      }
       await db.previewSettled.future;
       try {
         expect(client.getRoomById(seed.id), same(seed));
+        expect(
+            seed.lastEvent?.eventId,
+            mutation == 'none'
+                ? 'persisted-preview-only'
+                : mutation == 'scalars'
+                    ? 'newer-live-head'
+                    : null);
+        if (mutation != 'history') {
+          expect(seed.lastEvent!.room, same(seed));
+          expect(seed.lastEvent!.originServerTs.millisecondsSinceEpoch,
+              mutation == 'none' ? 5000 : 6000);
+        }
+
         expect(
             seed.notificationCount,
             mutation == 'none'

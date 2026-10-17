@@ -33,8 +33,14 @@ import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 class _MemorySecure implements SecureKeyValueStore {
   final values = <String, String>{};
   Completer<void>? diagnosticHold;
+  Completer<void>? admissionHold;
+  final admissionEntered = Completer<void>();
   @override
   Future<String?> read(String key) async {
+    if (admissionHold != null && key == 'liuhetong.matrix_account_slots.v1') {
+      if (!admissionEntered.isCompleted) admissionEntered.complete();
+      await admissionHold!.future;
+    }
     if (key == 'liuhetong.diagnostic_salt.v1') await diagnosticHold?.future;
     return values[key];
   }
@@ -178,9 +184,9 @@ void registerStartupProjectionEntryTests(
     channels.clear();
   });
   for (final scenario in [
+    (hidden: false, independent: true),
     (hidden: false, independent: false),
     (hidden: true, independent: false),
-    (hidden: false, independent: true),
     (hidden: true, independent: true)
   ]) {
     final allHidden = scenario.hidden;
@@ -425,11 +431,42 @@ void registerStartupProjectionEntryTests(
           baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
           sessionStore: store,
           client: MockClient((_) async => http.Response('{}', 503)));
+      var auditVisibleFrames = false;
+      var firstVisibleContent = false;
+      var firstRoomContent = false;
+      void auditFrame() {
+        if (!auditVisibleFrames || !tester.binding.sendFramesToEngine) return;
+        for (final text in [
+          '正在启动畅聊',
+          '正在打开本地聊天，请稍候',
+          '正在恢复本机会话…',
+          '正在读取本机会话…',
+          '正在读取本机消息…'
+        ]) {
+          expect(find.text(text), findsNothing,
+              reason:
+                  'every visible cache-hit frame must contain ready content');
+        }
+        if (!firstVisibleContent) {
+          expect(find.byType(AppHome), findsOneWidget);
+          expect(databaseOpens, 0);
+          expect(preflight.originalCalls, 0);
+          firstVisibleContent = true;
+        }
+        if (!firstRoomContent && find.byType(RoomPage).evaluate().isNotEmpty) {
+          expect(find.text('Cached message 59'), findsWidgets,
+              reason:
+                  'the first room frame must already contain cached bubbles');
+          firstRoomContent = true;
+        }
+      }
+
       Future<void> flush([int count = 30]) async {
         for (var i = 0; i < count; i++) {
           await tester.runAsync(
               () => Future<void>.delayed(const Duration(milliseconds: 10)));
           await tester.pump(const Duration(milliseconds: 10));
+          auditFrame();
         }
       }
 
@@ -586,7 +623,10 @@ void registerStartupProjectionEntryTests(
           }
         });
       }
-      if (independent) rawSecure.diagnosticHold = Completer<void>();
+      if (independent) {
+        rawSecure.diagnosticHold = Completer<void>();
+        rawSecure.admissionHold = Completer<void>();
+      }
       try {
         await app.main(
             dependencies: app.StartupDependencies(
@@ -595,6 +635,27 @@ void registerStartupProjectionEntryTests(
                 api: api,
                 reconcile: () async => InstallationResetOutcome.notNeeded,
                 outboxStoreFactory: () => outbox));
+        if (independent) {
+          for (var i = 0;
+              i < 100 && !rawSecure.admissionEntered.isCompleted;
+              i++) {
+            await flush(1);
+          }
+          expect(rawSecure.admissionEntered.isCompleted, isTrue);
+          await tester.pump(const Duration(seconds: 2));
+          expect(find.text('正在启动畅聊'), findsNothing,
+              reason: 'cache admission must not expose a loading frame');
+          expect(tester.binding.sendFramesToEngine, isFalse);
+          auditVisibleFrames = true;
+          void observeFrame(Duration _) {
+            if (!auditVisibleFrames) return;
+            auditFrame();
+            WidgetsBinding.instance.addPostFrameCallback(observeFrame);
+          }
+
+          WidgetsBinding.instance.addPostFrameCallback(observeFrame);
+          rawSecure.admissionHold!.complete();
+        }
         await flush(80);
         expect(tester.takeException(), isNull,
             reason: "fixture setup must succeed");
@@ -604,7 +665,7 @@ void registerStartupProjectionEntryTests(
                 .whereType<Text>()
                 .map((w) => w.data)
                 .join(' | '));
-        expect(find.text('正在打开本地聊天'), findsNothing);
+        expect(find.text('正在打开本地聊天，请稍候'), findsNothing);
         if (independent) {
           expect(rawSecure.diagnosticHold!.isCompleted, isFalse,
               reason:
@@ -629,6 +690,10 @@ void registerStartupProjectionEntryTests(
         }
         expect(client.rooms, hasLength(independent && allHidden ? 0 : 40));
         if (allHidden) {
+          if (independent) {
+            expect(firstVisibleContent, isTrue);
+            auditVisibleFrames = false;
+          }
           expect(find.text('Synthetic room 64'), findsNothing);
           if (independent) {
             expect(preflight.originalCalls, 0);
@@ -652,6 +717,8 @@ void registerStartupProjectionEntryTests(
                 ? 'actual-main-empty-independent'
                 : 'actual-main-hidden-sdk',
             'content_ready_ms': clock.elapsedMilliseconds,
+            if (independent) 'first_visible_content': firstVisibleContent,
+            if (independent) 'no_loading_frames': true,
             'projected_rooms': 0,
             'network_sends_while_held': 0,
             'network_sends_after_recovery': 0
@@ -678,6 +745,11 @@ void registerStartupProjectionEntryTests(
                 ? preflight.release.isCompleted
                 : held.release.isCompleted,
             isFalse);
+        if (independent) {
+          expect(firstVisibleContent, isTrue);
+          expect(firstRoomContent, isTrue);
+          auditVisibleFrames = false;
+        }
         final roomState = tester.state(find.byType(RoomPage));
         final retainedRoom = client.getRoomById('!room-64:synthetic.test');
         if (independent) {
@@ -788,6 +860,9 @@ void registerStartupProjectionEntryTests(
           'scenario': independent
               ? 'actual-main-held-entire-preflight'
               : 'actual-main-held-sdk',
+          if (independent) 'first_visible_content': firstVisibleContent,
+          if (independent) 'first_room_content': firstRoomContent,
+          if (independent) 'no_loading_frames': true,
           'original_preflight_calls_while_held': 0,
           'original_opener_calls_while_held': 0,
           'content_ready_ms': contentReadyMs,
@@ -797,6 +872,10 @@ void registerStartupProjectionEntryTests(
           'network_sends_after_recovery': transportSends
         });
       } finally {
+        auditVisibleFrames = false;
+        if (rawSecure.admissionHold?.isCompleted == false) {
+          rawSecure.admissionHold!.complete();
+        }
         if (rawSecure.diagnosticHold?.isCompleted == false) {
           rawSecure.diagnosticHold!.complete();
         }

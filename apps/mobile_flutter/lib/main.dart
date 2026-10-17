@@ -162,7 +162,9 @@ Future<void> _startApplicationShell(
     shellPrepared = true;
   }
 
-  Future<Widget> startApplication() async {
+  Future<Widget> startApplication(
+      [StartupAdmissionAttempt? admissionAttempt]) async {
+    admissionAttempt?.checkCurrent();
     final api = dependencies?.api ??
         BusinessApiClient(
           baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
@@ -193,7 +195,9 @@ Future<void> _startApplicationShell(
       try {
         return await openStartupMatrixClient(
           openRetained: () => matrixFactory.createForStartup(
-              onFailure: (failure) => databaseFailure = failure),
+              onFailure: (failure) => databaseFailure = failure,
+              checkCurrent: admissionAttempt?.checkCurrent,
+              onCacheMiss: admissionAttempt?.cacheMiss),
           createSafeShell: () => Client(MatrixClientFactory.clientName),
         );
       } catch (_) {
@@ -205,11 +209,17 @@ Future<void> _startApplicationShell(
         rethrow;
       }
     }, boundary: StartupFailureBoundary.databaseOpen);
+    final sdkClient = startupClient.client;
+    admissionAttempt?.onRetire(() {
+      resumeInitialization();
+      unawaited(sdkClient.dispose());
+    });
+    admissionAttempt?.checkCurrent();
     final installationDeviceKey =
         matrixFactory.startupAdmission?.registrationKey ??
             await observeStartupOperation<String>(store.registrationDeviceKey,
                 boundary: StartupFailureBoundary.installationIdentity);
-    final sdkClient = startupClient.client;
+    admissionAttempt?.checkCurrent();
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
       secureSessionStore: store,
@@ -238,17 +248,20 @@ Future<void> _startApplicationShell(
       duplicateRooms: DuplicateRoomRegistry(),
     );
     unawaited(firstLocalFrame.future.then((_) async {
+      if (admissionAttempt?.isCurrent == false) return;
       final salt = await loadStartupDiagnosticSalt(store);
-      if (salt == null) return;
+      if (salt == null || admissionAttempt?.isCurrent == false) return;
       final hasher = MatrixDiagnosticHasher(salt);
       matrixFactory.diagnosticHasher = hasher;
       matrix.installDiagnosticHasher(hasher);
     }).catchError((Object _) {}));
     late final DualDomainLoginService login;
+    final localEligibility = Completer<bool>();
     final session = SessionBootstrapController(
       business: api,
       matrix: matrix,
       onLocalProjectionEligibility: (eligible) {
+        if (!localEligibility.isCompleted) localEligibility.complete(eligible);
         if (!eligible) resumeInitialization();
       },
       securityLogger: matrix.securityLogger,
@@ -265,6 +278,7 @@ Future<void> _startApplicationShell(
         await login.restoreAuthenticatedSession(identity);
       },
     );
+    admissionAttempt?.onRetire(session.dispose);
     login = DualDomainLoginService(
       prepareLocalLogin: () =>
           validateLocalLoginStorageForAuthentication(store),
@@ -313,21 +327,36 @@ Future<void> _startApplicationShell(
         return null;
       }
       if (startupHandoff?.isCurrent != true) {
-        startupHandoff = MatrixHomeHandoff(
+        late final MatrixHomeHandoff handoff;
+        handoff = MatrixHomeHandoff(
             api: api,
             matrix: matrix,
             eligible: () => session.canShowCachedMessages,
             onPublished: () {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
+              void afterContentFrame(Duration _) {
+                if (!identical(startupHandoff, handoff) ||
+                    !handoff.isCurrent ||
+                    admissionAttempt?.isCurrent == false) {
+                  return;
+                }
+                if (!WidgetsBinding.instance.sendFramesToEngine) {
+                  WidgetsBinding.instance
+                      .addPostFrameCallback(afterContentFrame);
+                  WidgetsBinding.instance.scheduleFrame();
+                  return;
+                }
                 if (!firstLocalFrame.isCompleted) {
                   markStartupProjection(
                       StartupProjectionPhase.firstProjectionContentFrame,
                       startupClock);
                 }
                 resumeInitialization();
-              });
+              }
+
+              WidgetsBinding.instance.addPostFrameCallback(afterContentFrame);
               WidgetsBinding.instance.scheduleFrame();
             });
+        startupHandoff = handoff;
       }
       return startupHandoff;
     }
@@ -423,6 +452,20 @@ Future<void> _startApplicationShell(
         // recovery UI can present a retry/import flow without exposing secrets.
       }
     }());
+    if (matrix.hasLocalDisplayProjection) {
+      final eligible = await Future.any<bool>([
+        localEligibility.future,
+        bootstrap.then((_) => session.canShowCachedMessages),
+      ]);
+      admissionAttempt?.checkCurrent();
+      if (eligible) {
+        final snapshot = await matrix.conversations.snapshot();
+        admissionAttempt?.checkCurrent();
+        currentStartupHandoff()?.prepare(snapshot);
+      } else {
+        admissionAttempt?.cacheMiss();
+      }
+    }
     return gate;
   }
 
@@ -440,6 +483,7 @@ Future<void> _startApplicationShell(
       return outcome;
     },
     start: startApplication,
+    startWithAdmission: startApplication,
     onFailure: recordStartupFailure,
   ));
 }

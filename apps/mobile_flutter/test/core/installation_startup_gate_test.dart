@@ -30,6 +30,155 @@ final class _FreshInstallProbe implements InstallationContainerProbe {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final stage in ['prepare', 'reconcile', 'admission']) {
+    for (final retire in ['timeout', 'dispose']) {
+      testWidgets(
+          'enhanced $stage stays private then $retire retires late completion',
+          (tester) async {
+        final held = Completer<void>();
+        final attempts = <StartupAdmissionAttempt>[];
+        var prepares = 0;
+        var checks = 0;
+        var compositions = 0;
+        var retiredOwners = 0;
+        await tester.pumpWidget(CupertinoApp(
+            home: InstallationStartupGate(
+          prepare: () async {
+            prepares++;
+            if (stage == 'prepare') await held.future;
+          },
+          reconcile: () async {
+            checks++;
+            if (stage == 'reconcile') await held.future;
+            return InstallationResetOutcome.notNeeded;
+          },
+          start: () async => const Text('legacy'),
+          startWithAdmission: (attempt) async {
+            attempts.add(attempt);
+            attempt.onRetire(() => retiredOwners++);
+            if (stage == 'admission' && attempts.length == 1) await held.future;
+            attempt.checkCurrent();
+            compositions++;
+            return const Text('real-interactive-list');
+          },
+        )));
+        await tester.pump(const Duration(seconds: 2));
+        expect(find.byType(CupertinoActivityIndicator), findsNothing);
+        expect(tester.binding.sendFramesToEngine, isFalse);
+        if (retire == 'dispose') {
+          await tester.pumpWidget(const SizedBox.shrink());
+          held.complete();
+          await tester.pump();
+          expect(compositions, 0);
+          expect(tester.binding.sendFramesToEngine, isTrue);
+        } else {
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.byKey(const Key('installation-startup-retry')),
+              findsOneWidget);
+          await tester.tap(find.byKey(const Key('installation-startup-retry')));
+          await tester.pump();
+          expect(prepares, 1, reason: 'Retry joins outstanding minimum checks');
+          if (stage == 'reconcile') expect(checks, 1);
+          held.complete();
+          await tester.pumpAndSettle();
+          expect(find.text('real-interactive-list'), findsOneWidget);
+          expect(compositions, 1);
+        }
+        if (stage == 'admission') {
+          expect(attempts.first.isCurrent, isFalse);
+          expect(retiredOwners, 1);
+        }
+      });
+    }
+  }
+  testWidgets(
+      'enhanced prepare and reconciliation share one admission deadline',
+      (tester) async {
+    final prepared = Completer<void>();
+    final checked = Completer<InstallationResetOutcome>();
+    var starts = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: InstallationStartupGate(
+      prepare: () => prepared.future,
+      reconcile: () => checked.future,
+      start: () async => const SizedBox.shrink(),
+      startWithAdmission: (_) async {
+        starts++;
+        return const Text('content');
+      },
+    )));
+    await tester.pump(const Duration(seconds: 4));
+    prepared.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(const Key('installation-startup-retry')), findsOneWidget);
+    checked.complete(InstallationResetOutcome.notNeeded);
+    await tester.pump();
+    expect(starts, 0);
+  });
+  testWidgets(
+      'slow minimum checks publish real content as the first engine frame',
+      (tester) async {
+    final prepared = Completer<void>();
+    final checked = Completer<InstallationResetOutcome>();
+    final admitted = Completer<Widget>();
+    await tester.pumpWidget(CupertinoApp(
+        home: InstallationStartupGate(
+      prepare: () => prepared.future,
+      reconcile: () => checked.future,
+      start: () => admitted.future,
+      startWithAdmission: (_) => admitted.future,
+    )));
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.binding.sendFramesToEngine, isFalse);
+    prepared.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.binding.sendFramesToEngine, isFalse);
+    checked.complete(InstallationResetOutcome.notNeeded);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.binding.sendFramesToEngine, isFalse);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    var observedVisibleContent = false;
+    void checkVisibleFrame(Duration _) {
+      if (!tester.binding.sendFramesToEngine) {
+        tester.binding.addPostFrameCallback(checkVisibleFrame);
+        return;
+      }
+      expect(find.text('ready-real-content'), findsOneWidget);
+      observedVisibleContent = true;
+    }
+
+    tester.binding.addPostFrameCallback(checkVisibleFrame);
+    admitted.complete(const Text('ready-real-content'));
+    await tester.pump();
+    await tester.pump();
+    expect(tester.binding.sendFramesToEngine, isTrue);
+    expect(observedVisibleContent, isTrue);
+  });
+
+  testWidgets(
+      'known cache miss cancels deadline and releases normal initialization',
+      (tester) async {
+    final loaded = Completer<Widget>();
+    await tester.pumpWidget(CupertinoApp(
+        home: InstallationStartupGate(
+      reconcile: () async => InstallationResetOutcome.notNeeded,
+      start: () => loaded.future,
+      startWithAdmission: (attempt) {
+        attempt.cacheMiss();
+        return loaded.future;
+      },
+    )));
+    await tester.pump(const Duration(seconds: 9));
+    expect(tester.binding.sendFramesToEngine, isTrue);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    expect(find.byKey(const Key('installation-startup-retry')), findsNothing);
+    loaded.complete(const Text('normal-content'));
+    await tester.pumpAndSettle();
+    expect(find.text('normal-content'), findsOneWidget);
+  });
   testWidgets('held reconciliation releases a safe shell after one second',
       (tester) async {
     final checked = Completer<InstallationResetOutcome>();

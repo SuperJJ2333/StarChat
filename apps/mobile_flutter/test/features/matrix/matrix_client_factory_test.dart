@@ -548,6 +548,39 @@ void main() {
   setUp(() => PathProviderPlatform.instance = MatrixTestPaths());
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test(
+      'retired cache admission never opens a client or falls through to full recovery',
+      () async {
+    final directory = Completer<String>();
+    var current = true;
+    var opens = 0;
+    var misses = 0;
+    final factory = MatrixClientFactory(
+      sessionStore: SecureSessionStore(MemoryStore()),
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () => directory.future,
+      opener: (
+          {required clientName, required databasePath, required cipher}) async {
+        opens++;
+        return LogoutTrackingClient('unexpected');
+      },
+    );
+    final result = factory.createForStartup(
+      checkCurrent: () {
+        if (!current) throw StateError('retired synthetic attempt');
+      },
+      onCacheMiss: () => misses++,
+    );
+    final rejected = expectLater(result, throwsStateError);
+    current = false;
+    directory.complete(_matrixTestDirectory.path);
+    await rejected;
+    expect(opens, 0);
+    expect(misses, 0);
+    expect(factory.startupProjection, isNull);
+    expect(factory.startupAdmission, isNull);
+  });
+
   group('Matrix 测试存储目录隔离（CI 并发回归）', () {
     test('文档目录是进程私有且不写入源码目录', () async {
       final path =

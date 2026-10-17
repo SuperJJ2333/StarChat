@@ -7,6 +7,50 @@ import 'installation_reconciler.dart';
 import 'session_failure.dart';
 import 'startup_failure_metadata.dart';
 
+/// One bounded cache admission attempt. Revocation prevents late secure reads
+/// from publishing an owner after timeout, disposal, or Retry.
+final class StartupAdmissionAttempt {
+  StartupAdmissionAttempt(this._onMiss);
+  final void Function() _onMiss;
+  final _cancelled = Completer<Widget>();
+  final _retire = <void Function()>[];
+  bool _current = true;
+  bool _resolved = false;
+  bool get isCurrent => _current;
+  void checkCurrent() {
+    if (!_current) throw StateError('Startup admission retired');
+  }
+
+  void onRetire(void Function() retire) {
+    if (_current) {
+      _retire.add(retire);
+    } else {
+      retire();
+    }
+  }
+
+  void cacheMiss() {
+    checkCurrent();
+    if (_resolved) return;
+    _resolved = true;
+    _onMiss();
+  }
+
+  void _cancel() {
+    if (!_current) return;
+    _current = false;
+    for (final retire in _retire) {
+      retire();
+    }
+    _retire.clear();
+    _cancelled.completeError(StateError('Startup admission did not settle'));
+  }
+
+  void _accept() {
+    _retire.clear();
+  }
+}
+
 /// Delays application composition until the installation check has settled.
 final class InstallationStartupGate extends StatefulWidget {
   const InstallationStartupGate({
@@ -14,12 +58,15 @@ final class InstallationStartupGate extends StatefulWidget {
     required this.reconcile,
     required this.start,
     this.onFailure,
+    this.startWithAdmission,
     this.prepare,
     this.shellBuilder,
   });
 
   final Future<InstallationResetOutcome> Function() reconcile;
   final Future<Widget> Function() start;
+  final Future<Widget> Function(StartupAdmissionAttempt attempt)?
+      startWithAdmission;
   final StartupFailureObserver? onFailure;
 
   /// Local version/preferences initialization. It must not open account data.
@@ -46,6 +93,8 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
   bool _pendingDetails = false;
   Timer? _shellTimer;
   Timer? _detailsTimer;
+  Timer? _admissionTimer;
+  StartupAdmissionAttempt? _admission;
 
   @override
   void initState() {
@@ -61,6 +110,8 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
   @override
   void dispose() {
     _cancelPendingTimers();
+    _admissionTimer?.cancel();
+    _admission?._cancel();
     _releaseFirstFrame();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -98,76 +149,100 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
     }
   }
 
+  Future<void>? _preparation;
+  Future<InstallationResetOutcome>? _reconciliation;
+
   Future<void> _reconcileAndStart() async {
     if (_checking || _started) return;
     _checking = true;
-    _beginPending();
-    if (!_prepared && widget.prepare != null) {
-      setState(() => _phase = _GatePhase.preparing);
-      try {
-        await widget.prepare!();
-        _prepared = true;
-      } catch (error) {
-        _checking = false;
-        _cancelPendingTimers();
-        final failure = safeStartupFailure(error,
-            boundary: StartupFailureBoundary.preferencesLoad);
-        notifyStartupFailure(widget.onFailure, failure);
+    final enhancedStart = widget.startWithAdmission;
+    StartupAdmissionAttempt? attempt;
+    if (enhancedStart == null) {
+      _beginPending();
+    } else {
+      _cancelPendingTimers();
+      attempt = StartupAdmissionAttempt(() {
+        _admissionTimer?.cancel();
         if (!mounted) return;
-        setState(() {
-          _startFailure =
-              sessionFailureCategoryMessage(failure.category, stage: 'startup');
-          _phase = _GatePhase.startFailed;
-        });
+        setState(() => _safeShellVisible = true);
         _releaseFirstFrame();
-        return;
+        _beginPending();
+      });
+      _admission = attempt;
+      _admissionTimer = Timer(const Duration(seconds: 8), attempt._cancel);
+    }
+    var boundary = StartupFailureBoundary.preferencesLoad;
+    bool current() => mounted && (attempt?.isCurrent ?? true);
+    Future<Widget> compose() async {
+      if (!_prepared && widget.prepare != null) {
+        if (current()) setState(() => _phase = _GatePhase.preparing);
+        // Retry joins outstanding minimum checks; it never starts concurrent
+        // installation mutations while the retired attempt is still awaiting IO.
+        final preparation = _preparation ??= widget.prepare!();
+        try {
+          await preparation;
+        } catch (_) {
+          if (identical(_preparation, preparation)) _preparation = null;
+          rethrow;
+        }
+        if (!current()) throw StateError('Startup admission retired');
+        _prepared = true;
       }
-      if (!mounted) return;
+      if (!current()) throw StateError('Startup admission retired');
+      boundary = StartupFailureBoundary.reconcile;
+      setState(() => _phase = _GatePhase.checking);
+      final reconciliation = _reconciliation ??= widget.reconcile();
+      late final InstallationResetOutcome outcome;
+      try {
+        outcome = await reconciliation;
+      } finally {
+        if (identical(_reconciliation, reconciliation)) _reconciliation = null;
+      }
+      if (!current()) throw StateError('Startup admission retired');
+      if (outcome == InstallationResetOutcome.failed) {
+        throw StateError('Installation check did not settle');
+      }
+      boundary = StartupFailureBoundary.applicationStart;
+      _started = true;
+      setState(() => _phase = _GatePhase.starting);
+      return enhancedStart == null ? widget.start() : enhancedStart(attempt!);
     }
-    if (mounted) setState(() => _phase = _GatePhase.checking);
 
-    InstallationResetOutcome outcome;
     try {
-      outcome = await widget.reconcile();
-    } catch (error) {
-      notifyStartupFailure(
-          widget.onFailure,
-          safeStartupFailure(error,
-              boundary: StartupFailureBoundary.reconcile));
-      outcome = InstallationResetOutcome.failed;
-    } finally {
+      final child = await (attempt == null
+          ? compose()
+          : Future.any<Widget>([compose(), attempt._cancelled.future]));
+      if (!current()) return;
+      attempt?._accept();
+      _admission = null;
+      _admissionTimer?.cancel();
+      _cancelPendingTimers();
       _checking = false;
-    }
-    if (!mounted) return;
-    if (outcome == InstallationResetOutcome.failed) {
-      _cancelPendingTimers();
-      setState(() => _phase = _GatePhase.failed);
-      _releaseFirstFrame();
-      return;
-    }
-
-    _started = true;
-    setState(() => _phase = _GatePhase.starting);
-    try {
-      final child = await widget.start();
-      if (!mounted) return;
-      _cancelPendingTimers();
       setState(() {
         _child = child;
         _phase = _GatePhase.ready;
       });
       _releaseFirstFrame();
     } catch (error) {
+      if (!mounted || (attempt != null && !identical(_admission, attempt))) {
+        return;
+      }
+      // Retire before presenting Retry. A late continuation must not publish or
+      // open the original database under the replacement attempt.
+      attempt?._cancel();
+      _admission = null;
+      _admissionTimer?.cancel();
+      _checking = false;
       _started = false;
       _cancelPendingTimers();
-      final failure = safeStartupFailure(error,
-          boundary: StartupFailureBoundary.applicationStart);
+      final failure = safeStartupFailure(error, boundary: boundary);
       notifyStartupFailure(widget.onFailure, failure);
-      if (!mounted) return;
       setState(() {
         _startFailure =
             sessionFailureCategoryMessage(failure.category, stage: 'startup');
-        _phase = _GatePhase.startFailed;
+        _phase = boundary == StartupFailureBoundary.reconcile
+            ? _GatePhase.failed
+            : _GatePhase.startFailed;
       });
       _releaseFirstFrame();
     }

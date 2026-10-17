@@ -1925,6 +1925,7 @@ class Client extends MatrixApi {
   Future<void>? _projectionInitialization;
   bool _projectionPending = false;
   List<Room>? _startupSeededRooms;
+  final _startupSeedHeads = <String, Event?>{};
   final _startupSeedScalars = <String, (int, int, String?, String, int)>{};
   Future<void> get initializationCompleted =>
       _projectionInitialization ?? _initializationCompleted;
@@ -1949,6 +1950,7 @@ class Client extends MatrixApi {
     }
     _startupSeededRooms = List<Room>.of(rooms);
     for (final room in rooms) {
+      _startupSeedHeads[room.id] = room.lastEvent;
       _startupSeedScalars[room.id] = (
         room.notificationCount,
         room.highlightCount,
@@ -2317,6 +2319,12 @@ class Client extends MatrixApi {
               // A change after seeding, including before init starts, wins.
               final scalar = _startupSeedScalars[live.id];
               if (scalar != null) {
+                if (identical(live.lastEvent, _startupSeedHeads[live.id])) {
+                  final head = restored.lastEvent;
+                  live.lastEvent = head == null
+                      ? null
+                      : Event.fromJson(head.toJson(), live);
+                }
                 if (live.notificationCount == scalar.$1) {
                   live.notificationCount = restored.notificationCount;
                 }
