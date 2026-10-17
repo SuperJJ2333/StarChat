@@ -760,7 +760,17 @@ final class RoomTimelineController extends ChangeNotifier
   /// null = 不落盘（纯逻辑测试、或没有可用持久层），此时行为与旧实现完全
   /// 一致：乐观行 + 内存重发。非 null 时**先落盘再派发**，且重试/重启
   /// 一律复用同一 txid。
-  final OutboxJournal? _outboxJournal;
+  OutboxJournal? _outboxJournal;
+
+  /// Bind persistence after the cached viewport is already visible. This is a
+  /// one-way transition: never replace the journal owning pending transactions.
+  void attachOutboxJournal(OutboxJournal journal) {
+    if (_disposed) throw StateError('Disposed room controller');
+    if (_outboxJournal != null && !identical(_outboxJournal, journal)) {
+      throw StateError('Room journal already attached');
+    }
+    _outboxJournal = journal;
+  }
 
   /// 同一 txid 在途去重：恢复流程与用户点击可能同时命中同一行。
   final _inFlightTxids = <String>{};

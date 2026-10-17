@@ -70,6 +70,30 @@ final class _HttpPreferenceClient extends Client {
 }
 
 void main() {
+  test(
+      'bounded head ordering includes old pinned and draft rooms before activity',
+      () {
+    final source = [
+      for (var i = 0; i < 65; i++)
+        ConversationProjection(
+            roomId: 'room-${i.toString().padLeft(2, '0')}',
+            isGroup: true,
+            lastActivity: DateTime.fromMillisecondsSinceEpoch(i),
+            preference: ConversationPreference(pinned: i == 0))
+    ];
+    final selected =
+        orderConversations(source.reversed, draftRoomIds: {'room-01'})
+            .take(40)
+            .map((e) => e.roomId)
+            .toList();
+    expect(selected.take(3), ['room-00', 'room-01', 'room-64']);
+    expect(selected, hasLength(40));
+    expect(
+        selected,
+        orderConversations(source, draftRoomIds: {'room-01'})
+            .take(40)
+            .map((e) => e.roomId));
+  });
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('muting writes a Matrix override after the preference', () async {

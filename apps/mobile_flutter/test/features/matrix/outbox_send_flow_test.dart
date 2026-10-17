@@ -162,6 +162,36 @@ void main() {
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
 
+  test('visible cached controller attaches durable queue once before sending',
+      () async {
+    var ready = false;
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        networkStateManager: manager,
+        canSendNow: () => ready,
+        canDispatchNow: () => false);
+    final journal =
+        outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test');
+    try {
+      await controller.sendText('held');
+      expect(await outbox.store.query(accountId: 'me'), isEmpty);
+      expect(transport.txids, isEmpty);
+      controller.attachOutboxJournal(journal);
+      controller.attachOutboxJournal(journal);
+      expect(
+          () => controller.attachOutboxJournal(outbox.journalFor(
+              roomId: '!other:test', receiverId: '@other:test')),
+          throwsStateError);
+      ready = true;
+      await controller.sendText('durable');
+      expect(await outbox.store.query(accountId: 'me'), hasLength(1));
+      expect(transport.txids, isEmpty);
+    } finally {
+      controller.dispose();
+    }
+    expect(() => controller.attachOutboxJournal(journal), throwsStateError);
+  });
+
   test('readiness revoked during claim releases queued txid before transport',
       () async {
     var ready = true;

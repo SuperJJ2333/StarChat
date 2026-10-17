@@ -1,6 +1,7 @@
 import 'package:liuhetong_mobile/features/statistics/statistics_room_scope.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:liuhetong_mobile/core/startup_projection/startup_projection_store.dart';
 import 'dart:async';
@@ -86,13 +87,21 @@ class _HeldDatabase extends MatrixSdkDatabase {
   }
 
   var warmRoomReadEntered = Completer<void>();
+  Completer<void>? bulkRoomRead;
+  final bulkRoomReadEntered = Completer<void>();
+  final readRoomIds = <String>[];
   @override
   Future<List<Event>> getEventList(Room room,
       {int start = 0, bool onlySending = false, int? limit}) async {
+    if (bulkRoomRead != null && room.id == '!room-63:synthetic.test') {
+      if (!bulkRoomReadEntered.isCompleted) bulkRoomReadEntered.complete();
+      await bulkRoomRead!.future;
+    }
     if (warmRoomRead != null && room.id == '!room-64:synthetic.test') {
       if (!warmRoomReadEntered.isCompleted) warmRoomReadEntered.complete();
       await warmRoomRead!.future;
     }
+    readRoomIds.add(room.id);
     return super.getEventList(room,
         start: start, onlySending: onlySending, limit: limit);
   }
@@ -120,6 +129,22 @@ class _HeldDatabase extends MatrixSdkDatabase {
     fullRead = true;
     return super.getCachedRoomList(client);
   }
+}
+
+class _HeldOutboxFactory implements DatabaseFactory {
+  _HeldOutboxFactory(this.delegate, this.release);
+  final DatabaseFactory delegate;
+  final Completer<void> release;
+  @override
+  Future<Database> openDatabase(String path,
+      {OpenDatabaseOptions? options}) async {
+    await release.future;
+    return delegate.openDatabase(path, options: options);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unused factory operation');
 }
 
 class _PreflightBarrier implements MatrixLocalIdentityReader {
@@ -235,6 +260,8 @@ void registerStartupProjectionEntryTests(
       late DatabaseFactory sqlFactory;
       late String cipher;
       late SqliteOutboxStore outbox;
+      final outboxOpen = Completer<void>();
+      if (!independent || allHidden || avatarHandoff) outboxOpen.complete();
       final host = Uri.parse(AppConfig.matrixHomeserver);
       final user =
           '@startup-${independent ? 'projection' : 'legacy'}-${allHidden ? 'empty' : 'rows'}:synthetic.test';
@@ -358,7 +385,7 @@ void registerStartupProjectionEntryTests(
         await seed.dispose();
         outbox = SqliteOutboxStore(
             databasePath: '${directory.path}/synthetic-outbox.sqlite',
-            factory: sqlFactory);
+            factory: _HeldOutboxFactory(sqlFactory, outboxOpen));
       });
       late Client client;
       var opened = false;
@@ -366,6 +393,8 @@ void registerStartupProjectionEntryTests(
       var transportSends = 0;
       final transportTxids = <String>[];
       var encryptedTransport = false;
+      var displaySync = false;
+      void Function(SyncUpdate)? originalDisplaySettled;
       final preflight = _PreflightBarrier();
       var priming = false;
       var databaseOpens = 0;
@@ -403,6 +432,22 @@ void registerStartupProjectionEntryTests(
                 return http.Response('{"event_id":"synthetic-ack"}', 200);
               }
               if (request.url.path.endsWith('/sync')) {
+                if (displaySync) {
+                  return http.Response(
+                      jsonEncode({
+                        'next_batch': 'synthetic-display-refresh',
+                        'account_data': {
+                          'events': [
+                            {
+                              'type': 'synthetic.display',
+                              'content': {'revision': 1}
+                            }
+                          ]
+                        },
+                        'rooms': {},
+                      }),
+                      200);
+                }
                 return http.Response(
                     '{"next_batch":"synthetic","rooms":{}}', 200);
               }
@@ -631,6 +676,10 @@ void registerStartupProjectionEntryTests(
               secureSessionStore: store,
               readContinuityMetadata: factory.continuityMetadata);
           if (!allHidden) {
+            await saveLocalConversationPreference(
+                full.getRoomById('!room-0:synthetic.test')!,
+                ConversationPreference(
+                    pinned: true, pinnedAt: DateTime.utc(2026, 10, 17)));
             for (final index in [63, 62]) {
               final room = full.getRoomById('!room-$index:synthetic.test')!;
               if (index == 62) {
@@ -709,6 +758,10 @@ void registerStartupProjectionEntryTests(
             expect(boundedMembers.length, lessThan(9));
             final head = projection.rooms
                 .firstWhere((r) => r.id == '!room-64:synthetic.test');
+            expect(projection.rooms.first.id, '!room-0:synthetic.test',
+                reason:
+                    'old pinned room outside SDK first forty must be captured first');
+            expect(projection.rooms.length, lessThanOrEqualTo(40));
             expect(head.encrypted, isTrue);
             expect(head.membership, 'join');
             expect(head.events.firstWhere((e) => e.id == 'cached-58').body,
@@ -1024,6 +1077,13 @@ void registerStartupProjectionEntryTests(
         await tester.drag(viewport, const Offset(0, 300));
         await flush(30);
         expect(scroll.position.pixels, isNot(beforeOffset));
+        if (independent) {
+          expect(outboxOpen.isCompleted, isFalse,
+              reason:
+                  'cached room and scroll precede durable queue initialization');
+          outboxOpen.complete();
+          await flush(40);
+        }
         expect(
             independent
                 ? preflight.release.isCompleted
@@ -1135,66 +1195,56 @@ void registerStartupProjectionEntryTests(
                 roomName: 'Synthetic room 64',
                 source: source));
             await flush(20);
-            expect(origin.isCurrent, isTrue,
-                reason: 'capturing origin must never pop it');
+            expect(find.byType(RoomPage), findsOneWidget,
+                reason: 'cached entry from search/profile must precede SQL');
+            expect(find.text('Cached message 59'), findsWidgets);
+            expect(held.warmRoomRead!.isCompleted, isFalse);
             navigator.pop();
             await flush(40);
-            {
-              expect(find.byType(RoomPage), findsNothing);
-              await tester.tap(find.text('Synthetic room 64'));
-              await flush(10);
-              held.warmRoomRead!.complete();
-              for (var attempt = 0;
-                  attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
-                  attempt++) {
-                await flush(1);
-              }
-              expect(find.byType(RoomPage), findsOneWidget,
-                  reason:
-                      'return from search/profile must retire the old pending intent before same-room reentry');
-              var retiredSettled = false;
-              pending.then((_) => retiredSettled = true);
-              for (var attempt = 0;
-                  attempt < 100 && !retiredSettled;
-                  attempt++) {
-                await flush(1);
-              }
-              expect(retiredSettled, isTrue,
-                  reason:
-                      'returned origin request must settle without owning the new room route');
-              expect(StatisticsRoomScope.current, '!room-64:synthetic.test',
-                  reason:
-                      'retired cleanup must preserve the new visible room scope');
-              Navigator.of(tester.element(find.byType(RoomPage))).pop();
-              await flush(80);
-              expect(StatisticsRoomScope.current, isNull);
-            }
-            expect(find.byType(RoomPage), findsNothing);
-          }
-          held.warmRoomRead = Completer<void>();
-          await tester.tap(find.text('Synthetic room 64'));
-          await flush(20);
-          await tester.tap(find.text('通讯录').last);
-          await flush(10);
-          {
-            await tester.tap(find.text('消息').last);
-            await flush(10);
+            expect(origin.isCurrent, isTrue);
+            navigator.pop();
+            await flush(40);
             await tester.tap(find.text('Synthetic room 64'));
-            await flush(10);
-            held.warmRoomRead!.complete();
-            for (var attempt = 0;
-                attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
-                attempt++) {
-              await flush(1);
-            }
+            await flush(20);
             expect(find.byType(RoomPage), findsOneWidget,
                 reason:
-                    'a new same-room intent after tab cancellation must not be swallowed by the retired pending request');
-            expect(find.text('Cached message 59'), findsWidgets);
-            Navigator.of(tester.element(find.byType(RoomPage))).pop();
+                    'same-room reentry must not be swallowed by old cleanup');
+            expect(StatisticsRoomScope.current, '!room-64:synthetic.test');
+            held.warmRoomRead!.complete();
             await flush(80);
+            navigator.pop();
+            await flush(80);
+            await pending;
+            expect(StatisticsRoomScope.current, isNull);
           }
+          await tester.tap(find.text('通讯录').last);
+          await flush(10);
+          await tester.tap(find.text('消息').last);
+          await flush(10);
           expect(find.byType(RoomPage), findsNothing);
+          final settled = client.onLocalDisplayApplySettled;
+          originalDisplaySettled = settled;
+          client.onLocalDisplayApplySettled = (update) {
+            client.onLocalDisplayApplySettled = settled;
+            held.bulkRoomRead = Completer<void>();
+            settled?.call(update);
+          };
+          displaySync = true;
+          var syncSettled = false;
+          unawaited(client.oneShotSync().then((_) => syncSettled = true));
+          for (var attempt = 0; attempt < 300 && !syncSettled; attempt++) {
+            await flush(1);
+          }
+          expect(syncSettled, isTrue,
+              reason: 'nonempty SDK sync must commit before cache entry');
+          for (var attempt = 0;
+              attempt < 300 && !held.bulkRoomReadEntered.isCompleted;
+              attempt++) {
+            await flush(1);
+          }
+          expect(held.bulkRoomReadEntered.isCompleted, isTrue,
+              reason:
+                  'nonempty SDK sync refreshes priority head before unrelated bulk hydration');
           held.warmRoomRead = Completer<void>();
           auditVisibleFrames = true;
           firstRoomContent = false;
@@ -1207,20 +1257,94 @@ void registerStartupProjectionEntryTests(
           expect(held.warmRoomReadEntered.isCompleted, isTrue,
               reason:
                   'ordinary post-recovery entry reads the persisted local timeline');
+          for (var attempt = 0;
+              attempt < 100 && find.byType(RoomPage).evaluate().isEmpty;
+              attempt++) {
+            await flush(1);
+          }
           expect(find.text('正在读取本机消息…'), findsNothing,
               reason:
                   'warm restored room entry must not expose a loading page while local SQL is pending');
-          expect(find.byType(RoomPage), findsNothing);
-          await tester.tap(find.text('Synthetic room 64'));
-          await flush(5);
+          expect(find.byType(RoomPage), findsOneWidget,
+              reason:
+                  'cached room must be interactive while post-SDK SQL remains held');
+          expect(find.text('Cached message 59'), findsWidgets);
+          expect(held.warmRoomRead!.isCompleted, isFalse);
+          final cachedRoomState = tester.state(find.byType(RoomPage));
+          final cachedViewport = find.byKey(const Key('room-message-viewport'));
+          // Use the same actual viewport finder as the cold-entry proof.
+          final heldViewport =
+              cachedViewport.evaluate().isNotEmpty ? cachedViewport : viewport;
+          final heldScroll = tester.state<ScrollableState>(find
+              .descendant(of: heldViewport, matching: find.byType(Scrollable))
+              .first);
+          final heldOffset = heldScroll.position.pixels;
+          await flush(40); // Finish push transition; SQL remains held.
+          await tester.drag(heldViewport, const Offset(0, 250));
+          await flush(15);
+          expect(heldScroll.position.pixels, isNot(heldOffset));
+          expect(held.warmRoomRead!.isCompleted, isFalse);
+          expect(held.bulkRoomRead!.isCompleted, isFalse);
           held.warmRoomRead!.complete();
+          // A new request outside the old top forty takes the next refresh
+          // turn after the already-running SQL read; it cannot wait for 39
+          // unrelated reads from the obsolete selection.
+          home.matrix.prioritizeRoomDisplay('!room-1:synthetic.test');
+          held.readRoomIds.clear();
+          held.bulkRoomRead!.complete();
+          for (var attempt = 0;
+              attempt < 300 &&
+                  !held.readRoomIds.contains('!room-1:synthetic.test');
+              attempt++) {
+            await flush(1);
+          }
+          expect(held.readRoomIds, contains('!room-1:synthetic.test'));
+          final nextRequested =
+              held.readRoomIds.indexOf('!room-1:synthetic.test');
+          final obsoleteNext =
+              held.readRoomIds.indexOf('!room-62:synthetic.test');
+          expect(obsoleteNext < 0 || nextRequested < obsoleteNext, isTrue,
+              reason:
+                  'changed requested room must preempt remaining old bulk selection');
           for (var attempt = 0;
               attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
               attempt++) {
             await flush(1);
           }
           expect(find.byType(RoomPage), findsOneWidget);
-          expect(find.text('Cached message 59'), findsWidgets);
+          expect(tester.state(find.byType(RoomPage)), same(cachedRoomState));
+          Object? canonicalError;
+          var canonicalDone = false;
+          unawaited(() async {
+            await store.fenceStartupProjectionPrivacy(
+                roomId: '!room-64:synthetic.test');
+            final fenced = await home.matrix.conversations.snapshot();
+            expect(
+                fenced.rooms.any((row) => row.id == '!room-64:synthetic.test'),
+                isTrue,
+                reason:
+                    'optional display privacy fence must not block canonical SDK rows');
+            final mutation = store.startupProjectionCoordinator!
+                .beginMutation('synthetic-failed-cache-write');
+            await mutation.beforeApply;
+            mutation.finish(applied: false);
+            final poisoned = await home.matrix.conversations.snapshot();
+            expect(
+                poisoned.rooms
+                    .any((row) => row.id == '!room-64:synthetic.test'),
+                isTrue,
+                reason:
+                    'poisoned cache permit must not block canonical SDK rows');
+          }()
+              .then((_) => canonicalDone = true, onError: (Object error) {
+            canonicalError = error;
+            canonicalDone = true;
+          }));
+          for (var attempt = 0; attempt < 300 && !canonicalDone; attempt++) {
+            await flush(1);
+          }
+          expect(canonicalDone, isTrue);
+          expect(canonicalError, isNull);
           expect(firstRoomContent, isTrue);
           auditVisibleFrames = false;
         }
@@ -1232,6 +1356,12 @@ void registerStartupProjectionEntryTests(
           if (independent) 'first_room_content': firstRoomContent,
           if (independent) 'no_loading_frames': true,
           if (independent) 'warm_room_no_loading_frames': true,
+          if (independent && !allHidden && !avatarHandoff)
+            'post_sdk_cached_entry_while_sql_held': true,
+          if (independent && !allHidden && !avatarHandoff)
+            'post_sdk_cached_scroll_while_sql_held': true,
+          if (independent && !allHidden && !avatarHandoff)
+            'post_sync_cached_entry_while_bulk_sql_held': true,
           if (independent) 'no_false_offline_during_restore': true,
           if (independent) 'cached_group_avatar_members': true,
           'original_preflight_calls_while_held': 0,
@@ -1243,9 +1373,16 @@ void registerStartupProjectionEntryTests(
           'network_sends_after_recovery': transportSends
         });
       } finally {
+        if (!outboxOpen.isCompleted) outboxOpen.complete();
+        if (originalDisplaySettled != null) {
+          client.onLocalDisplayApplySettled = originalDisplaySettled;
+        }
         auditVisibleFrames = false;
         if (held.warmRoomRead?.isCompleted == false) {
           held.warmRoomRead!.complete();
+        }
+        if (held.bulkRoomRead?.isCompleted == false) {
+          held.bulkRoomRead!.complete();
         }
         if (rawSecure.admissionHold?.isCompleted == false) {
           rawSecure.admissionHold!.complete();

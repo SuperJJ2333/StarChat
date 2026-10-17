@@ -212,13 +212,18 @@ final class ConversationProjection {
 }
 
 List<ConversationProjection> orderConversations(
-  Iterable<ConversationProjection> source,
-) {
+  Iterable<ConversationProjection> source, {
+  Set<String> draftRoomIds = const {},
+}) {
   final result = source.toList();
   result.sort((a, b) {
     final aPinned = a.preference.pinned;
     final bPinned = b.preference.pinned;
     if (aPinned != bPinned) return aPinned ? -1 : 1;
+    if (!aPinned &&
+        draftRoomIds.contains(a.roomId) != draftRoomIds.contains(b.roomId)) {
+      return draftRoomIds.contains(a.roomId) ? -1 : 1;
+    }
     if (aPinned) {
       final time = (a.preference.pinnedAt ??
               DateTime.fromMillisecondsSinceEpoch(0))

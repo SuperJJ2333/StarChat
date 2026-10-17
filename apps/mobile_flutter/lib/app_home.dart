@@ -2672,6 +2672,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
     if (!mounted || _disposed) return;
+    widget.matrix.prioritizeRoomDisplay(request.roomId);
     final intentEpoch = _roomNavigationIntentEpoch;
     final matrixOwner = widget.matrix;
     final account = matrixOwner.userId;
@@ -2701,7 +2702,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       await _roomOpening.openPrepared(
         request,
         prepare: () async {
-          await matrixOwner.prepareConversationAssociations();
+          if (!matrixOwner.hasCachedRoomDisplay(request.roomId)) {
+            await matrixOwner.prepareConversationAssociations();
+          }
           if (!current()) throw StateError('ROOM_OPEN_INTENT_RETIRED');
         },
         normalize: (traced) => normalizeDuplicateRoomOpen(traced,
@@ -2822,10 +2825,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
 
     try {
+      final cachedEntry = widget.matrix.hasCachedRoomDisplay(roomId);
+      Future<PersistentOutboxManager?>? pendingOutbox;
       if (widget.localOnly || _localOutboxFlight != null) {
-        await _prepareLocalOutbox();
+        final ready = _prepareLocalOutbox();
+        if (cachedEntry) {
+          pendingOutbox =
+              ready.then((_) => _outbox).catchError((Object _) => null);
+        } else {
+          await ready;
+        }
       }
-      final identityCache = await _identityCache();
+      final identityCache =
+          cachedEntry ? _chatIdentityCache : await _identityCache();
       trace.mark(PerformanceStage.identityLookupDone);
       final name = request.roomName.trim().isEmpty
           ? await widget.matrix.conversations.roomDisplayName(roomId)
@@ -2894,8 +2906,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                     target,
                     request.initialContact ??
                         identityCache
-                            .contactsByMatrixId[lease.roomInfo.directPeerId]),
+                            ?.contactsByMatrixId[lease.roomInfo.directPeerId]),
                 outbox: _outbox,
+                pendingOutbox: pendingOutbox,
                 onCreateGroup: _createGroupChat,
                 // BUG-16：聊天信息页入口携带当前对端，发起群聊默认选中。
                 onCreateGroupWithPeer: _createGroupChat,
@@ -2904,6 +2917,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 onVideo: (contact) => _openCall(contact, CallMediaType.video),
                 reminderService: reminderService,
                 initialIdentityCache: identityCache,
+                pendingIdentityCache: cachedEntry && identityCache == null
+                    ? _identityCache()
+                    : null,
                 readOnly: request.readOnly,
               ));
       handle.register(route,
@@ -2971,7 +2987,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         navigator.removeRoute(previous);
       }
       final contact = request.initialContact ??
-          identityCache.contactsByMatrixId[lease.roomInfo.directPeerId];
+          identityCache?.contactsByMatrixId[lease.roomInfo.directPeerId];
       if (!widget.localOnly) {
         unawaited(_reconcileOpenedDirectRoom(roomId, contact));
       }

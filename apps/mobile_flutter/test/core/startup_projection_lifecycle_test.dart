@@ -5,7 +5,12 @@ import 'package:liuhetong_mobile/features/matrix/matrix_outgoing_work_coordinato
 import 'package:matrix/matrix.dart';
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/core/startup_projection/startup_projection_coordinator.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
+import 'session_store_test.dart' show MemorySecureKeyValueStore;
+import '../features/matrix/matrix_client_factory_test.dart'
+    show LogoutTrackingClient;
 
 class _EchoClient extends Client {
   _EchoClient() : super('synthetic-echo');
@@ -15,6 +20,107 @@ class _EchoClient extends Client {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
+  test('same identity resume cannot revive the original admitted room head',
+      () async {
+    final first = LogoutTrackingClient('first',
+        loggedIn: true,
+        matrixUserId: '@synthetic:test',
+        matrixDeviceId: 'DEVICE');
+    final resumed = LogoutTrackingClient('resumed',
+        loggedIn: true,
+        matrixUserId: '@synthetic:test',
+        matrixDeviceId: 'DEVICE');
+    for (final client in [first, resumed]) {
+      client.roomOverride = Room(
+          id: '!synthetic:test', client: client, membership: Membership.join);
+    }
+    final secure = SecureSessionStore(MemorySecureKeyValueStore());
+    final epoch = base64Url.encode(List.filled(32, 1)).replaceAll('=', '');
+    final owner = MatrixSdkE2eeClient(first,
+        homeserver: Uri.parse('https://synthetic.test'),
+        secureSessionStore: secure,
+        suspendClient: (_) async {},
+        resumeClient: () async => resumed,
+        readContinuityMetadata: (client) async =>
+            MatrixClientContinuityMetadata(
+                isLoggedIn: true,
+                userId: client.userID,
+                deviceId: client.deviceID,
+                ed25519Fingerprint: 'synthetic',
+                databaseGeneration: 'synthetic'),
+        startupProjection: StartupProjection([
+          StartupProjectionRoom(
+              id: '!synthetic:test',
+              name: 'Synthetic',
+              direct: false,
+              peer: null,
+              unread: 0,
+              pinned: false,
+              muted: false,
+              canSend: true,
+              activity: 0,
+              events: [])
+        ]),
+        startupAdmission: StartupProjectionAdmission(
+            scope: '',
+            homeserver: 'https://synthetic.test',
+            userId: '@synthetic:test',
+            deviceId: 'DEVICE',
+            fingerprint: 'synthetic',
+            databaseGeneration: 'synthetic',
+            installationId: epoch,
+            epoch: epoch,
+            databaseKey: base64Url.encode(List.filled(32, 2)),
+            registrationKey: 'synthetic'));
+    try {
+      expect(owner.hasCachedRoomDisplay('!synthetic:test'), isTrue);
+      final mutation =
+          secure.startupProjectionCoordinator!.beginMutation('synthetic-edit');
+      await mutation.beforeApply;
+      mutation.finish(applied: true);
+      expect(owner.hasCachedRoomDisplay('!synthetic:test'), isFalse);
+      await owner.suspend();
+      await owner.sync();
+      final lease = await owner.openRoomLease('!synthetic:test');
+      expect(lease.roomInfo.id, '!synthetic:test');
+      expect(owner.hasCachedRoomDisplay('!synthetic:test'), isFalse,
+          reason:
+              'new coordinator must not re-admit the retired original head');
+      expect(
+          secure.startupProjectionCoordinator!.beginDisplayCapture(), isNotNull,
+          reason:
+              'same-owner canonical heads may still acquire fresh display permits');
+      await lease.cancel();
+    } finally {
+      owner.outgoingWork.dispose();
+      await first.dispose();
+      await resumed.dispose();
+    }
+  });
+  test(
+      'offline display permits never grant disk capture and retire on mutation',
+      () async {
+    final owner = StartupProjectionCoordinator(invalidateHead: () async {});
+    final display = owner.beginDisplayCapture()!;
+    expect(owner.beginCapture(), isNull);
+    expect(owner.isDisplayCurrent(display), isTrue);
+    final mutation = owner.beginMutation('privacy');
+    await mutation.beforeApply;
+    expect(owner.isDisplayCurrent(display), isFalse);
+    expect(owner.beginDisplayCapture(), isNull);
+    mutation.finish(applied: true);
+    final fresh = owner.beginDisplayCapture()!;
+    expect(owner.displayRevoked, isTrue);
+    expect(owner.isDisplayCurrent(display), isFalse);
+    expect(owner.isDisplayCurrent(fresh), isTrue);
+    expect(owner.beginCapture(), isNull);
+    owner.markVerified();
+    expect(owner.beginCapture(), isNotNull);
+    owner.retire();
+    expect(owner.isDisplayCurrent(fresh), isFalse);
+  });
   test(
       'provisional echo listener accepts restored identity and rejects wrong or stale identity',
       () async {

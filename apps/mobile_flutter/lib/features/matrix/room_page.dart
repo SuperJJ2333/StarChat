@@ -255,6 +255,8 @@ class RoomPage extends StatefulWidget {
     required this.roomName,
     required this.roomLease,
     this.preparedEntry,
+    this.pendingOutbox,
+    this.pendingIdentityCache,
     this.mediaSenderFactory,
     this.initialContact,
     this.initialAnchorEventId,
@@ -306,6 +308,7 @@ class RoomPage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final ProfileRepository? initialIdentityCache;
+  final Future<ProfileRepository>? pendingIdentityCache;
 
   /// 语音转文字实现（可注入；默认系统语音识别）。
   final VoiceTranscriber? voiceTranscriber;
@@ -339,6 +342,7 @@ class RoomPage extends StatefulWidget {
 
   /// 持久化出站消息管理器；为空时回退 [PersistentOutboxManager.shared]。
   final PersistentOutboxManager? outbox;
+  final Future<PersistentOutboxManager?>? pendingOutbox;
 
   @override
   State<RoomPage> createState() => _RoomPageState();
@@ -1057,15 +1061,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   String nudgeSuffix = '';
   Map<String, ContactDetails> contactsByMatrixId = const {};
   ProfileData? ownProfile;
-  late final ProfileRepository _identityCache =
+  late ProfileRepository _identityCache =
       widget.initialIdentityCache ?? ProfileRepository(widget.api);
 
   /// Offline First：本房间的持久化出站队列（可注入；组合根写入 shared）。
+  PersistentOutboxManager? _readyOutbox;
+  bool get _queueReady => widget.pendingOutbox == null || _readyOutbox != null;
   PersistentOutboxManager? get _outbox =>
-      widget.outbox ?? PersistentOutboxManager.shared;
+      _readyOutbox ??
+      (widget.pendingOutbox != null
+          ? null
+          : widget.outbox ?? PersistentOutboxManager.shared);
 
   /// 本房间的发送日志（房间号 + 接收方在这里绑定一次）。
-  late final OutboxJournal? _outboxJournal = _buildOutboxJournal();
+  late OutboxJournal? _outboxJournal = _buildOutboxJournal();
 
   /// 注册到发送句柄注册表，供调度器在网络恢复时把持久化行交回本会话发送。
   RoomOutboxSender? _outboxSender;
@@ -1283,6 +1292,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     ownProfile = _identityCache.profile;
     contactsByMatrixId = _identityCache.contactsByMatrixId;
     _identityCache.addListener(_identityChanged);
+    final pendingIdentity = widget.pendingIdentityCache;
+    if (pendingIdentity != null) {
+      final owner = widget.roomLease.owner.sendPreparationIdentity;
+      final epoch = widget.api.sessionEpoch;
+      unawaited(pendingIdentity.then((cache) {
+        if (!mounted ||
+            _disposing ||
+            widget.roomLease.canceled ||
+            widget.roomLease.owner.sendPreparationIdentity != owner ||
+            widget.api.sessionEpoch != epoch ||
+            identical(cache, _identityCache)) {
+          return;
+        }
+        _identityCache.removeListener(_identityChanged);
+        _identityCache = cache;
+        cache.addListener(_identityChanged);
+        _identityChanged();
+      }).catchError((Object _) {}));
+    }
     input.addListener(_handleComposerChanged);
     WidgetsBinding.instance.addObserver(this);
     unawaited(_restoreDraft());
@@ -1669,6 +1697,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         // 投影（GET /blocks + 本地立即更新），不做写死放行。
         canSendNow: () =>
             !widget.readOnly &&
+            _queueReady &&
             widget.roomLease.canQueueLocalText &&
             InteractionPermission.resolve(
               isFriend: _peerIsFriend(),
@@ -1685,6 +1714,37 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _bindMediaTimeline();
       _observedOutbox = _outbox;
       _observedOutbox?.addListener(_outboxChanged);
+      final pendingOutbox = widget.pendingOutbox;
+      if (pendingOutbox != null) {
+        final owner = widget.roomLease.owner.sendPreparationIdentity;
+        final businessEpoch = widget.api.sessionEpoch;
+        unawaited(pendingOutbox.then((manager) async {
+          if (!mounted ||
+              _disposing ||
+              widget.roomLease.canceled ||
+              owner != widget.roomLease.owner.sendPreparationIdentity ||
+              businessEpoch != widget.api.sessionEpoch ||
+              manager == null ||
+              manager.isDisposed ||
+              !identical(manager, PersistentOutboxManager.shared) ||
+              manager.accountId != roomInfo.currentUserId ||
+              controller == null) {
+            return;
+          }
+          _readyOutbox = manager;
+          final journal = _buildOutboxJournal();
+          if (journal == null) {
+            _readyOutbox = null;
+            return;
+          }
+          controller!.attachOutboxJournal(journal);
+          _outboxJournal = journal;
+          _observedOutbox = manager;
+          manager.addListener(_outboxChanged);
+          await controller!.reconcileOutboxStatuses();
+          if (mounted && !_disposing) setState(() {});
+        }).catchError((Object _) {}));
+      }
       // 调度器只有在房间已打开时才允许派发持久化行；句柄随页面销毁注销。
       final sender = RoomOutboxSender(
         roomId: roomInfo.id,

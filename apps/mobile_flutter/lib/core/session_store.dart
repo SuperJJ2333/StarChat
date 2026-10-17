@@ -398,7 +398,8 @@ final class SecureSessionStore {
 
   Future<StartupProjectionAdmission?> _projectionAdmissionUnlocked(
       String installationId,
-      {bool priming = false}) async {
+      {bool priming = false,
+      bool existingDisplay = false}) async {
     projectionEpoch(installationId);
     if (await _boundedPeek(_matrixArchiveJournalKey, 65536) != null) {
       return null;
@@ -469,7 +470,9 @@ final class SecureSessionStore {
         business['matrix_user_id'] != binding.matrixUserId ||
         business['access_token'] is! String ||
         business['refresh_token'] is! String ||
-        business['pending_refresh_operation'] != null) {
+        (business['pending_refresh_operation'] != null &&
+            !_validRefreshOperation(business['pending_refresh_operation'])) ||
+        (!existingDisplay && business['pending_refresh_operation'] != null)) {
       return null;
     }
     final account = _AccountScopedSecureStore.identity(
@@ -551,6 +554,34 @@ final class SecureSessionStore {
         }
         return admission;
       });
+
+  /// Read-only local display admission, including persistent privacy fences.
+  /// Does not authorize a cache commit or mark a business session verified.
+  Future<bool> isCurrentStartupDisplayOwner(
+      StartupProjectionAdmission existing) async {
+    try {
+      return await _runMatrixIdentityOperation(() async {
+        final current = await _projectionAdmissionUnlocked(
+            existing.installationId,
+            priming: true,
+            existingDisplay: true);
+        // A pending business refresh cannot admit a new startup or authorize a
+        // writer. Only this already-admitted in-memory owner may continue.
+        return current != null &&
+            current.scope == existing.scope &&
+            current.homeserver == existing.homeserver &&
+            current.userId == existing.userId &&
+            current.deviceId == existing.deviceId &&
+            current.fingerprint == existing.fingerprint &&
+            current.databaseGeneration == existing.databaseGeneration &&
+            current.databaseKey == existing.databaseKey &&
+            current.registrationKey == existing.registrationKey &&
+            current.installationId == existing.installationId;
+      }, skipArchiveRecovery: true);
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> invalidateStartupProjection() =>
       _runMatrixIdentityOperation(_invalidateProjectionUnlocked,

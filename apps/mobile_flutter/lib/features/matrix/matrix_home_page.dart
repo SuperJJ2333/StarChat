@@ -1496,26 +1496,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
           lastActivity: room.lastActivity,
           preference: room.preference,
         ),
-    ]);
-    // BUG-20（真机回归修订）：有草稿的会话上浮——位置在置顶会话之下、
-    // 其余普通会话之前（微信语义：写了草稿的聊天置顶于未读/普通区之上）。
-    final draftRoomIds = RoomDraftStore.shared.draftRoomIds;
-    final pinnedPart = <ConversationProjection>[];
-    final draftPart = <ConversationProjection>[];
-    final restPart = <ConversationProjection>[];
-    for (final item in ordered) {
-      if (item.preference.pinned) {
-        pinnedPart.add(item);
-      } else if (draftRoomIds.contains(item.roomId)) {
-        draftPart.add(item);
-      } else {
-        restPart.add(item);
-      }
-    }
-    final orderedRooms = [
-      for (final item in [...pinnedPart, ...draftPart, ...restPart])
-        roomById[item.roomId]!
-    ];
+    ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
+    final orderedRooms = [for (final item in ordered) roomById[item.roomId]!];
     final activeRooms = orderedRooms
         .where((room) => !room.preference.hidden)
         .toList(growable: false);

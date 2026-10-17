@@ -1,4 +1,5 @@
 import '../../core/startup_projection/startup_projection.dart';
+import 'room_draft_store.dart';
 import '../../core/startup_projection/startup_projection_coordinator.dart';
 import '../../core/startup_projection/startup_projection_store.dart';
 import 'conversation_identity_admission.dart';
@@ -815,6 +816,8 @@ final class MatrixConversationCapability {
       ? Future.value(_owner._projectionSnapshot())
       : _owner._withClient((client) async {
           final snapshotAccount = client.userID;
+          final memberHandoffCurrent =
+              await _owner._hydrateAdmittedDisplayMembers(client);
           await reconcileConversationPreferences(client);
           _flushPreferences();
           final localHistory = client.userID == null
@@ -888,6 +891,9 @@ final class MatrixConversationCapability {
           _owner._queueLocalMessageCounts(client);
           if (client.userID != snapshotAccount) {
             throw StateError('Conversation snapshot account changed');
+          }
+          if (memberHandoffCurrent != null && !memberHandoffCurrent()) {
+            throw StateError('Display member handoff retired');
           }
           var unresolved = 0;
           // No awaits from this point: current evidence and the projected row
@@ -1891,7 +1897,13 @@ final class MatrixRoomLease
   @override
   bool canceled = false;
 
-  bool get canQueueLocalText => owner._projectionRoom(roomId)?.canSend ?? true;
+  bool get canQueueLocalText =>
+      !canceled &&
+      !owner._accessRevoked &&
+      (owner.hasLocalDisplayProjection
+          ? owner._projectionRoom(roomId)?.canSend == true
+          : _room?.membership == Membership.join &&
+              _room?.canSendDefaultMessages == true);
 
   Future<void> runLocalHistoryMutation(Future<void> Function() apply) =>
       owner.runLocalHistoryMutation(apply);
@@ -1942,7 +1954,7 @@ final class MatrixRoomLease
   /// A non-SDK snapshot valid only while this lease is active.
   MatrixRoomInfoSnapshot get roomInfo {
     final room = _activeRoom;
-    final cached = owner._projectionRoom(roomId);
+    final cached = owner._roomDisplayHead(roomId);
     if (cached != null) {
       return MatrixRoomInfoSnapshot(
           id: roomId,
@@ -1950,7 +1962,7 @@ final class MatrixRoomLease
           topic: '',
           isDirect: cached.direct,
           directPeerId: cached.peer,
-          currentUserId: owner.startupAdmission!.userId,
+          currentUserId: owner.userId,
           announcementVersion: 0,
           homeserver: owner.homeserver,
           preference: ConversationPreference(
@@ -2071,7 +2083,7 @@ final class MatrixRoomLease
     bool cachedFirst = false,
     void Function()? onHydrated,
   }) async {
-    final cached = owner._projectionRoom(roomId);
+    final cached = owner._roomDisplayHead(roomId);
     if (cached != null) {
       final room = _activeRoom;
       final events = [
@@ -2102,6 +2114,8 @@ final class MatrixRoomLease
           await owner.initializationCompleted;
           capability._ensureActive();
           await room.postLoad();
+          final displayCapture =
+              owner._projectionCoordinator?.beginDisplayCapture();
           final restored =
               await room.client.database!.getEventList(room, limit: 40);
           capability._ensureActive();
@@ -2125,6 +2139,8 @@ final class MatrixRoomLease
           await timeline.hydrateCachedEvents(restored,
               isActive: active, retainedFragments: fragments);
           if (!active()) return;
+          await owner._rememberHydratedHead(
+              room, timeline.events, displayCapture, generation);
           await _enableSdkResidentWindow(timeline);
           capability._ensureActive();
           onHydrated?.call();
@@ -2138,6 +2154,8 @@ final class MatrixRoomLease
         final generation = room.historyGeneration;
         final client = room.client;
         final identity = (client.userID, client.deviceID, client.homeserver);
+        final displayCapture =
+            owner._projectionCoordinator?.beginDisplayCapture();
         final events = await client.database!.getEventList(room, limit: 40);
         if (canceled ||
             owner._accessRevoked ||
@@ -2182,6 +2200,8 @@ final class MatrixRoomLease
             capability._ensureActive();
             hydrated = await room.getTimeline(onUpdate: onUpdate);
             await hydrateLocal();
+            await owner._rememberHydratedHead(
+                room, timeline.events, displayCapture, generation);
             await _enableSdkResidentWindow(timeline);
             capability._ensureActive();
             if (generation != room.historyGeneration) {
@@ -6898,6 +6918,7 @@ final class MatrixSdkE2eeClient
         securityLogger = securityLogger ??
             MatrixSecurityLogger.create(sink: (line) => debugPrint(line)) {
     _bindStartupProjectionOwner(client);
+    _originalRoomDisplayOwner = _projectionCoordinator;
     _outgoingWork =
         _newOutgoingWork(client.userID ?? startupAdmission?.userId ?? '');
     _bindRecoveryWrites(client);
@@ -6908,6 +6929,7 @@ final class MatrixSdkE2eeClient
   final Stopwatch? startupClock;
   final StartupProjection? startupProjection;
   final StartupProjectionAdmission? startupAdmission;
+  late final StartupProjectionCoordinator? _originalRoomDisplayOwner;
   @override
   bool get hasLocalDisplayProjection =>
       !_accessRevoked &&
@@ -6921,6 +6943,211 @@ final class MatrixSdkE2eeClient
       if (row.id == id) return row;
     }
     return null;
+  }
+
+  // This display cache does not participate in SDK lifecycle/send readiness.
+  final _roomDisplayHeads = <String,
+      ({
+    StartupProjectionRoom row,
+    bool Function() isCurrent,
+    Room room,
+    int generation
+  })>{};
+
+  StartupProjectionRoom? _roomDisplayHead(String id) {
+    final client = _client;
+    if (_accessRevoked || client == null) return null;
+    final room = client.getRoomById(id);
+    if (room == null || room.membership != Membership.join) return null;
+    final canonical = _roomDisplayHeads[id];
+    if (canonical != null &&
+        identical(canonical.room, room) &&
+        canonical.generation == room.historyGeneration &&
+        canonical.isCurrent() &&
+        !preferenceForRoom(room).hidden) {
+      return canonical.row;
+    }
+    if (_originalRoomDisplayOwner == null ||
+        !identical(_originalRoomDisplayOwner, _projectionCoordinator) ||
+        _projectionCoordinator?.displayRevoked == true ||
+        startupAdmission == null ||
+        startupProjection == null) {
+      return null;
+    }
+    if (!client.isInitializationPending &&
+        (client.userID != startupAdmission!.userId ||
+            client.deviceID != startupAdmission!.deviceId)) {
+      return null;
+    }
+    for (final row in startupProjection!.rooms) {
+      if (row.id == id) return row;
+    }
+    return null;
+  }
+
+  bool hasCachedRoomDisplay(String roomId) => _roomDisplayHead(roomId) != null;
+
+  Future<bool Function()?> _hydrateAdmittedDisplayMembers(Client client) async {
+    final admission = startupAdmission;
+    final projection = startupProjection;
+    final secure = secureSessionStore;
+    if (admission == null || projection == null || secure == null) return null;
+    final pending = <({Room room, String member, int generation})>[];
+    var remaining = 128;
+    for (final row in projection.rooms) {
+      final room = client.getRoomById(row.id);
+      if (room == null || room.membership != Membership.join) continue;
+      for (final member in row.members.take(9)) {
+        if (remaining-- <= 0) break;
+        if (room.getState(EventTypes.RoomMember, member.id) == null) {
+          pending.add((
+            room: room,
+            member: member.id,
+            generation: room.historyGeneration
+          ));
+        }
+      }
+      if (remaining <= 0) break;
+    }
+    if (pending.isEmpty) return null;
+    final coordinator = _projectionCoordinator;
+    final permit = coordinator?.beginDisplayCapture();
+    bool current() =>
+        !_accessRevoked &&
+        identical(client, _client) &&
+        identical(coordinator, _projectionCoordinator) &&
+        client.userID == admission.userId &&
+        client.deviceID == admission.deviceId &&
+        permit != null &&
+        coordinator!.isDisplayCurrent(permit) &&
+        pending.every((item) =>
+            identical(client.getRoomById(item.room.id), item.room) &&
+            item.room.historyGeneration == item.generation &&
+            item.room.membership == Membership.join);
+    if (!current() ||
+        !await secure.isCurrentStartupDisplayOwner(admission) ||
+        !current()) {
+      // Cache admission is optional. Canonical SDK snapshots remain available
+      // when a privacy fence or failed cache write retires display admission.
+      return null;
+    }
+    for (final item in pending) {
+      final room = item.room;
+      if (room.getState(EventTypes.RoomMember, item.member) != null) continue;
+      final canonical = await client.database?.getUser(item.member, room);
+      if (!current()) {
+        throw StateError('Display member read retired');
+      }
+      // An SDK update that arrived during the read always wins. The admitted
+      // IDs select bounded work; only canonical local membership is applied.
+      if (canonical != null &&
+          room.getState(EventTypes.RoomMember, item.member) == null) {
+        room.setState(canonical);
+      }
+    }
+    return current;
+  }
+
+  Future<void> _rememberHydratedHead(Room room, List<Event> source,
+      StartupProjectionDisplayCapture? permit, int generation) async {
+    final coordinator = _projectionCoordinator;
+    final secure = secureSessionStore;
+    final admission = startupAdmission;
+    if (permit == null ||
+        secure == null ||
+        admission == null ||
+        room.client.isInitializationPending ||
+        _accessRevoked) {
+      return;
+    }
+    final client = _client;
+    bool current() =>
+        !_accessRevoked &&
+        identical(coordinator, _projectionCoordinator) &&
+        identical(client, _client) &&
+        identical(client, room.client) &&
+        identical(client?.getRoomById(room.id), room) &&
+        room.historyGeneration == generation &&
+        client?.userID == admission.userId &&
+        client?.deviceID == admission.deviceId &&
+        coordinator!.isDisplayCurrent(permit);
+    if (!current() ||
+        !await secure.isCurrentStartupDisplayOwner(admission) ||
+        !current()) {
+      return;
+    }
+    final history = await _loadLocalHistory(room.client);
+    if (!current()) {
+      return;
+    }
+    final preference = preferenceForRoom(room);
+    if (room.membership != Membership.join || preference.hidden) return;
+    final filter = history.readFilter(room.id);
+    final events = <StartupProjectionEvent>[];
+    for (final event in source.take(40)) {
+      if (!event.status.isSynced ||
+          event.redacted ||
+          filter(event.eventId, event.originServerTs)) {
+        continue;
+      }
+      final kind = event.type == EventTypes.Sticker
+          ? 'm.sticker'
+          : event.type == EventTypes.Message
+              ? event.messageType
+              : event.type;
+      if (!StartupProjectionEvent.kinds.contains(kind)) continue;
+      final value = StartupProjectionEvent(
+          id: event.eventId,
+          sender: event.senderId,
+          body: kind.startsWith('com.changliao.') ? '[消息]' : event.body,
+          kind: kind,
+          media: _projectionMedia(event.content),
+          timestamp: event.originServerTs.millisecondsSinceEpoch,
+          senderName: event.senderId);
+      try {
+        StartupProjectionEvent.fromJson(value.toJson());
+        events.add(value);
+      } on FormatException {/* The same bounded projection format applies. */}
+    }
+    final info = _snapshotRoomInfo(room);
+    final row = StartupProjectionRoom(
+        id: room.id,
+        name: info.name,
+        direct: info.isDirect,
+        peer: info.directPeerId,
+        unread: room.notificationCount,
+        pinned: preference.pinned,
+        muted: preference.muted,
+        encrypted: room.encrypted,
+        membership: room.membership.name,
+        canSend: room.canSendDefaultMessages,
+        activity: room.lastEvent?.originServerTs.millisecondsSinceEpoch ?? 0,
+        events: events);
+    try {
+      StartupProjectionRoom.fromJson(row.toJson());
+    } on FormatException {
+      return;
+    }
+    if (!current()) {
+      return;
+    }
+    _roomDisplayHeads.removeWhere((_, head) => !head.isCurrent());
+    _roomDisplayHeads.remove(room.id);
+    while (_roomDisplayHeads.length >= 40) {
+      _roomDisplayHeads.remove(_roomDisplayHeads.keys
+          .firstWhere((id) => id != _requestedDisplayRoom));
+    }
+    final bytes = utf8.encode(jsonEncode(row.toJson())).length;
+    if (bytes +
+            _roomDisplayHeads.values.fold<int>(
+                0,
+                (n, head) =>
+                    n + utf8.encode(jsonEncode(head.row.toJson())).length) >=
+        startupProjectionMaxEnvelope - 128) {
+      return;
+    }
+    _roomDisplayHeads[room.id] =
+        (row: row, isCurrent: current, room: room, generation: generation);
   }
 
   MatrixConversationSnapshot _projectionSnapshot() =>
@@ -6980,6 +7207,11 @@ final class MatrixSdkE2eeClient
       final coordinator = _projectionCoordinator = StartupProjectionCoordinator(
           invalidateHead: secure.invalidateStartupProjection);
       secure.startupProjectionCoordinator = coordinator;
+      unawaited(client.initializationCompleted.then((_) async {
+        if (!_accessRevoked && identical(_client, client)) {
+          await _refreshRoomDisplayHeads();
+        }
+      }).catchError((Object _) {}));
       client.onLocalDisplayApplySettled = (sync) {
         if (_accessRevoked || !identical(_client, client)) return;
         final redacted = <String, Set<String>>{};
@@ -6999,6 +7231,7 @@ final class MatrixSdkE2eeClient
               leftRooms: sync.rooms?.leave?.keys.toSet() ?? {},
               redactedEvents: redacted);
           if (_accessRevoked || !identical(_client, client)) return;
+          unawaited(_refreshRoomDisplayHeads());
           final cache = _projectionStore;
           if (cache != null) await primeStartupProjection(cache);
         }()
@@ -7018,6 +7251,7 @@ final class MatrixSdkE2eeClient
         }
         return (applied) {
           ticket.finish(applied: applied);
+          if (applied) unawaited(_refreshRoomDisplayHeads());
           final cache = _projectionStore;
           if (applied && cache != null) {
             unawaited(Future<void>(() => primeStartupProjection(cache))
@@ -7055,6 +7289,100 @@ final class MatrixSdkE2eeClient
   StartupProjectionCoordinator? _projectionCoordinator;
   bool _projectionWriting = false;
   bool _projectionRefreshPending = false;
+  Future<void>? _displayRefreshFlight;
+  bool _displayRefreshPending = false;
+  String? _requestedDisplayRoom;
+
+  void prioritizeRoomDisplay(String roomId) {
+    if (_requestedDisplayRoom == roomId) return;
+    _requestedDisplayRoom = roomId;
+    if (_displayRefreshFlight != null) _displayRefreshPending = true;
+  }
+
+  Future<void> _refreshRoomDisplayHeads() {
+    if (_displayRefreshFlight != null) {
+      _displayRefreshPending = true;
+      return _displayRefreshFlight!;
+    }
+    return _displayRefreshFlight = () async {
+      try {
+        final client = _client;
+        if (client == null || startupAdmission == null || _accessRevoked) {
+          return;
+        }
+        await client.initializationCompleted;
+        if (_accessRevoked || !identical(client, _client)) return;
+        final rooms = {for (final room in client.rooms) room.id: room};
+        final ordered = orderConversations([
+          for (final room in rooms.values)
+            if (!controlRoomIds.contains(room.id) &&
+                room.membership == Membership.join &&
+                !preferenceForRoom(room).hidden)
+              ConversationProjection(
+                  roomId: room.id,
+                  isGroup: !room.isDirectChat,
+                  lastActivity: room.lastEvent?.originServerTs ??
+                      DateTime.fromMillisecondsSinceEpoch(0),
+                  preference: preferenceForRoom(room)),
+        ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
+        final requested = _requestedDisplayRoom;
+        final selected = [
+          if (requested != null)
+            ...ordered.where((row) => row.roomId == requested),
+          ...ordered.where((row) => row.roomId != requested),
+        ];
+        final selectedIds = selected.take(40).map((row) => row.roomId).toSet();
+        _roomDisplayHeads.removeWhere((id, head) =>
+            (!selectedIds.contains(id) && id != _requestedDisplayRoom) ||
+            !head.isCurrent());
+        for (final item in selected.take(40)) {
+          if (_accessRevoked || !identical(client, _client)) return;
+          if (_requestedDisplayRoom != requested) {
+            _displayRefreshPending = true;
+            return;
+          }
+          final room = rooms[item.roomId]!;
+          final permit = _projectionCoordinator?.beginDisplayCapture();
+          if (permit == null) return;
+          final generation = room.historyGeneration;
+          final source =
+              await client.database?.getEventList(room, limit: 40) ?? <Event>[];
+          // Background display preparation must not mark lazy room state as
+          // fully loaded before canonical participant recovery has run.
+          final timeline = Timeline(
+              room: room,
+              chunk: TimelineChunk(events: source),
+              persistedInitialIds: source
+                  .where((event) => event.status.isSynced)
+                  .map((event) => event.eventId));
+          try {
+            await timeline.hydrateCachedEvents(source,
+                isActive: () =>
+                    !_accessRevoked &&
+                    identical(client, _client) &&
+                    _projectionCoordinator?.isDisplayCurrent(permit) == true &&
+                    room.historyGeneration == generation);
+            await _rememberHydratedHead(room, source, permit, generation);
+            if (_projectionCoordinator?.isDisplayCurrent(permit) != true) {
+              _displayRefreshPending = true;
+              return;
+            }
+          } finally {
+            timeline.cancelSubscriptions();
+          }
+        }
+      } catch (_) {
+        /* Display hydration never grants transport readiness. */
+      } finally {
+        _displayRefreshFlight = null;
+        if (_displayRefreshPending) {
+          _displayRefreshPending = false;
+          unawaited(Future<void>(() => _refreshRoomDisplayHeads()));
+        }
+      }
+    }();
+  }
+
   StartupProjectionStore? _projectionStore;
   StreamSubscription<SyncUpdate>? _projectionSync;
 
@@ -7129,11 +7457,29 @@ final class MatrixSdkE2eeClient
         final snapshot = await conversations.snapshot();
         final history = await _loadLocalHistory(active);
         final rows = <StartupProjectionRoom>[];
-        for (final row
-            in snapshot.rooms.where((row) => !row.preference.hidden).take(40)) {
+        final byId = {for (final row in snapshot.rooms) row.id: row};
+        final ordered = orderConversations([
+          for (final row in snapshot.rooms)
+            if (!row.preference.hidden &&
+                row.id != snapshot.vaultRoomId &&
+                row.id != snapshot.reminderRoomId)
+              ConversationProjection(
+                  roomId: row.id,
+                  isGroup: !row.isDirect,
+                  lastActivity: row.lastActivityAt ??
+                      DateTime.fromMillisecondsSinceEpoch(0),
+                  preference: row.preference),
+        ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
+        final selectedIds = ordered.take(40).map((row) => row.roomId).toSet();
+        _roomDisplayHeads.removeWhere((id, head) =>
+            (!selectedIds.contains(id) && id != _requestedDisplayRoom) ||
+            !head.isCurrent());
+        for (final item in ordered.take(40)) {
+          final row = byId[item.roomId]!;
           if (!coordinator.isCurrent(permit)) return;
           final room = active.getRoomById(row.id);
           if (room == null) continue;
+          final historyGeneration = room.historyGeneration;
           final filter = history.readFilter(room.id);
           final timeline = await room.getTimeline();
           final events = <StartupProjectionEvent>[];
@@ -7231,6 +7577,35 @@ final class MatrixSdkE2eeClient
               }
             }
             rows.add(projected);
+            if (coordinator.isCurrent(permit) &&
+                identical(active, _client) &&
+                identical(active.getRoomById(row.id), room) &&
+                room.historyGeneration == historyGeneration &&
+                utf8.encode(jsonEncode(projected.toJson())).length +
+                        _roomDisplayHeads.entries
+                            .where((e) => e.key != row.id)
+                            .fold<int>(
+                                0,
+                                (n, e) =>
+                                    n +
+                                    utf8
+                                        .encode(
+                                            jsonEncode(e.value.row.toJson()))
+                                        .length) <
+                    startupProjectionMaxEnvelope - 128) {
+              _roomDisplayHeads[row.id] = (
+                row: projected,
+                isCurrent: () =>
+                    identical(coordinator, _projectionCoordinator) &&
+                    coordinator.isCurrent(permit),
+                room: room,
+                generation: historyGeneration
+              );
+              while (_roomDisplayHeads.length > 40) {
+                _roomDisplayHeads.remove(_roomDisplayHeads.keys
+                    .firstWhere((id) => id != _requestedDisplayRoom));
+              }
+            }
           } on FormatException {
             /* Oversized metadata cannot enter the projection. */
           }
@@ -10208,20 +10583,28 @@ final class MatrixSdkE2eeClient
     return value;
   }
 
-  Future<MatrixRoomLease> openRoomLease(String roomId) =>
-      _serializeLifecycle(() async {
-        _requireLifecycleAccess();
-        final active = hasLocalDisplayProjection
-            ? _client!
-            : await _resumeWithinLifecycle();
-        if (!hasLocalDisplayProjection && active.userID != null) {
-          await _loadLocalHistory(active);
-        }
-        final lease = MatrixRoomLease._(this, roomId);
-        await lease.attach(active);
-        _managedResources.add(lease);
-        return lease;
-      });
+  Future<MatrixRoomLease> openRoomLease(String roomId) {
+    if (hasCachedRoomDisplay(roomId)) {
+      _requireLifecycleAccess();
+      // No await: revocation must see the lease before another turn can run.
+      final lease = MatrixRoomLease._(this, roomId);
+      lease._room = _client!.getRoomById(roomId)!;
+      _managedResources.add(lease);
+      return Future.value(lease);
+    }
+    return _serializeLifecycle(() async {
+      _requireLifecycleAccess();
+      final active =
+          hasLocalDisplayProjection ? _client! : await _resumeWithinLifecycle();
+      if (!hasLocalDisplayProjection && active.userID != null) {
+        await _loadLocalHistory(active);
+      }
+      final lease = MatrixRoomLease._(this, roomId);
+      await lease.attach(active);
+      _managedResources.add(lease);
+      return lease;
+    });
+  }
 
   Future<void> _cancelManagedResource(_ManagedClientResourceBase resource) =>
       _serializeLifecycle(() async {

@@ -7,6 +7,13 @@ final class StartupProjectionCapture {
   final int revision;
 }
 
+/// In-memory display only: deliberately not accepted by commit().
+final class StartupProjectionDisplayCapture {
+  StartupProjectionDisplayCapture._(this.owner, this.revision);
+  final Object owner;
+  final int revision;
+}
+
 final class StartupProjectionMutation {
   StartupProjectionMutation._(this._owner, this.id, this.beforeApply);
   final StartupProjectionCoordinator _owner;
@@ -49,6 +56,16 @@ final class StartupProjectionCoordinator {
 
   bool get canCapture =>
       _verified && !_retired && !_poisoned && _active.isEmpty;
+  StartupProjectionDisplayCapture? beginDisplayCapture() =>
+      !_retired && !_poisoned && _active.isEmpty
+          ? StartupProjectionDisplayCapture._(_owner, _revision)
+          : null;
+  bool isDisplayCurrent(StartupProjectionDisplayCapture permit) =>
+      !_retired &&
+      !_poisoned &&
+      _active.isEmpty &&
+      identical(permit.owner, _owner) &&
+      permit.revision == _revision;
   StartupProjectionCapture? beginCapture() =>
       canCapture ? StartupProjectionCapture._(_owner, _revision) : null;
   bool isCurrent(StartupProjectionCapture permit) =>

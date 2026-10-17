@@ -173,6 +173,51 @@ void main() {
     expect(raw.writes, before);
   });
   test(
+      'offline display admission is readonly and preserves persistent privacy fences',
+      () async {
+    final (secure, raw, install) = await secureFixture();
+    final existing = (await secure.readStartupProjectionAdmission(install))!;
+    await secure.invalidateStartupProjection();
+    final business = jsonDecode(raw.values['liuhetong.business_session.v1']!)
+        as Map<String, dynamic>;
+    business['pending_refresh_operation'] =
+        SecureSessionStore.newRefreshOperation();
+    raw.values['liuhetong.business_session.v1'] = jsonEncode(business);
+    final before = raw.writes;
+    expect(await secure.isCurrentStartupDisplayOwner(existing), isTrue);
+    expect(await secure.prepareStartupProjectionHead(install), isNull);
+    expect(raw.writes, before);
+    for (final key in [
+      'liuhetong.matrix_database_key.v1',
+      'liuhetong.registration_device_key.v1'
+    ]) {
+      final original = raw.values[key]!;
+      raw.values[key] = 'different-synthetic-owner';
+      expect(await secure.isCurrentStartupDisplayOwner(existing), isFalse);
+      raw.values[key] = original;
+    }
+    final bindingText = raw.values['liuhetong.matrix_local_binding.v1']!;
+    final binding = jsonDecode(bindingText) as Map<String, dynamic>;
+    binding['database_generation'] = 'different-generation';
+    raw.values['liuhetong.matrix_local_binding.v1'] = jsonEncode(binding);
+    expect(await secure.isCurrentStartupDisplayOwner(existing), isFalse);
+    raw.values['liuhetong.matrix_local_binding.v1'] = bindingText;
+    business['pending_refresh_operation'] = 'malformed';
+    raw.values['liuhetong.business_session.v1'] = jsonEncode(business);
+    expect(await secure.isCurrentStartupDisplayOwner(existing), isFalse);
+    business['pending_refresh_operation'] =
+        SecureSessionStore.newRefreshOperation();
+    raw.values['liuhetong.business_session.v1'] = jsonEncode(business);
+    expect(await secure.isCurrentStartupDisplayOwner(existing), isTrue);
+    await secure.fenceStartupProjectionPrivacy(roomId: '!synthetic:test');
+    final fenced = raw.writes;
+    expect(await secure.isCurrentStartupDisplayOwner(existing), isFalse);
+    expect(raw.writes, fenced);
+    final reopened = SecureSessionStore(raw);
+    expect(await reopened.isCurrentStartupDisplayOwner(existing), isFalse);
+    expect(raw.writes, fenced);
+  });
+  test(
       'privacy request fence precedes request and survives crash, unrelated sync and relogin',
       () async {
     final (secure, raw, install) = await secureFixture();
