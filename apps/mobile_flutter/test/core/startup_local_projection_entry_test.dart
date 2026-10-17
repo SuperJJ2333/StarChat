@@ -77,8 +77,14 @@ class _HeldDatabase extends MatrixSdkDatabase {
   final entered = Completer<void>();
   final release = Completer<void>();
   bool fullRead = false;
-  Completer<void>? warmRoomRead;
-  final warmRoomReadEntered = Completer<void>();
+  Completer<void>? _warmRoomRead;
+  Completer<void>? get warmRoomRead => _warmRoomRead;
+  set warmRoomRead(Completer<void>? value) {
+    _warmRoomRead = value;
+    warmRoomReadEntered = Completer<void>();
+  }
+
+  var warmRoomReadEntered = Completer<void>();
   @override
   Future<List<Event>> getEventList(Room room,
       {int start = 0, bool onlySending = false, int? limit}) async {
@@ -916,9 +922,11 @@ void registerStartupProjectionEntryTests(
             if (!auditing) return;
             expectSync(find.byType(RoomPage), findsNothing);
             expectSync(
-                tester
-                    .widgetList<MatrixUserAvatar>(members)
-                    .map((widget) => widget.matrixAvatarUri.toString())
+                members
+                    .evaluate()
+                    .map((element) => (element.widget as MatrixUserAvatar)
+                        .matrixAvatarUri
+                        .toString())
                     .toSet(),
                 expectedUris);
             for (final element in members.evaluate()) {
@@ -929,10 +937,12 @@ void registerStartupProjectionEntryTests(
               expectSync(state, same(previous),
                   reason: 'same admitted owner retains each mounted member');
               expectSync(
-                  tester
-                      .widgetList<RawImage>(find.descendant(
+                  find
+                      .descendant(
                           of: find.byWidget(element.widget),
-                          matching: find.byType(RawImage)))
+                          matching: find.byType(RawImage))
+                      .evaluate()
+                      .map((element) => element.widget as RawImage)
                       .any((image) => image.image != null),
                   isTrue,
                   reason:
@@ -1151,7 +1161,11 @@ void registerStartupProjectionEntryTests(
           auditVisibleFrames = true;
           firstRoomContent = false;
           await tester.tap(find.text('Synthetic room 64'));
-          await flush(20);
+          for (var attempt = 0;
+              attempt < 300 && !held.warmRoomReadEntered.isCompleted;
+              attempt++) {
+            await flush(1);
+          }
           expect(held.warmRoomReadEntered.isCompleted, isTrue,
               reason:
                   'ordinary post-recovery entry reads the persisted local timeline');
@@ -1162,7 +1176,11 @@ void registerStartupProjectionEntryTests(
           await tester.tap(find.text('Synthetic room 64'));
           await flush(5);
           held.warmRoomRead!.complete();
-          await flush(80);
+          for (var attempt = 0;
+              attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
+              attempt++) {
+            await flush(1);
+          }
           expect(find.byType(RoomPage), findsOneWidget);
           expect(find.text('Cached message 59'), findsWidgets);
           expect(firstRoomContent, isTrue);
