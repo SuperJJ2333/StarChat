@@ -2752,8 +2752,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 生命周期语义与改造前一致：未 mounted 时取消租约；push 抛异常也会释放
   /// 登记与租约；revoke 时只关闭自己这一层（`popUntil` 到自身 + 当前则 pop）。
   /// 租约取消按 roomId 串行，不会阻塞打开**其它**房间。
+  int _roomPreparationGeneration = 0;
+
   Future<void> _openManagedRoomRoute(
       RoomOpenRequest request, RoomRouteHandle handle) async {
+    final preparationGeneration = ++_roomPreparationGeneration;
+    final originatingNavigator = Navigator.of(context, rootNavigator: true);
+    Route<dynamic>? originatingRoute;
+    // A true predicate inspects the current route without popping anything.
+    // Returning from search/profile while SQL is pending cancels that intent.
+    originatingNavigator.popUntil((candidate) {
+      originatingRoute = candidate;
+      return true;
+    });
     final roomId = request.roomId;
     final trace = request.performanceTrace ??
         (PerformanceTrace.start(
@@ -2762,6 +2773,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     var stage = 'identity';
     MotionPageRoute<void>? route;
     MatrixRoomLease? routeLease;
+    PreparedRoomPageEntry? preparedEntry;
     RoomRouteFrameProbe? localFrameProbe;
     var routeExitFrameScheduled = false;
     ValueNotifier<RoomOpenRequest>? navigationRequests;
@@ -2787,8 +2799,23 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final lease = await widget.matrix.openRoomLease(roomId);
       routeLease = lease;
       trace.mark(PerformanceStage.roomAttachDone);
-
-      if (!mounted) {
+      final matrixOwner = widget.matrix;
+      final sessionOwner = matrixOwner.sendPreparationIdentity;
+      final account = matrixOwner.userId;
+      final businessEpoch = widget.api.sessionEpoch;
+      stage = 'local-timeline';
+      preparedEntry = await PreparedRoomPageEntry.prepare(lease,
+          anchorRoomId: request.anchorRoomId,
+          anchorEventId: request.anchorEventId);
+      if (!mounted ||
+          _disposed ||
+          originatingRoute?.isCurrent != true ||
+          preparationGeneration != _roomPreparationGeneration ||
+          lease.canceled ||
+          !identical(widget.matrix, matrixOwner) ||
+          matrixOwner.sendPreparationIdentity != sessionOwner ||
+          matrixOwner.userId != account ||
+          widget.api.sessionEpoch != businessEpoch) {
         return;
       }
       final navigator = Navigator.of(context, rootNavigator: true);
@@ -2810,6 +2837,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                     syncWatchdog.connectionStatus.value ==
                         MatrixConnectionStatus.connected,
                 roomLease: lease,
+                preparedEntry: preparedEntry,
                 roomName: name,
                 initialContact: request.initialContact,
                 initialAnchorEventId: request.anchorEventId,
@@ -2926,6 +2954,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       debugPrint('[chatflow/perf] room_open_failed stage=$stage');
       rethrow;
     } finally {
+      preparedEntry?.dispose();
       if (!routeExitFrameScheduled) localFrameProbe?.dispose();
       if (!trace.isFinished) trace.dispose();
       try {
@@ -3329,6 +3358,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           CupertinoTabScaffold(
             tabBar: CupertinoTabBar(
               onTap: (index) {
+                _roomPreparationGeneration++;
                 ChatDiagnostics.instance.setFrameTab(switch (index) {
                   0 => ChatDiagnosticTab.messages,
                   1 => ChatDiagnosticTab.contacts,

@@ -184,7 +184,7 @@ final class _SessionGateState extends State<SessionGate>
     final localBuilder = widget.localSessionBuilder;
     if (localBuilder != null && _accountAccessible) {
       return _AuthenticatedLayer(
-        offline: state.status != SessionBootstrapStatus.authenticated,
+        offline: state.status == SessionBootstrapStatus.offlineAuthenticated,
         onRetry: widget.controller.bootstrap,
         child: localBuilder(context, _isAuthenticated),
       );

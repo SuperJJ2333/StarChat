@@ -28,7 +28,8 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
-import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 
 class _MemorySecure implements SecureKeyValueStore {
   final values = <String, String>{};
@@ -72,6 +73,19 @@ class _HeldDatabase extends MatrixSdkDatabase {
   final entered = Completer<void>();
   final release = Completer<void>();
   bool fullRead = false;
+  Completer<void>? warmRoomRead;
+  final warmRoomReadEntered = Completer<void>();
+  @override
+  Future<List<Event>> getEventList(Room room,
+      {int start = 0, bool onlySending = false, int? limit}) async {
+    if (warmRoomRead != null && room.id == '!room-64:synthetic.test') {
+      if (!warmRoomReadEntered.isCompleted) warmRoomReadEntered.complete();
+      await warmRoomRead!.future;
+    }
+    return super.getEventList(room,
+        start: start, onlySending: onlySending, limit: limit);
+  }
+
   final previewSettled = Completer<void>();
   @override
   Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
@@ -726,6 +740,10 @@ void registerStartupProjectionEntryTests(
           return;
         }
         expect(find.text('Synthetic room 64'), findsOneWidget);
+        if (independent) {
+          expect(find.text('网络不可用，点击重试'), findsNothing,
+              reason: 'ongoing SDK restore is not an offline determination');
+        }
         final contentReadyMs = clock.elapsedMilliseconds;
         await tester.tap(find.text('通讯录').last);
         await flush();
@@ -856,6 +874,76 @@ void registerStartupProjectionEntryTests(
         expect(afterRows!.where((row) => row.txid != txid), isEmpty);
         expect(transportSends, 1,
             reason: 'same queued transaction dispatches once after recovery');
+        if (independent) {
+          expect(client.isInitializationPending, isFalse);
+          expect(client.isLogged(), isTrue);
+          Navigator.of(tester.element(find.byType(RoomPage))).pop();
+          await flush(80);
+          expect(find.byType(RoomPage), findsNothing);
+          final home =
+              tester.widget<MatrixHomePage>(find.byType(MatrixHomePage));
+          final navigator = Navigator.of(
+              tester.element(find.byType(MatrixHomePage)),
+              rootNavigator: true);
+          for (final source in [
+            RoomOpenSource.search,
+            RoomOpenSource.contactProfile
+          ]) {
+            final origin = CupertinoPageRoute<void>(
+                builder: (_) => const CupertinoPageScaffold(
+                    child: Center(child: Text('Synthetic origin'))));
+            unawaited(navigator.push(origin));
+            await flush(40);
+            held.warmRoomRead = Completer<void>();
+            final pending = home.onOpenRoom!(RoomOpenRequest(
+                roomId: '!room-64:synthetic.test',
+                roomName: 'Synthetic room 64',
+                source: source));
+            await flush(20);
+            expect(origin.isCurrent, isTrue,
+                reason: 'capturing origin must never pop it');
+            navigator.pop();
+            await flush(40);
+            held.warmRoomRead!.complete();
+            await flush(40);
+            await pending;
+            expect(find.byType(RoomPage), findsNothing,
+                reason:
+                    'returning from the initiating page cancels delayed navigation');
+          }
+          held.warmRoomRead = Completer<void>();
+          await tester.tap(find.text('Synthetic room 64'));
+          await flush(20);
+          await tester.tap(find.text('通讯录').last);
+          await flush(10);
+          held.warmRoomRead!.complete();
+          await flush(40);
+          expect(find.byType(RoomPage), findsNothing,
+              reason:
+                  'tab navigation remains interactive and cancels the pending push');
+          await tester.tap(find.text('消息').last);
+          await flush(10);
+          held.warmRoomRead = Completer<void>();
+          auditVisibleFrames = true;
+          firstRoomContent = false;
+          await tester.tap(find.text('Synthetic room 64'));
+          await flush(20);
+          expect(held.warmRoomReadEntered.isCompleted, isTrue,
+              reason:
+                  'ordinary post-recovery entry reads the persisted local timeline');
+          expect(find.text('正在读取本机消息…'), findsNothing,
+              reason:
+                  'warm restored room entry must not expose a loading page while local SQL is pending');
+          expect(find.byType(RoomPage), findsNothing);
+          await tester.tap(find.text('Synthetic room 64'));
+          await flush(5);
+          held.warmRoomRead!.complete();
+          await flush(80);
+          expect(find.byType(RoomPage), findsOneWidget);
+          expect(find.text('Cached message 59'), findsWidgets);
+          expect(firstRoomContent, isTrue);
+          auditVisibleFrames = false;
+        }
         report?.call({
           'scenario': independent
               ? 'actual-main-held-entire-preflight'
@@ -863,6 +951,8 @@ void registerStartupProjectionEntryTests(
           if (independent) 'first_visible_content': firstVisibleContent,
           if (independent) 'first_room_content': firstRoomContent,
           if (independent) 'no_loading_frames': true,
+          if (independent) 'warm_room_no_loading_frames': true,
+          if (independent) 'no_false_offline_during_restore': true,
           'original_preflight_calls_while_held': 0,
           'original_opener_calls_while_held': 0,
           'content_ready_ms': contentReadyMs,
@@ -873,6 +963,9 @@ void registerStartupProjectionEntryTests(
         });
       } finally {
         auditVisibleFrames = false;
+        if (held.warmRoomRead?.isCompleted == false) {
+          held.warmRoomRead!.complete();
+        }
         if (rawSecure.admissionHold?.isCompleted == false) {
           rawSecure.admissionHold!.complete();
         }

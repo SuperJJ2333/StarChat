@@ -73,6 +73,36 @@ final class _HeldGateBusiness extends GateBusiness {
 
 void main() {
   testWidgets(
+      'cached local eligibility does not claim offline during verification',
+      (tester) async {
+    final business = _HeldGateBusiness();
+    final controller = SessionBootstrapController(
+        business: business, matrix: GateMatrix(true));
+    final flight = controller.bootstrap();
+    try {
+      await tester.pumpWidget(CupertinoApp(
+          home: SessionGate(
+        controller: controller,
+        localSessionBuilder: (_, verified) => const Text('CACHED CONTENT'),
+        authenticatedBuilder: (_) => const Text('HOME'),
+        unauthenticatedBuilder: (_) => const Text('LOGIN'),
+      )));
+      await tester.pump();
+      expect(controller.state.status, SessionBootstrapStatus.loading);
+      expect(controller.canShowCachedMessages, isTrue);
+      expect(find.text('CACHED CONTENT'), findsOneWidget);
+      expect(find.byKey(const ValueKey('offline-capsule')), findsNothing,
+          reason:
+              'unfinished verification is not evidence of unavailable network');
+    } finally {
+      business.release.complete(BusinessSessionRestore.authenticated);
+      await flight;
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    }
+  });
+
+  testWidgets(
       'eligible local shell preserves tabs and pushed room at verification',
       (tester) async {
     final business = _HeldGateBusiness();

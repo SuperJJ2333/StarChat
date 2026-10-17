@@ -183,6 +183,64 @@ int redPacketJoinedMemberCount(
   return ids.length;
 }
 
+/// A single route's local timeline, prepared while the previous page remains
+/// interactive. The route adopts it once; abandoned navigation disposes it.
+final class PreparedRoomPageEntry {
+  PreparedRoomPageEntry._(this.lease, this.hiddenEvents);
+  final MatrixRoomLease lease;
+  final LocalHiddenEvents hiddenEvents;
+  late final RoomTimelineCapability timeline;
+  VoidCallback? _onUpdate;
+  bool _adopted = false;
+  bool _disposed = false;
+
+  static Future<PreparedRoomPageEntry> prepare(MatrixRoomLease lease,
+      {String? anchorRoomId, String? anchorEventId}) async {
+    final account = lease.roomInfo.currentUserId;
+    if (account == null || lease.canceled) {
+      throw StateError('Room entry owner unavailable');
+    }
+    final preferences = await SharedPreferences.getInstance();
+    if (lease.canceled) throw StateError('Room entry owner retired');
+    final entry = PreparedRoomPageEntry._(
+        lease,
+        SharedPreferencesLocalHiddenEvents(
+            mutationGuard: lease.runLocalHistoryMutation,
+            preferences: preferences,
+            accountId: account));
+    entry.timeline = await lease.openLogicalRoomTimeline(
+        cachedFirst: true,
+        anchorRoomId: anchorRoomId,
+        anchorEventId: anchorEventId,
+        onUpdate: () => entry._onUpdate?.call());
+    if (lease.canceled) {
+      entry.dispose();
+      throw StateError('Room entry owner retired');
+    }
+    return entry;
+  }
+
+  RoomTimelineCapability adopt(
+      MatrixRoomLease expected, VoidCallback onUpdate) {
+    if (_disposed ||
+        _adopted ||
+        !identical(lease, expected) ||
+        lease.canceled) {
+      throw StateError('Room entry cannot be adopted');
+    }
+    _adopted = true;
+    _onUpdate = onUpdate;
+    return timeline;
+  }
+
+  void dispose() {
+    if (_disposed || _adopted) return;
+    _disposed = true;
+    _onUpdate = null;
+    timeline.dispose();
+  }
+}
+
 class RoomPage extends StatefulWidget {
   const RoomPage({
     super.key,
@@ -196,6 +254,7 @@ class RoomPage extends StatefulWidget {
     this.remoteSyncAlreadyReady = false,
     required this.roomName,
     required this.roomLease,
+    this.preparedEntry,
     this.mediaSenderFactory,
     this.initialContact,
     this.initialAnchorEventId,
@@ -233,6 +292,7 @@ class RoomPage extends StatefulWidget {
   final bool remoteSyncAlreadyReady;
   final String roomName;
   final MatrixRoomLease roomLease;
+  final PreparedRoomPageEntry? preparedEntry;
   final RoomPickedMediaSender Function(MatrixEncryptedMediaGateway gateway)?
       mediaSenderFactory;
   final ContactDetails? initialContact;
@@ -1479,6 +1539,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   RoomTimelineCapability? _logicalTimeline;
+  bool _preparedEntryConsumed = false;
   bool get _canDispatch =>
       (widget.dispatchReady?.value ?? true) && !widget.roomLease.canceled;
 
@@ -1561,29 +1622,39 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       widget.performanceTrace?.mark(PerformanceStage.timelineLocalStarted);
       final accountId = roomInfo.currentUserId;
       if (accountId == null) throw StateError('Matrix 账号尚未登录');
-      hiddenEvents = SharedPreferencesLocalHiddenEvents(
-        mutationGuard: widget.roomLease.runLocalHistoryMutation,
-        preferences: await SharedPreferences.getInstance(),
-        accountId: accountId,
-      );
-      final timeline =
-          // Timeline 分页策略（优化 4）：初始窗口直读 Matrix 本地 DB
-          // （不等待服务器）；历史分页 requestHistory 默认 30 条/页
-          // （Room.defaultHistoryCount，处于 30~50 规范区间），
-          // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
-          await widget.roomLease.openLogicalRoomTimeline(
-        cachedFirst: true,
-        anchorRoomId: widget.navigationRequests?.value.anchorRoomId ??
-            widget.initialAnchorRoomId,
-        anchorEventId: widget.navigationRequests?.value.anchorEventId ??
-            widget.initialAnchorEventId,
-        onUpdate: () {
-          if (!sourceActive()) return;
-          _scheduleRoomMetadataRefresh();
-          controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
-          controller?.scheduleRefresh();
-        },
-      );
+      void onTimelineUpdate() {
+        if (!sourceActive()) return;
+        _scheduleRoomMetadataRefresh();
+        controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+        controller?.scheduleRefresh();
+      }
+
+      final prepared = _preparedEntryConsumed ? null : widget.preparedEntry;
+      late final RoomTimelineCapability timeline;
+      if (prepared != null) {
+        _preparedEntryConsumed = true;
+        hiddenEvents = prepared.hiddenEvents;
+        timeline = prepared.adopt(lease, onTimelineUpdate);
+      } else {
+        hiddenEvents = SharedPreferencesLocalHiddenEvents(
+          mutationGuard: widget.roomLease.runLocalHistoryMutation,
+          preferences: await SharedPreferences.getInstance(),
+          accountId: accountId,
+        );
+        timeline =
+            // Timeline 分页策略（优化 4）：初始窗口直读 Matrix 本地 DB
+            // （不等待服务器）；历史分页 requestHistory 默认 30 条/页
+            // （Room.defaultHistoryCount，处于 30~50 规范区间），
+            // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
+            await widget.roomLease.openLogicalRoomTimeline(
+          cachedFirst: true,
+          anchorRoomId: widget.navigationRequests?.value.anchorRoomId ??
+              widget.initialAnchorRoomId,
+          anchorEventId: widget.navigationRequests?.value.anchorEventId ??
+              widget.initialAnchorEventId,
+          onUpdate: onTimelineUpdate,
+        );
+      }
       if (!mounted || _disposing || widget.roomLease.canceled) {
         timeline.dispose();
         return;

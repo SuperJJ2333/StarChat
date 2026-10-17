@@ -98,7 +98,8 @@ class _LifecycleTimeline extends Fake implements Timeline {
   Future<void> setReadMarker({String? eventId, bool? public}) async =>
       throw const SocketException('synthetic offline read receipt');
   @override
-  void cancelSubscriptions() {}
+  void cancelSubscriptions() { cancelCount++; }
+  int cancelCount = 0;
 }
 
 class _LifecycleRoom extends Room {
@@ -232,6 +233,39 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+
+  test('prepared room transfers once and abandoned entry closes once', () async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _LifecycleClient();
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://lifecycle.test'));
+    final lease = await matrix.openRoomLease(client.localRoom.id);
+    final entry = await PreparedRoomPageEntry.prepare(lease);
+    entry.dispose();
+    entry.dispose();
+    expect(client.localRoom.timeline.cancelCount, 1);
+    expect(() => entry.adopt(lease, () {}), throwsStateError);
+    await lease.cancel();
+    expect(client.localRoom.timeline.cancelCount, 1);
+    await client.dispose();
+  });
+
+  test('prepared room adoption leaves disposal with the active page owner', () async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _LifecycleClient();
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://lifecycle.test'));
+    final lease = await matrix.openRoomLease(client.localRoom.id);
+    final entry = await PreparedRoomPageEntry.prepare(lease);
+    final timeline = entry.adopt(lease, () {});
+    entry.dispose();
+    expect(client.localRoom.timeline.cancelCount, 0);
+    expect(() => entry.adopt(lease, () {}), throwsStateError);
+    timeline.dispose();
+    await lease.cancel();
+    expect(client.localRoom.timeline.cancelCount, 1);
+    await client.dispose();
+  });
 
   testWidgets('cached finance and call readiness change while optional hydration is held', (tester) async {
     final client = _CachedClient();
