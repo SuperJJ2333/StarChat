@@ -96,6 +96,7 @@ import 'video_poster_extractor.dart';
 import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
+import '../../ui/foundation/avatar_cache.dart';
 import 'message_interaction_service.dart';
 import 'message_timeline_cache.dart';
 import 'decrypted_preview_cache.dart';
@@ -1596,6 +1597,7 @@ final class MatrixRoomLease
         MatrixOutgoingVideoWorkView,
         AvatarMediaCapability,
         ImmediateAvatarMediaCapability,
+        CachedAvatarMediaCapability,
         NudgeBackend,
         MessageInteractionBackend {
   MatrixRoomLease._(this.owner, this.roomId);
@@ -2689,6 +2691,22 @@ final class MatrixRoomLease
         filename: filename,
         body: body,
         targetRoomIds: targetRoomIds);
+  }
+
+  @override
+  bool get usesLocalAvatarCacheOnly =>
+      !canceled && owner.usesLocalAvatarCacheOnly;
+  @override
+  String? avatarCacheIdentity(String displayIdentity) =>
+      canceled ? null : owner.avatarCacheIdentity(displayIdentity);
+  @override
+  Future<File?> readCachedAvatar(
+      {required Uri? avatarUri, required String displayIdentity}) async {
+    if (canceled) return null;
+    final file = await owner.readCachedAvatar(
+        avatarUri: avatarUri, displayIdentity: displayIdentity);
+    if (canceled) throw StateError('Avatar lease retired');
+    return file;
   }
 
   @override
@@ -6787,7 +6805,8 @@ final class MatrixSdkE2eeClient
         MatrixNewDeviceRecoveryGateway,
         MatrixExpectedIdentityTokenLoginGateway,
         AvatarMediaCapability,
-        ImmediateAvatarMediaCapability {
+        ImmediateAvatarMediaCapability,
+        CachedAvatarMediaCapability {
   @override
   Future<int?> maximumUploadBytes() => _withClient((active) async {
         final config = await active.getConfig();
@@ -6914,10 +6933,20 @@ final class MatrixSdkE2eeClient
                   id: row.id,
                   displayName: row.name,
                   name: row.name,
-                  avatar: Uri.tryParse(row.avatar ?? ''),
+                  avatar: row.avatar == null || row.avatar!.isEmpty
+                      ? null
+                      : Uri.tryParse(row.avatar!),
                   isDirect: row.direct,
                   directPeerId: row.peer,
-                  members: const [],
+                  members: [
+                    for (final member in row.members)
+                      MatrixMemberSnapshot(
+                          id: member.id,
+                          displayName: member.name,
+                          avatar: member.avatar == null
+                              ? null
+                              : Uri.tryParse(member.avatar!))
+                  ],
                   lastEvent: row.preview == null
                       ? null
                       : _projectionEventSnapshot(row.preview!),
@@ -7150,6 +7179,13 @@ final class MatrixSdkE2eeClient
               direct: row.isDirect,
               peer: row.directPeerId,
               avatar: row.avatar?.toString(),
+              members: [
+                for (final member in row.members.take(9))
+                  StartupProjectionMember(
+                      id: member.id,
+                      name: member.displayName,
+                      avatar: member.avatar?.toString())
+              ],
               unread: row.notificationCount,
               pinned: row.preference.pinned,
               muted: row.preference.muted,
@@ -7195,6 +7231,7 @@ final class MatrixSdkE2eeClient
                 direct: r.direct,
                 peer: r.peer,
                 avatar: r.avatar,
+                members: r.members,
                 unread: r.unread,
                 pinned: r.pinned,
                 muted: r.muted,
@@ -10066,6 +10103,48 @@ final class MatrixSdkE2eeClient
           rethrow;
         }
       });
+
+  @override
+  bool get usesLocalAvatarCacheOnly =>
+      !_accessRevoked && hasLocalDisplayProjection;
+
+  @override
+  String? avatarCacheIdentity(String displayIdentity) {
+    if (_accessRevoked || _client == null || userId == null) return null;
+    final prefix = 'identity:${Uri.encodeComponent('matrix:$userId')}:';
+    if (displayIdentity.startsWith('identity:')) {
+      return displayIdentity.startsWith(prefix) ? displayIdentity : null;
+    }
+    return '$prefix${Uri.encodeComponent(displayIdentity)}';
+  }
+
+  @override
+  Future<File?> readCachedAvatar(
+      {required Uri? avatarUri, required String displayIdentity}) async {
+    _requireLifecycleAccess();
+    final identity = avatarCacheIdentity(displayIdentity);
+    if (identity == null || !usesLocalAvatarCacheOnly) return null;
+    final url = MatrixAvatarUrlResolver.authenticatedCacheUrl(
+        avatarUri: avatarUri, homeserver: homeserver);
+    if (url == null) return null;
+    final client = _client;
+    final owner = sendPreparationIdentity;
+    void ensureCurrent() {
+      _requireLifecycleAccess();
+      if (!identical(client, _client) ||
+          owner != sendPreparationIdentity ||
+          avatarCacheIdentity(displayIdentity) != identity) {
+        throw StateError('Avatar cache owner retired');
+      }
+    }
+
+    final file =
+        await AvatarCache.readCachedFile(userId: identity, avatarUrl: url);
+    ensureCurrent();
+    if (file == null) return null;
+    return MediaAssetGateway.readFile(() async => file,
+        ensureCurrent: ensureCurrent);
+  }
 
   @override
   ResolvedAvatarUrl? resolveAvatarImmediately({

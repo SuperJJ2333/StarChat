@@ -30,6 +30,9 @@ import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
+import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
+import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
+import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 
 class _MemorySecure implements SecureKeyValueStore {
   final values = <String, String>{};
@@ -492,6 +495,20 @@ void registerStartupProjectionEntryTests(
           final full = await factory.create();
           if (!allHidden) {
             final room = full.getRoomById('!room-64:synthetic.test')!;
+            for (var member = 0; member < 2; member++) {
+              room.setState(Event(
+                  room: room,
+                  eventId: 'avatar-member-$member',
+                  type: EventTypes.RoomMember,
+                  originServerTs: DateTime.utc(2026, 10, 17),
+                  stateKey: '@avatar-$member:synthetic.test',
+                  senderId: user,
+                  content: {
+                    'membership': 'join',
+                    'displayname': 'Synthetic member $member',
+                    'avatar_url': 'mxc://synthetic.test/avatar-$member'
+                  }));
+            }
             final outbound = olm.OutboundGroupSession()..create();
             try {
               await full.encryption!.keyManager.setInboundGroupSession(
@@ -569,6 +586,22 @@ void registerStartupProjectionEntryTests(
               homeserver: host,
               secureSessionStore: store,
               readContinuityMetadata: factory.continuityMetadata);
+          if (!allHidden) {
+            for (var member = 0; member < 2; member++) {
+              final url = MatrixAvatarUrlResolver.authenticatedCacheUrl(
+                  avatarUri: Uri.parse('mxc://synthetic.test/avatar-$member'),
+                  homeserver: host)!;
+              await AvatarCache.manager.putFile(
+                  url,
+                  base64Decode(
+                      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),
+                  key: AvatarCache.cacheKey(
+                      userId: owner.avatarCacheIdentity(
+                          '@avatar-$member:synthetic.test')!,
+                      avatarUrl: url),
+                  fileExtension: 'png');
+            }
+          }
           final cache = StartupProjectionStore(
               Directory('${directory.path}/startup_projection_v1'));
           // Synthetic fully restored owner, admitted by the fixture's Business authority.
@@ -743,6 +776,25 @@ void registerStartupProjectionEntryTests(
         if (independent) {
           expect(find.text('网络不可用，点击重试'), findsNothing,
               reason: 'ongoing SDK restore is not an offline determination');
+          final matrix = tester.widget<AppHome>(find.byType(AppHome)).matrix;
+          final snapshot = await matrix.conversations.snapshot();
+          final group = snapshot.rooms
+              .singleWhere((room) => room.id == '!room-64:synthetic.test');
+          expect(group.avatar, isNull,
+              reason: 'absent custom avatar must preserve mosaic selection');
+          expect(
+              group.members.where((member) => member.id.startsWith('@avatar-')),
+              hasLength(2));
+          expect(find.byType(GroupAvatarMosaic), findsWidgets);
+          expect(
+              tester
+                  .widgetList<RawImage>(find.descendant(
+                      of: find.byType(GroupAvatarMosaic),
+                      matching: find.byType(RawImage)))
+                  .any((image) => image.image != null),
+              isTrue,
+              reason:
+                  'isolated existing disk avatar bytes paint while original DB and SDK are unopened');
         }
         final contentReadyMs = clock.elapsedMilliseconds;
         await tester.tap(find.text('通讯录').last);
@@ -953,6 +1005,7 @@ void registerStartupProjectionEntryTests(
           if (independent) 'no_loading_frames': true,
           if (independent) 'warm_room_no_loading_frames': true,
           if (independent) 'no_false_offline_during_restore': true,
+          if (independent) 'cached_group_avatar_members': true,
           'original_preflight_calls_while_held': 0,
           'original_opener_calls_while_held': 0,
           'content_ready_ms': contentReadyMs,

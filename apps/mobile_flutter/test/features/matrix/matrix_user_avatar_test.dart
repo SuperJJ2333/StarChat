@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +20,56 @@ final class FakeAvatarMediaCapability implements AvatarMediaCapability {
       resolve(avatarUri, size);
 }
 
+final class _LocalOnlyAvatar
+    implements AvatarMediaCapability, CachedAvatarMediaCapability {
+  final pending = Completer<File?>();
+  bool revoked = false;
+  int networkCalls = 0;
+  Uri? requested;
+  @override
+  bool get usesLocalAvatarCacheOnly => !revoked;
+  @override
+  String? avatarCacheIdentity(String value) =>
+      revoked ? null : 'identity:synthetic:$value';
+  @override
+  Future<File?> readCachedAvatar(
+      {required Uri? avatarUri, required String displayIdentity}) {
+    requested = avatarUri;
+    return pending.future;
+  }
+
+  @override
+  Future<ResolvedAvatarUrl?> resolveAvatar(
+      {required Uri? avatarUri, required double size}) async {
+    networkCalls++;
+    throw StateError('unexpected network resolution');
+  }
+}
+
 void main() {
+  testWidgets(
+      'local-only miss and late revoked avatar never resolve or publish',
+      (tester) async {
+    for (final revoke in [false, true]) {
+      final media = _LocalOnlyAvatar();
+      await tester.pumpWidget(CupertinoApp(
+          home: MatrixUserAvatar(
+              avatarMedia: media,
+              nickname: 'Local',
+              fallbackSeed: 'member',
+              fallbackAvatarUrl: 'https://synthetic.test/avatar')));
+      expect(media.requested, Uri.parse('https://synthetic.test/avatar'));
+      media.revoked = revoke;
+      media.pending
+          .complete(revoke ? File('unavailable-synthetic-avatar') : null);
+      await tester.pump();
+      expect(
+          tester.widget<UserAvatar>(find.byType(UserAvatar)).localImageProvider,
+          isNull);
+      expect(media.networkCalls, 0);
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
   for (final background in [true, false]) {
     testWidgets(
         'pending resolution defers URL publication while ${background ? 'background' : 'hidden'}',

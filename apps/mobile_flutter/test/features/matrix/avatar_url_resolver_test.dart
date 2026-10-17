@@ -3,6 +3,27 @@ import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 
 void main() {
+  test(
+      'read-only avatar key URL matches authenticated resolver without credentials',
+      () {
+    final uri = Uri.parse('mxc://media.test/avatar');
+    final host = Uri.parse('https://matrix.test');
+    final keyUrl = MatrixAvatarUrlResolver.authenticatedCacheUrl(
+        avatarUri: uri, homeserver: host);
+    for (final size in [24.0, 48.0, 96.0]) {
+      final full = MatrixAvatarUrlResolver.resolveImmediately(
+          avatarUri: uri,
+          homeserver: host,
+          accessToken: 'synthetic-token',
+          size: size)!;
+      expect(keyUrl, full.url);
+      expect(keyUrl, isNot(contains('synthetic-token')));
+    }
+    expect(
+        MatrixAvatarUrlResolver.authenticatedCacheUrl(
+            avatarUri: uri, homeserver: Uri.parse('https://other.test')),
+        isNot(keyUrl));
+  });
   test('unversioned disk key uses a process-stable URL digest', () {
     expect(
         AvatarCache.avatarVersion(

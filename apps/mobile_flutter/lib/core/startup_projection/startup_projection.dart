@@ -211,6 +211,28 @@ final class StartupProjectionEvent {
   }
 }
 
+final class StartupProjectionMember {
+  const StartupProjectionMember(
+      {required this.id, required this.name, this.avatar});
+  final String id, name;
+  final String? avatar;
+  Map<String, Object?> toJson() => {'id': id, 'name': name, 'avatar': avatar};
+  factory StartupProjectionMember.fromJson(Object? value) {
+    final record = _record(value, {'id', 'name', 'avatar'}, 1536);
+    final avatar = record['avatar'] == null
+        ? null
+        : projectionString(record['avatar'], 1024);
+    if (avatar != null &&
+        !['mxc', 'https', 'http'].contains(Uri.tryParse(avatar)?.scheme)) {
+      throw const FormatException('Invalid avatar URI');
+    }
+    return StartupProjectionMember(
+        id: projectionString(record['id'], 256),
+        name: projectionString(record['name'], 256),
+        avatar: avatar);
+  }
+}
+
 final class StartupProjectionRoom {
   StartupProjectionRoom(
       {required this.id,
@@ -225,16 +247,18 @@ final class StartupProjectionRoom {
       required this.events,
       this.coverage = 'partial',
       this.avatar,
+      this.members = const [],
       this.preview,
       this.encrypted = false,
       this.membership = 'join'}) {
-    if (events.length > startupProjectionMaxEvents) {
+    if (events.length > startupProjectionMaxEvents || members.length > 9) {
       throw const FormatException('Too many events');
     }
   }
   final String id, name, coverage, membership;
   final bool encrypted;
   final String? peer, avatar;
+  final List<StartupProjectionMember> members;
   final bool direct, pinned, muted, canSend;
   final int unread, activity;
   final List<StartupProjectionEvent> events;
@@ -253,6 +277,7 @@ final class StartupProjectionRoom {
         'activity': activity,
         'coverage': coverage,
         'avatar': avatar,
+        'members': members.map((member) => member.toJson()).toList(),
         'preview': preview?.toJson(),
         'events': events.map((e) => e.toJson()).toList()
       };
@@ -277,10 +302,14 @@ final class StartupProjectionRoom {
           'activity',
           'coverage',
           'avatar',
+          if (metadata.containsKey('members')) 'members',
           'preview'
         },
         16384);
     if (value.keys.length != metadata.length + 1 ||
+        (value.containsKey('members') &&
+            (value['members'] is! List ||
+                (value['members'] as List).length > 9)) ||
         value['events'] is! List ||
         (value['events'] as List).length > 40 ||
         !['partial', 'empty', 'complete_cached'].contains(value['coverage'])) {
@@ -306,6 +335,8 @@ final class StartupProjectionRoom {
         avatar: value['avatar'] == null
             ? null
             : projectionString(value['avatar'], 2048),
+        members: List.unmodifiable(((value['members'] ?? []) as List)
+            .map(StartupProjectionMember.fromJson)),
         unread: value['unread'] as int,
         pinned: value['pinned'] as bool,
         muted: value['muted'] as bool,

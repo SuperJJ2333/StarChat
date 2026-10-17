@@ -16,6 +16,23 @@ abstract final class MatrixAvatarUrlResolver {
   /// 尺寸都请求同一 URL，命中同一缓存条目，杜绝同头像重复下载。
   static const canonicalThumbnailSize = 96;
 
+  /// Pure key derivation for an admitted account's existing disk cache.
+  /// This creates neither credentials nor a request.
+  static String? authenticatedCacheUrl(
+      {required Uri? avatarUri, required Uri homeserver}) {
+    if (avatarUri == null) return null;
+    if (avatarUri.scheme == 'https' || avatarUri.scheme == 'http') {
+      return avatarUri.toString();
+    }
+    if (avatarUri.scheme != 'mxc') return null;
+    return _thumbnail(
+            avatarUri: avatarUri,
+            homeserver: homeserver,
+            accessToken: null,
+            authenticated: true)
+        .url;
+  }
+
   /// Builds the deterministic first request without waiting for a server
   /// capability round-trip.  A logged-in Matrix client can use the v1.11
   /// authenticated media endpoint immediately; anonymous clients use the

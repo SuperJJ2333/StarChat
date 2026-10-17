@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'dart:io';
 
 import '../../core/performance_metrics.dart';
 import '../../ui/components/user_avatar.dart';
@@ -20,6 +21,13 @@ abstract interface class ImmediateAvatarMediaCapability {
     required Uri? avatarUri,
     required double size,
   });
+}
+
+abstract interface class CachedAvatarMediaCapability {
+  bool get usesLocalAvatarCacheOnly;
+  String? avatarCacheIdentity(String displayIdentity);
+  Future<File?> readCachedAvatar(
+      {required Uri? avatarUri, required String displayIdentity});
 }
 
 /// Converts Matrix mxc avatars into cacheable thumbnail requests without ever
@@ -50,6 +58,14 @@ final class MatrixUserAvatar extends StatefulWidget {
 
 final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   ResolvedAvatarUrl? resolved;
+  File? _localFile;
+  bool _localOnly = false;
+  CachedAvatarMediaCapability? get _cacheMedia =>
+      widget.avatarMedia is CachedAvatarMediaCapability
+          ? widget.avatarMedia as CachedAvatarMediaCapability
+          : null;
+  Uri? get _effectiveUri =>
+      widget.matrixAvatarUri ?? Uri.tryParse(widget.fallbackAvatarUrl ?? '');
   int _resolutionGeneration = 0;
   final _retry = AvatarRetry();
 
@@ -71,6 +87,8 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   void didUpdateWidget(covariant MatrixUserAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matrixAvatarUri != widget.matrixAvatarUri ||
+        oldWidget.fallbackAvatarUrl != widget.fallbackAvatarUrl ||
+        _localOnly != (_cacheMedia?.usesLocalAvatarCacheOnly ?? false) ||
         oldWidget.fallbackSeed != widget.fallbackSeed ||
         oldWidget.size != widget.size ||
         oldWidget.avatarMedia != widget.avatarMedia) {
@@ -80,12 +98,14 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
         resolved = null;
       }
       _retry.reset();
+      _localFile = null;
       _primeImmediate();
       _resolve();
     }
   }
 
   void _primeImmediate() {
+    if (_cacheMedia?.usesLocalAvatarCacheOnly == true) return;
     final media = widget.avatarMedia;
     if (!_retry.isActive || media is! ImmediateAvatarMediaCapability) return;
     try {
@@ -104,6 +124,26 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
     final metrics = PerformanceMetrics.instance;
     final watch = metrics.enabled ? (Stopwatch()..start()) : null;
     final generation = ++_resolutionGeneration;
+    final cache = _cacheMedia;
+    _localOnly = cache?.usesLocalAvatarCacheOnly ?? false;
+    if (_localOnly) {
+      resolved = null;
+      try {
+        final file = await cache!.readCachedAvatar(
+            avatarUri: _effectiveUri, displayIdentity: widget.fallbackSeed);
+        if (!mounted ||
+            generation != _resolutionGeneration ||
+            !cache.usesLocalAvatarCacheOnly) {
+          return;
+        }
+        setState(() => _localFile = file);
+      } catch (_) {
+        if (mounted && generation == _resolutionGeneration) {
+          setState(() => _localFile = null);
+        }
+      }
+      return;
+    }
     final avatarUri = widget.matrixAvatarUri;
     final size = widget.size;
     try {
@@ -159,12 +199,21 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   }
 
   @override
-  Widget build(BuildContext context) => UserAvatar(
-        nickname: widget.nickname,
-        fallbackSeed: widget.fallbackSeed,
-        avatarUrl: resolved?.url ?? widget.fallbackAvatarUrl,
-        avatarHeaders: resolved?.headers,
-        diagnosticSource: widget.diagnosticSource,
-        size: widget.size,
-      );
+  Widget build(BuildContext context) {
+    final cache = _cacheMedia;
+    final identity = cache?.avatarCacheIdentity(widget.fallbackSeed);
+    final admitted = cache == null || identity != null;
+    return UserAvatar(
+      nickname: widget.nickname,
+      fallbackSeed: widget.fallbackSeed,
+      avatarCacheKey: identity,
+      localOnly: _localOnly || !admitted,
+      localImageProvider:
+          !admitted || _localFile == null ? null : FileImage(_localFile!),
+      avatarUrl: _localOnly ? null : resolved?.url ?? widget.fallbackAvatarUrl,
+      avatarHeaders: resolved?.headers,
+      diagnosticSource: widget.diagnosticSource,
+      size: widget.size,
+    );
+  }
 }

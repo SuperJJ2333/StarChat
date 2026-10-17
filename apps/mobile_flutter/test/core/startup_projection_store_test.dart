@@ -27,6 +27,45 @@ class _Secure implements SecureKeyValueStore, PeekableSecureKeyValueStore {
 }
 
 void main() {
+  test('bounded group avatar members round trip while old cache stays valid',
+      () {
+    final old = StartupProjectionRoom(
+        id: '!group:synthetic.test',
+        name: 'Group',
+        direct: false,
+        peer: null,
+        unread: 0,
+        pinned: false,
+        muted: false,
+        canSend: true,
+        activity: 0,
+        events: []).toJson();
+    old.remove('members');
+    final json = jsonDecode(jsonEncode(old)) as Map<String, dynamic>;
+    json['members'] = [
+      {
+        'id': '@member:synthetic.test',
+        'name': 'Member',
+        'avatar': 'mxc://synthetic.test/avatar'
+      }
+    ];
+    final restored = StartupProjectionRoom.fromJson(json).toJson();
+    expect(restored['members'], json['members']);
+    expect(
+        StartupProjectionRoom.fromJson(jsonDecode(jsonEncode(old)))
+            .toJson()['members'],
+        isEmpty);
+    json['members'] = List.filled(10, (json['members'] as List).first);
+    expect(() => StartupProjectionRoom.fromJson(json), throwsFormatException);
+    for (final invalid in [
+      {'id': 'peer', 'name': 'Member', 'avatar': 'file:///private'},
+      {'id': 'peer', 'name': List.filled(257, 'x').join(), 'avatar': null},
+      {'id': 'peer', 'name': 'Member', 'avatar': null, 'token': 'synthetic'},
+    ]) {
+      json['members'] = [invalid];
+      expect(() => StartupProjectionRoom.fromJson(json), throwsFormatException);
+    }
+  });
   late Directory directory;
   late StartupProjectionStore store;
   StartupProjectionAdmission admission(

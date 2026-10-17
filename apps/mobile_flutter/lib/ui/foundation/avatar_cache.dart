@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:crypto/crypto.dart';
@@ -10,6 +11,14 @@ import 'retained_image_cache_manager.dart';
 
 /// The sole remote-avatar cache. Keys vary by user, avatar version/URL and size.
 abstract final class AvatarCache {
+  /// Reads only the exact account/version key; no refresh, eviction or fallback.
+  static Future<File?> readCachedFile(
+      {required String userId, required String avatarUrl}) async {
+    final key = cacheKey(userId: userId, avatarUrl: avatarUrl);
+    (_keysByUser[userId] ??= <String>{}).add(key);
+    return (await manager.getFileFromCache(key))?.file;
+  }
+
   static const diskTtl = Duration(days: 30);
   static const maximumMemoryEntries = 200;
   static const maximumDiskEntries = 500;

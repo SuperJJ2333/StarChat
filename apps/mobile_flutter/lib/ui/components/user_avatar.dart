@@ -16,9 +16,13 @@ final class UserAvatar extends StatefulWidget {
       this.avatarUrl,
       this.avatarCacheKey,
       this.avatarHeaders,
+      this.localOnly = false,
+      this.localImageProvider,
       this.diagnosticSource = 'unspecified',
       this.size = 48});
   final String? avatarCacheKey;
+  final bool localOnly;
+  final ImageProvider? localImageProvider;
   final String nickname;
   final String fallbackSeed;
   final String? avatarUrl;
@@ -141,6 +145,20 @@ final class _UserAvatarState extends State<UserAvatar> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.localOnly) {
+      final local = widget.localImageProvider;
+      return ClipRRect(
+          borderRadius: BorderRadius.circular(WeChatRadius.avatar),
+          child: SizedBox(
+              width: widget.size,
+              height: widget.size,
+              child: local == null
+                  ? _fallback()
+                  : Image(
+                      image: local,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, error, stack) => _fallback())));
+    }
     final generation = _generation;
     final url = widget.avatarUrl;
     final provider = url == null
