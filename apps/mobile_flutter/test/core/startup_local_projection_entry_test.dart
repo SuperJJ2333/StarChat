@@ -443,18 +443,18 @@ void registerStartupProjectionEntryTests(
           '正在读取本机会话…',
           '正在读取本机消息…'
         ]) {
-          expect(find.text(text), findsNothing,
+          expectSync(find.text(text), findsNothing,
               reason:
                   'every visible cache-hit frame must contain ready content');
         }
         if (!firstVisibleContent) {
-          expect(find.byType(AppHome), findsOneWidget);
-          expect(databaseOpens, 0);
-          expect(preflight.originalCalls, 0);
+          expectSync(find.byType(AppHome), findsOneWidget);
+          expectSync(databaseOpens, 0);
+          expectSync(preflight.originalCalls, 0);
           firstVisibleContent = true;
         }
         if (!firstRoomContent && find.byType(RoomPage).evaluate().isNotEmpty) {
-          expect(find.text('Cached message 59'), findsWidgets,
+          expectSync(find.text('Cached message 59'), findsWidgets,
               reason:
                   'the first room frame must already contain cached bubbles');
           firstRoomContent = true;
