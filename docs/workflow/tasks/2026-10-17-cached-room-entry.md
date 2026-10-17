@@ -39,3 +39,11 @@
 22:08+08：最终审查P1（可选缓存屏障阻塞canonical列表）已red-optional-cache-fence3复现并修复；final4五场景59秒PASS，包含持久隐私屏障/poison后正常canonical行更新。补读实际发生时的有效性检查已覆盖最后异步点到发布前。审查还要求原始projection绑定首次coordinator，防同账号resume后重建coordinator复活旧head；该最后生命周期反例正在RED/GREEN。邻接导航31PASS、此前13项analyze无问题，最终freeze后仍需全量。
 
 22:12+08：产品冻结625a23e7393841362366b526357dfdd20402b94e（13文件），implementation-freeze.json记录SHA/真实退出码。最终5入口/94单元/31邻接全部PASS，13文件analyze无问题，V已释放。恢复用例证明旧head不能复活且新permit可用，未单独声称恢复后新head填充已测；post-sync缓存另由实际main验证。下一步最终SPEC→QUALITY报告、一次全量/全局analyze和平台静态门禁，再原生Debug构建测试、普通main构建安装。
+
+22:14+08：产品625a23e7独立SPEC→QUALITY均PASS；root文档后继2413a05a与13产品SHA完全一致。平台静态39PASS/9.41秒。flutter-full-2222已启动，明确已核验Olm/SQLCipher与独占V路径，期间不修改产品或commit；完成后方进入构建。verify.ps1缺本地.env仍未执行，不导入生产配置。
+
+22:37+08：全量结束6144PASS/9SKIP/8FAIL，exit1/source_stabletrue，22:13:40–22:37:02（23分22秒），全局analyze因失败未启动。5发送行为失败定位到canQueue误用包含encryptionEnabled的canSendDefaultMessages；3导航静态断言过期（2项已用f32源码字面检查证明基线不存在，非完整baselineFlutter执行）。已授权单实施者限定修正事件权限排队与新负向测试、更新旧结构断言；最终delta独立审查后再全量一次，因为guard影响重试/媒体/网络恢复等63+相关文件，不能仅以失败项绿灯替代。原失败记录完整保留，V已释放给实施者。
+
+22:44+08：原8失败组及新增负向54PASS/9秒。扩大发送/启动组130PASS/1FAIL，定位SDK pending混合旧local-cache-first与独立seeded恢复；旧路径已有身份/数据库/Olm准入却被一刀切阻断。独立审查基于vendor真实localCacheReady条件批准非projection+isLogged+encryptionEnabled的受限旧路径例外，保留真实Room/join/eventpower；新的seeded恢复仍只能用有效admission。修正后重跑扩大组再冻结。
+
+22:48+08：修正冻结e55cd1664f012f41ab8c1805366b1269d4176f0a（5文件），13文件组186/186PASS/83秒，含原8失败、新权限负向、旧/独立实际main。delta-analyze-final无问题exit0，root核验5文件SHA与manifest一致，V释放。下一步增量SPEC→QUALITY、文档后继冻结、最终flutter-full-2222-r2及全局analyze；不改版本2222，因为尚未构建或安装候选。
