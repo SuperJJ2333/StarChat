@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/features/statistics/statistics_room_scope.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -15,6 +16,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_page.dart';
+import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,21 +54,28 @@ final class _EmptyTimeline extends Fake implements Timeline {
 
 final class _GroupClient extends Client {
   _GroupClient() : super('app-home-group');
+  String account = '@owner:synthetic.test';
   @override
-  String? get userID => '@owner:synthetic.test';
+  String? get userID => account;
 }
 
 final class _GroupRoom extends Room {
   _GroupRoom(Client client) : super(id: '!group:test', client: client);
+  int timelineReads = 0;
+  bool rejectTimeline = false;
   @override
   Future<Timeline> getTimeline(
-          {void Function(int)? onChange,
-          void Function(int)? onRemove,
-          void Function(int)? onInsert,
-          void Function()? onNewEvent,
-          void Function()? onUpdate,
-          String? eventContextId}) async =>
-      _EmptyTimeline();
+      {void Function(int)? onChange,
+      void Function(int)? onRemove,
+      void Function(int)? onInsert,
+      void Function()? onNewEvent,
+      void Function()? onUpdate,
+      String? eventContextId}) async {
+    timelineReads++;
+    if (rejectTimeline) throw StateError("RETIRED_INTENT_READ_TIMELINE");
+    return _EmptyTimeline();
+  }
+
   @override
   Membership get membership => Membership.join;
 }
@@ -151,9 +160,10 @@ void main() {
     final MatrixManagedResource resource = homeState.matrixResources;
     var closed = false;
     final closing = resource.cancel().then((_) => closed = true);
-    for (var i = 0; i < 12 && !closed; i++) {
+    for (var i = 0; i < 200 && !closed; i++) {
       await tester.pump();
-      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 5)));
     }
     expect(closed, true,
         reason: 'cleanup drains both Flutter and root-zone futures');
@@ -369,6 +379,97 @@ void main() {
     await target._statuses.close();
   });
 
+  for (final invalidation in ['origin', 'tab', 'account']) {
+    testWidgets(
+        'held association cannot revive an invalidated $invalidation intent',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _GroupClient();
+      final room = _GroupRoom(client)..rejectTimeline = true;
+      client.rooms.add(room);
+      final matrix = MatrixSdkE2eeClient(client,
+          homeserver: Uri.parse('https://matrix.test'));
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://business.test'),
+          sessionStore: SecureSessionStore());
+      final cache = ProfileRepository.forTesting(
+          accountKey: 'association',
+          store: _ProfileStore(),
+          loadProfile: () async => const ProfileData(
+              username: 'owner',
+              nickname: 'Owner',
+              maskedEmail: '',
+              fallbackSeed: 'owner'),
+          loadContacts: () async => []);
+      addTearDown(cache.dispose);
+      await tester.pumpWidget(CupertinoApp(
+          home: AppHome(
+              api: api,
+              matrix: matrix,
+              onLogout: () async {},
+              themeController: ThemeController(store: _ThemeStore()),
+              profileRepositoryFactory: (_, __) async => cache)));
+      await tester.pump();
+      await tester.pump();
+      final home = tester.widget<MatrixHomePage>(find.byType(MatrixHomePage));
+      final navigator = Navigator.of(tester.element(find.byType(AppHome)),
+          rootNavigator: true);
+      if (invalidation == 'origin') {
+        unawaited(navigator.push(CupertinoPageRoute<void>(
+            builder: (_) =>
+                const CupertinoPageScaffold(child: Text('Held origin')))));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      final blocker = matrix.registerVerificationLifecycle(
+          open: () async {
+            entered.complete();
+            await release.future;
+          },
+          close: () async {},
+          revoke: () {});
+      for (var i = 0; i < 20 && !entered.isCompleted; i++) {
+        await tester.pump();
+      }
+      expect(entered.isCompleted, isTrue);
+      var settled = false;
+      final pending = home.onOpenRoom!(const RoomOpenRequest(
+              roomId: '!group:test',
+              roomName: 'Synthetic group',
+              source: RoomOpenSource.search))
+          .whenComplete(() => settled = true);
+      await tester.pump();
+      expect(settled, isFalse);
+      expect(room.timelineReads, 0);
+      switch (invalidation) {
+        case 'origin':
+          navigator.pop();
+        case 'tab':
+          await tester.tap(find.text('通讯录').last);
+        case 'account':
+          client.account = '@replacement:synthetic.test';
+      }
+      await tester.pump();
+      release.complete();
+      for (var i = 0; i < 60 && !settled; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+      expect(settled, isTrue);
+      await pending;
+      expect(room.timelineReads, 0,
+          reason:
+              'retired pre-association intent must not acquire its room timeline');
+      expect(find.byType(RoomPage), findsNothing);
+      final resource = await blocker;
+      await resource.cancel();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+  }
+
   testWidgets('group entry reaches GroupChatPage while profile preload is held',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -410,6 +511,7 @@ void main() {
         reason: 'the room must have adopted its ready local timeline');
     expect(find.text('正在读取本机消息…'), findsNothing);
     expect(heldProfile.isCompleted, isFalse);
+    expect(StatisticsRoomScope.current, "!group:test");
     heldProfile.complete(const ProfileData(
         username: 'owner',
         nickname: 'Owner',
@@ -417,6 +519,8 @@ void main() {
         fallbackSeed: 'owner'));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
+    expect(StatisticsRoomScope.current, isNull,
+        reason: "AppHome disposal clears its own registered statistics scope");
     expect(tester.takeException(), isNull);
   });
 }

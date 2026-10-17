@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/features/statistics/statistics_room_scope.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
@@ -1138,25 +1139,62 @@ void registerStartupProjectionEntryTests(
                 reason: 'capturing origin must never pop it');
             navigator.pop();
             await flush(40);
-            held.warmRoomRead!.complete();
-            await flush(40);
-            await pending;
-            expect(find.byType(RoomPage), findsNothing,
-                reason:
-                    'returning from the initiating page cancels delayed navigation');
+            {
+              expect(find.byType(RoomPage), findsNothing);
+              await tester.tap(find.text('Synthetic room 64'));
+              await flush(10);
+              held.warmRoomRead!.complete();
+              for (var attempt = 0;
+                  attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
+                  attempt++) {
+                await flush(1);
+              }
+              expect(find.byType(RoomPage), findsOneWidget,
+                  reason:
+                      'return from search/profile must retire the old pending intent before same-room reentry');
+              var retiredSettled = false;
+              pending.then((_) => retiredSettled = true);
+              for (var attempt = 0;
+                  attempt < 100 && !retiredSettled;
+                  attempt++) {
+                await flush(1);
+              }
+              expect(retiredSettled, isTrue,
+                  reason:
+                      'returned origin request must settle without owning the new room route');
+              expect(StatisticsRoomScope.current, '!room-64:synthetic.test',
+                  reason:
+                      'retired cleanup must preserve the new visible room scope');
+              Navigator.of(tester.element(find.byType(RoomPage))).pop();
+              await flush(80);
+              expect(StatisticsRoomScope.current, isNull);
+            }
+            expect(find.byType(RoomPage), findsNothing);
           }
           held.warmRoomRead = Completer<void>();
           await tester.tap(find.text('Synthetic room 64'));
           await flush(20);
           await tester.tap(find.text('通讯录').last);
           await flush(10);
-          held.warmRoomRead!.complete();
-          await flush(40);
-          expect(find.byType(RoomPage), findsNothing,
-              reason:
-                  'tab navigation remains interactive and cancels the pending push');
-          await tester.tap(find.text('消息').last);
-          await flush(10);
+          {
+            await tester.tap(find.text('消息').last);
+            await flush(10);
+            await tester.tap(find.text('Synthetic room 64'));
+            await flush(10);
+            held.warmRoomRead!.complete();
+            for (var attempt = 0;
+                attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
+                attempt++) {
+              await flush(1);
+            }
+            expect(find.byType(RoomPage), findsOneWidget,
+                reason:
+                    'a new same-room intent after tab cancellation must not be swallowed by the retired pending request');
+            expect(find.text('Cached message 59'), findsWidgets);
+            Navigator.of(tester.element(find.byType(RoomPage))).pop();
+            await flush(80);
+          }
+          expect(find.byType(RoomPage), findsNothing);
           held.warmRoomRead = Completer<void>();
           auditVisibleFrames = true;
           firstRoomContent = false;

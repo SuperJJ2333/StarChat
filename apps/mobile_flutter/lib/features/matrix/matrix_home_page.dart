@@ -6,7 +6,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../core/app_config.dart';
 import '../../core/business_api_client.dart';
@@ -477,8 +476,6 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   String? _reminderRoomId;
   Timer? _presenceTimer;
 
-  /// 正在打开（等待动画已显示）的 roomId：只对同一房间去重，跨房间不阻塞。
-  final Set<String> _openingRooms = <String>{};
   final ConversationReadState _readState = ConversationReadState.shared();
   bool? _autoAllowGroupJoin;
   final Set<String> _autoJoinInFlight = {};
@@ -1294,18 +1291,13 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     if ((widget.previewOnly && !widget.localNavigation) || openRoom == null) {
       return;
     }
-    // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
-    // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
-    if (!_openingRooms.add(snapshot.id)) {
-      if (kDebugMode) debugPrint('[chatflow/perf] room_open=blocked');
-      return;
-    }
-    if (kDebugMode) debugPrint('[chatflow/perf] room_open=started');
+    // The central coordinator owns duplicate suppression and retired intents.
+    // A local guard would swallow a new click while canceled SQL work drains.
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
-      // E1 卡死兜底：打开流程任何一层挂死超过 15 秒，即解锁本房间的
-      // 点击守卫让用户可重试；挂死的底层流程完成时仍会走 onRoomClosed 收尾。
+      // Bound this presentation waiter; route ownership and retirement stay
+      // with the central coordinator, including cleanup after cancellation.
       await openRoom(RoomOpenRequest(
         roomId: snapshot.id,
         roomName: snapshot.isDirect
@@ -1317,10 +1309,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         // 租约已取、页面尚未 push：先收起等待动画，再完成本房间的
         // 已读/未读收尾。
         onRoomReady: () {
-          // E1 根因修复：房间就绪即解锁列表守卫——守卫只保护「打开中」
-          // 这几百毫秒；房间打开期间的进出由路由栈管理。否则守卫要到
-          // 房间关闭才释放，低端机上退出后重进会被静默吞掉数秒。
-          _openingRooms.remove(snapshot.id);
+          // Only the request that owns the route receives ready/closed events;
+          // joined duplicate clicks do not repeat read-state side effects.
           _readState.setRoomOpen(snapshot.id, open: true);
           _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
           if (!widget.previewOnly) {
@@ -1347,11 +1337,6 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     } catch (_) {
       // 房间打开失败由统一入口负责租约与登记清理；列表侧只需收尾等待动画。
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
-    } finally {
-      final removed = _openingRooms.remove(snapshot.id);
-      if (kDebugMode) {
-        debugPrint('[chatflow/perf] room_open=settled guard_released=$removed');
-      }
     }
   }
 

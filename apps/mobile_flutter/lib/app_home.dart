@@ -276,6 +276,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   );
   final _failedRoomLeaseCancels = <MatrixRoomLease>{};
   final _roomFrameProbes = <Route<void>, RoomRouteFrameProbe>{};
+  final _roomStatisticsCleanup = <Route<void>, VoidCallback>{};
   Future<void>? _failedRoomLeaseRetry;
 
   // A failed drain stays owned by Matrix. Retry once in the background and
@@ -2667,7 +2668,29 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 原因自动消失式提示，重试由用户再次点击入口完成——按**同一个请求**
   /// 重跑（幂等，协调器与网关都保证不会重复建房）。`_roomOpenFailureVisible`
   /// 仍作 short-window single-flight：toast 显示期间连点不会叠出多条提示。
+  int _roomNavigationIntentEpoch = 0;
+
   Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
+    if (!mounted || _disposed) return;
+    final intentEpoch = _roomNavigationIntentEpoch;
+    final matrixOwner = widget.matrix;
+    final account = matrixOwner.userId;
+    final businessOwner = widget.api;
+    final businessEpoch = businessOwner.sessionEpoch;
+    Route<dynamic>? origin;
+    Navigator.of(context, rootNavigator: true).popUntil((route) {
+      origin = route;
+      return true;
+    });
+    bool current() =>
+        mounted &&
+        !_disposed &&
+        intentEpoch == _roomNavigationIntentEpoch &&
+        origin?.isCurrent == true &&
+        identical(widget.matrix, matrixOwner) &&
+        matrixOwner.userId == account &&
+        identical(widget.api, businessOwner) &&
+        businessOwner.sessionEpoch == businessEpoch;
     if (_roomOpenFailureVisible) {
       request.performanceTrace?.dispose();
       return;
@@ -2677,13 +2700,18 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     try {
       await _roomOpening.openPrepared(
         request,
-        prepare: widget.matrix.prepareConversationAssociations,
+        prepare: () async {
+          await matrixOwner.prepareConversationAssociations();
+          if (!current()) throw StateError('ROOM_OPEN_INTENT_RETIRED');
+        },
         normalize: (traced) => normalizeDuplicateRoomOpen(traced,
-            primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync),
-        navigate: _roomNavigation.open,
+            primaryRoomIdOf: matrixOwner.logicalPrimaryRoomIdSync),
+        navigate: (next) =>
+            current() ? _roomNavigation.open(next) : Future<void>.value(),
         awaitLocalRoom: _awaitLocalRoom,
       );
     } on RoomOpenFailure catch (failure) {
+      if (!current()) return;
       request.performanceTrace?.finish(result: PerformanceResult.failed);
       if (!mounted) return;
       _roomOpenFailureVisible = true;
@@ -2765,6 +2793,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       originatingRoute = candidate;
       return true;
     });
+    if (originatingRoute?.isFirst == false) {
+      unawaited(originatingRoute!.popped.then((_) => handle.retirePending()));
+    }
     final roomId = request.roomId;
     final trace = request.performanceTrace ??
         (PerformanceTrace.start(
@@ -2776,11 +2807,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     PreparedRoomPageEntry? preparedEntry;
     RoomRouteFrameProbe? localFrameProbe;
     var routeExitFrameScheduled = false;
+
     ValueNotifier<RoomOpenRequest>? navigationRequests;
     var closed = false;
     void notifyClosed() {
       if (closed) return;
       closed = true;
+      // Late cleanup from a retired intent must not clear a newer room's
+      // presentation state. The original lease still drains in finally.
+      if (route == null ? !handle.isCurrent : !identical(handle.route, route)) {
+        return;
+      }
       request.onRoomClosed?.call();
     }
 
@@ -2811,6 +2848,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           _disposed ||
           originatingRoute?.isCurrent != true ||
           preparationGeneration != _roomPreparationGeneration ||
+          !handle.isCurrent ||
           lease.canceled ||
           !identical(widget.matrix, matrixOwner) ||
           matrixOwner.sendPreparationIdentity != sessionOwner ||
@@ -2874,6 +2912,16 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
       // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程）。
       StatisticsRoomScope.enter(roomId);
+      final statisticsRoute = route;
+      void closeStatistics() {
+        if (!_roomStatisticsCleanup.containsKey(statisticsRoute)) return;
+        _roomStatisticsCleanup.remove(statisticsRoute);
+        if (identical(handle.route, statisticsRoute)) {
+          StatisticsRoomScope.leave(roomId);
+        }
+      }
+
+      _roomStatisticsCleanup[statisticsRoute] = closeStatistics;
       lease.setOnRevoked(() async {
         if (!routeExitFrameScheduled) localFrameProbe?.invalidate();
         final r = route;
@@ -2951,6 +2999,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     } catch (_) {
       localFrameProbe?.cancel();
       trace.finish(result: PerformanceResult.failed);
+      if (!handle.isCurrent) return;
       debugPrint('[chatflow/perf] room_open_failed stage=$stage');
       rethrow;
     } finally {
@@ -2958,14 +3007,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       if (!routeExitFrameScheduled) localFrameProbe?.dispose();
       if (!trace.isFinished) trace.dispose();
       try {
-        StatisticsRoomScope.leave(roomId);
         final finalRoute = route;
+        _roomStatisticsCleanup[finalRoute]?.call();
+        notifyClosed();
         if (finalRoute != null) {
           _roomFrameProbes.remove(finalRoute);
           handle.release(finalRoute);
         }
         navigationRequests?.dispose();
-        notifyClosed();
       } finally {
         final owned = routeLease;
         if (owned != null) {
@@ -3090,6 +3139,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       probe.invalidate();
     }
     _roomFrameProbes.clear();
+    for (final cleanup in _roomStatisticsCleanup.values.toList()) {
+      cleanup();
+    }
     _roomNavigation.dispose();
     pendingFriendRequests.dispose();
     unawaited(_disposeMatrixResources());
@@ -3359,6 +3411,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             tabBar: CupertinoTabBar(
               onTap: (index) {
                 _roomPreparationGeneration++;
+                _roomNavigationIntentEpoch++;
+                _roomNavigation.cancelPending();
                 ChatDiagnostics.instance.setFrameTab(switch (index) {
                   0 => ChatDiagnosticTab.messages,
                   1 => ChatDiagnosticTab.contacts,

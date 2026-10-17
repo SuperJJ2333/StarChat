@@ -26,6 +26,7 @@ final class _FakeRoomProcedure {
   /// 模拟 push 阶段异常：登记后抛出且故意不释放登记，
   /// 协调器必须自己兜底清理，不能留下假 active。
   String? leakAndThrowFor;
+  bool releaseBeforeThrow = false;
 
   /// E1：模拟打开流程对特定房间永久挂起（任何 await 卡死）。
   String? hangForeverFor;
@@ -49,6 +50,7 @@ final class _FakeRoomProcedure {
     handle.register(route, onReopen: reopened.add);
     request.onRoomReady?.call();
     if (request.roomId == leakAndThrowFor) {
+      if (releaseBeforeThrow) handle.release(route);
       throw StateError('room open failed');
     }
     try {
@@ -94,6 +96,77 @@ void main() {
   Future<void> openRoom(WidgetTester tester, String roomId) async {
     unawaited(coordinator.open(request(roomId)));
     await tester.pumpAndSettle();
+  }
+
+  testWidgets('retired pending error cannot clear the replacement route',
+      (tester) async {
+    final gates = [Completer<void>(), Completer<void>()];
+    final close = Completer<void>();
+    final handles = <RoomRouteHandle>[];
+    final route = CupertinoPageRoute<void>(builder: (_) => const SizedBox());
+    final owner = RoomNavigationCoordinator(
+        navigatorOf: () => null,
+        openRoom: (request, handle) async {
+          final index = handles.length;
+          handles.add(handle);
+          await gates[index].future;
+          if (index == 0) throw StateError('retired late failure');
+          handle.register(route);
+          await close.future;
+          handle.release(route);
+        });
+    final first = owner.open(request('!a:test'));
+    owner.cancelPending();
+    expect(handles.single.isCurrent, isFalse);
+    final second = owner.open(request('!a:test'));
+    expect(handles, hasLength(2),
+        reason: 'new intent never joins retired drain');
+    gates[1].complete();
+    await tester.pump();
+    expect(owner.activeRoute('!a:test'), same(route));
+    owner.cancelPending();
+    expect(owner.activeRoute('!a:test'), same(route),
+        reason: 'registered active route is preserved');
+    final firstError = expectLater(first, throwsStateError);
+    gates[0].complete();
+    await firstError;
+    expect(owner.activeRoute('!a:test'), same(route));
+    expect(handles[1].isCurrent, isTrue);
+    close.complete();
+    await second;
+    expect(owner.activeRoute('!a:test'), isNull);
+    owner.dispose();
+  });
+
+  for (final retirement in ['cancel', 'clear', 'dispose']) {
+    testWidgets('late register after $retirement cannot continue to push',
+        (tester) async {
+      final gate = Completer<void>();
+      var pushes = 0;
+      final owner = RoomNavigationCoordinator(
+          navigatorOf: () => null,
+          openRoom: (request, handle) async {
+            await gate.future;
+            handle.register(
+                CupertinoPageRoute<void>(builder: (_) => const SizedBox()));
+            pushes++;
+          });
+      final pending = owner.open(request('!a:test'));
+      switch (retirement) {
+        case 'cancel':
+          owner.cancelPending();
+        case 'clear':
+          owner.clear();
+        case 'dispose':
+          owner.dispose();
+      }
+      final failure = expectLater(pending, throwsStateError);
+      gate.complete();
+      await failure;
+      expect(pushes, 0);
+      expect(owner.activeRoomIds, isEmpty);
+      owner.dispose();
+    });
   }
 
   testWidgets('Test 1: 消息列表打开 Room A 只建一次租约与一个页面', (tester) async {
@@ -191,9 +264,10 @@ void main() {
     expect(find.text('home'), findsOneWidget);
     expect(coordinator.activeRoomIds, isEmpty);
   });
-  for (final afterRegister in [false, true]) {
+  for (final stage in ['before', 'registered', 'released']) {
+    final afterRegister = stage != 'before';
     testWidgets(
-        'failed replacement restores original route and callback, afterRegister=$afterRegister',
+        'failed replacement restores original route and callback, stage=$stage',
         (tester) async {
       final navigator = await _pumpShell(tester);
       procedure = _FakeRoomProcedure()..navigator = navigator;
@@ -205,6 +279,7 @@ void main() {
       final original = coordinator.activeRoute('!old:test');
       if (afterRegister) {
         procedure.leakAndThrowFor = '!canonical:test';
+        procedure.releaseBeforeThrow = stage == 'released';
       } else {
         procedure.failBeforeRegisterFor = '!canonical:test';
       }
@@ -401,11 +476,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(coordinator.activeRoomIds, isEmpty);
   });
-  test('E1：打开流程卡死超过兜底时长 → 死入口被清理，下次点击重启完整流程',
-      () {
+  test('E1：打开流程卡死超过兜底时长 → 死入口被清理，下次点击重启完整流程', () {
     fakeAsync((async) {
-      final procedure = _FakeRoomProcedure()
-        ..hangForeverFor = '!stuck:test';
+      final procedure = _FakeRoomProcedure()..hangForeverFor = '!stuck:test';
       final coordinator = RoomNavigationCoordinator(
         openRoom: procedure.open,
         navigatorOf: () => null,
@@ -421,7 +494,8 @@ void main() {
           reason: '惰性判定：入口在下次点击时才被清理');
 
       procedure.hangForeverFor = null; // 瞬时卡死条件恢复
-      unawaited(coordinator.open(request('!stuck:test'))
+      unawaited(coordinator
+          .open(request('!stuck:test'))
           .catchError((Object _) {})); // 无 navigator 的测试环境：push 抛错即收尾
       async.flushMicrotasks();
       expect(procedure.leases, 2, reason: '死入口被清理后重启了完整流程');

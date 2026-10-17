@@ -191,11 +191,24 @@ RoomOpenRequest normalizeDuplicateRoomOpen(
 ///
 /// 打开流程必须在 `Navigator.push` 之前调用 [register]，在页面退出/失败时
 /// 调用 [release]；协调器据此实现「同一 roomId 只有一个活动 RoomPage」。
+final class _RoomNavigationAttempt {
+  _RoomNavigationAttempt(this.generation);
+  final int generation;
+  bool registered = false;
+  bool retired = false;
+}
+
 final class RoomRouteHandle {
-  RoomRouteHandle._(
-      this._coordinator, this.roomId, this.physicalRoomId, this.replacedRoute);
+  RoomRouteHandle._(this._coordinator, this.roomId, this.physicalRoomId,
+      this.replacedRoute, this._attempt);
 
   final RoomNavigationCoordinator _coordinator;
+  final _RoomNavigationAttempt _attempt;
+  bool get isCurrent =>
+      !_attempt.retired &&
+      !_coordinator._disposed &&
+      _attempt.generation == _coordinator._generation &&
+      identical(_coordinator._attempts[roomId], _attempt);
   final String roomId;
   final String physicalRoomId;
   final Route<void>? replacedRoute;
@@ -209,6 +222,8 @@ final class RoomRouteHandle {
   /// 「已打开 → 回到原页面」，也避免页面退出后租约取消期间把新的打开
   /// 请求并进一个已经不再开新页面的 opening future。
   void register(Route<void> route, {void Function(RoomOpenRequest)? onReopen}) {
+    if (!isCurrent) throw StateError('ROOM_NAVIGATION_ATTEMPT_RETIRED');
+    _attempt.registered = true;
     if (onReopen != null) _coordinator._reopen[roomId] = onReopen;
     _coordinator._active[roomId] = route;
     _coordinator._physicalRooms[roomId] = physicalRoomId;
@@ -223,6 +238,12 @@ final class RoomRouteHandle {
       _coordinator._active.remove(roomId);
       _coordinator._reopen.remove(roomId);
       _coordinator._physicalRooms.remove(roomId);
+    }
+  }
+
+  void retirePending() {
+    if (isCurrent && !_attempt.registered) {
+      _coordinator._retirePending(roomId, _attempt);
     }
   }
 
@@ -266,6 +287,7 @@ final class RoomNavigationCoordinator {
   final String Function(String roomId) _conversationKeyOf;
   final NavigatorState? Function() _navigatorOf;
   final Map<String, Future<void>> _opening = {};
+  final Map<String, _RoomNavigationAttempt> _attempts = {};
   final Map<String, DateTime> _openingSince = {};
   final Map<String, RoomOpenRequest> _openingAnchors = {};
   final Map<String, Route<void>> _active = {};
@@ -335,6 +357,7 @@ final class RoomNavigationCoordinator {
       }
       debugPrint('[chatflow/perf] room_open_stuck_cleared age='
           '${clock.now().difference(since).inMilliseconds}ms');
+      _attempts.remove(roomId)?.retired = true;
       _opening.remove(roomId);
       _openingAnchors.remove(roomId);
       _openingSince.remove(roomId);
@@ -344,15 +367,19 @@ final class RoomNavigationCoordinator {
     // 「取租约前」的一段（甚至直接 register 路由），必须先占位才能被合并。
     final completer = Completer<void>();
     final pending = completer.future;
+    final attempt = _RoomNavigationAttempt(_generation);
+    _attempts[roomId] = attempt;
     _opening[roomId] = pending;
     _openingSince[roomId] = clock.now();
-    unawaited(_run(roomId, request, active?.isActive == true ? active : null)
-        .then((_) {
+    unawaited(
+        _run(roomId, request, active?.isActive == true ? active : null, attempt)
+            .then((_) {
       if (identical(_opening[roomId], pending)) {
         _opening.remove(roomId);
         _openingAnchors.remove(roomId);
         _openingSince.remove(roomId);
       }
+      if (identical(_attempts[roomId], attempt)) _attempts.remove(roomId);
       if (!completer.isCompleted) completer.complete();
     }, onError: (Object error, StackTrace stackTrace) {
       if (identical(_opening[roomId], pending)) {
@@ -360,21 +387,23 @@ final class RoomNavigationCoordinator {
         _openingAnchors.remove(roomId);
         _openingSince.remove(roomId);
       }
+      if (identical(_attempts[roomId], attempt)) _attempts.remove(roomId);
       if (!completer.isCompleted) completer.completeError(error, stackTrace);
     }));
     return pending;
   }
 
   Future<void> _run(String roomId, RoomOpenRequest request,
-      Route<void>? replacedRoute) async {
+      Route<void>? replacedRoute, _RoomNavigationAttempt attempt) async {
     final generation = _generation;
     final previousPhysicalRoom = _physicalRooms[roomId];
     final previousReopen = _reopen[roomId];
     final handle =
-        RoomRouteHandle._(this, roomId, request.roomId, replacedRoute);
+        RoomRouteHandle._(this, roomId, request.roomId, replacedRoute, attempt);
     try {
       await _openRoom(request, handle);
     } catch (_) {
+      if (!handle.isCurrent) rethrow;
       // 打开失败不得留下假 active；opening 由 open() 的 whenComplete 清理。
       final route = _active[roomId];
       if (route == null || !route.isActive) {
@@ -398,9 +427,28 @@ final class RoomNavigationCoordinator {
     }
   }
 
+  /// Retire only unregistered intents. Their cleanup continues independently;
+  /// a subsequent click must not join a canceled attempt's pending future.
+  void cancelPending() {
+    for (final entry in _attempts.entries.toList(growable: false)) {
+      if (entry.value.registered) continue;
+      _retirePending(entry.key, entry.value);
+    }
+  }
+
+  void _retirePending(String roomId, _RoomNavigationAttempt attempt) {
+    if (attempt.registered || !identical(_attempts[roomId], attempt)) return;
+    attempt.retired = true;
+    _attempts.remove(roomId);
+    _opening.remove(roomId);
+    _openingAnchors.remove(roomId);
+    _openingSince.remove(roomId);
+  }
+
   /// 账号切换/退出登录：清空登记，旧账号的房间路由请求不得泄漏到下一个账号。
   void clear() {
     _generation++;
+    _attempts.clear();
     _opening.clear();
     _openingAnchors.clear();
     _openingSince.clear();
