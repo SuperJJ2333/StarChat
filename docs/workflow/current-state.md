@@ -1,8 +1,8 @@
 # 当前工作状态
 
-## 2026-10-17 缓存房间即时进入：2222 Debug实施中
+## 2026-10-17 缓存房间即时进入：2222 Debug已安装模拟器
 
-用户批准继续修正点击前等待并交付模拟器Debug。基线049c2f9b，版本已预留0.4.53+2222/e2330d48；首次全量6144PASS/9SKIP/8FAIL记录保留；修正已冻结e55cd166，186项相关测试全部通过，进入增量复审和最终全量后交付。拆分有效房间展示缓存和SDK/发送权限，保留跨SDKready可用缓存，置顶/草稿/列表前部优先；实际main持有SQL前后都须点击即出现气泡。证据cached-room-entry；未构建/安装2222，正式2221不变。见[任务](tasks/2026-10-17-cached-room-entry.md)。
+0.4.53+2222普通main Debug于23:45+08保数据安装emulator-5556，固定75b31签名，APK SHA0ca7e72d…1382298，UID10090/firstInstall及设备APK哈希一致。交付源b53e7387（产品e55cd166），有效缓存跨SDKready可进入/滚动、按置顶/草稿/列表前部有界优先、文字持久排队与通信就绪分开。最终6155PASS/9SKIP/0FAIL、全局analyze0、SPEC→QUALITY通过。首轮全量8失败后修正及首次native信号失败均保留；同一诊断包native-r2五场景全部通过。普通包首次cold admissionRejected走加载回退，后续cold-r2 HIT先列表后SDK、群头像/入房气泡/历史滚动观察通过。缓存缺失或失效仍需自身本地恢复，不宣称全场景零等待。模拟器停在消息列表，等待用户测试；本轮未发布生产，正式2221不变。见[任务](tasks/2026-10-17-cached-room-entry.md)及[验证报告](../verification/2026-10-17-android2222-cached-room-entry.md)。
 
 ## 2026-10-17 Android2221正式包及普通更新已发布
 

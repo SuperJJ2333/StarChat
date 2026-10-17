@@ -10,17 +10,17 @@
 
 | ID | 场景 | 状态 |
 | --- | --- | --- |
-| CE-01 | SDK未完成，点击缓存房间，持有后台读取仍出现真实气泡并可滚动 | 待RED/GREEN |
-| CE-02 | SDK已恢复但本地timeline读取被延迟，点击仍从有效缓存即时打开，同页合并不跳锚 | 待RED/GREEN |
-| CE-03 | 超过40会话：置顶/草稿/列表前部优先，容量有界，点击不排在整批恢复之后 | 待验证 |
-| CE-04 | 删除/隐藏/撤回/账号切换/撤销/成员变化不得复活旧内容；待发持久与实际发送权限分离 | 待审查测试 |
-| CE-05 | 真main入口Android延迟场景通过，普通main固定签名Debug安装保留UID/firstInstall/数据 | 待构建安装 |
+| CE-01 | SDK未完成，点击缓存房间，持有后台读取仍出现真实气泡并可滚动 | RED/GREEN与native-r2 PASS |
+| CE-02 | SDK已恢复但本地timeline读取被延迟，点击仍从有效缓存即时打开，同页合并不跳锚 | 主机及native-r2 PASS；仅有效缓存；首次native信号失败保留 |
+| CE-03 | 超过40会话：置顶/草稿/列表前部优先，容量有界，点击不排在整批恢复之后 | 65房间/中途点击重排断言PASS；失效后读取自身SQL边界另记 |
+| CE-04 | 删除/隐藏/撤回/账号切换/撤销/成员变化不得复活旧内容；待发持久与实际发送权限分离 | 专项/6155全量及独立SPEC→QUALITY PASS |
+| CE-05 | 真main入口Android延迟场景通过，普通main固定签名Debug安装保留UID/firstInstall/数据 | native-r2五场景PASS，普通main23:45保数据安装，冷启动HIT/入房滚动观察通过 |
 
-当前根因：hasLocalDisplayProjection同时控制展示和未初始化生命周期，SDKready后false；AppHome推route前等待多个本地准备；投影writer取快照前40未复用UI最终排序。不能简单删pending条件或把加载页挪到点击前。当前执行阶段：一个实施者建立故障反例并修正。
+初始根因：hasLocalDisplayProjection同时控制展示和未初始化生命周期，SDKready后false；AppHome推route前等待多个本地准备；投影writer取快照前40未复用UI最终排序。不能简单删pending条件或把加载页挪到点击前。当时执行阶段：一个实施者建立故障反例并修正；最终交付结果见台账及末尾记录。
 
 证据目录docs/verification/artifacts/2026-10-17/cached-room-entry/。完整测试使用既有已核验Olm/SQLCipher DLL和短路径，先冻结再全量；verify.ps1缺.env若仍存在应记录未执行，不导入生产秘密。保留旧版全部失败/已知限制，不视为本轮通过。
 
-下一步：实施者提供RED/设计细化，独立审查缓存保留/失效边界；root核对2222版本占用、准备固定签名构建和原生验收脚本。阶段开始21:11+08，精确工具耗时以回执为准。
+当前交付：0.4.53+2222普通Debug已装emulator-5556，等待用户自行测试；下一执行步骤为根据具体反馈复现，不发布生产或重复构建。阶段开始21:11+08，最终证据核对23:51+08，精确工具耗时以回执为准。
 
 21:16+08：真实main反例red-entry.log验证预期失败：post-SDK SQL仍held时RoomPage数量0，说明延迟在push前。独立design.md完成SPEC→QUALITY受约束设计批准；原globalpreinit能力保持，新增房间展示能力区分原投影与新canonicalhead，permit/owner/historygeneration/失效边界保留。ADR已补充，代码审查仍待冻结。允许增加room_timeline_controller.dart的一次性同账号durablejournal绑定；输入仅在持久队列准备后开放，不挡住浏览。
 
@@ -47,3 +47,15 @@
 22:44+08：原8失败组及新增负向54PASS/9秒。扩大发送/启动组130PASS/1FAIL，定位SDK pending混合旧local-cache-first与独立seeded恢复；旧路径已有身份/数据库/Olm准入却被一刀切阻断。独立审查基于vendor真实localCacheReady条件批准非projection+isLogged+encryptionEnabled的受限旧路径例外，保留真实Room/join/eventpower；新的seeded恢复仍只能用有效admission。修正后重跑扩大组再冻结。
 
 22:48+08：修正冻结e55cd1664f012f41ab8c1805366b1269d4176f0a（5文件），13文件组186/186PASS/83秒，含原8失败、新权限负向、旧/独立实际main。delta-analyze-final无问题exit0，root核验5文件SHA与manifest一致，V释放。下一步增量SPEC→QUALITY、文档后继冻结、最终flutter-full-2222-r2及全局analyze；不改版本2222，因为尚未构建或安装候选。
+
+22:50+08：增量SPEC→QUALITY正式通过，final-source-manifest.json合并两次冻结的16文件并核验全部SHA；文档后继b53e7387。最终flutter-full-2222-r2已启动（root会话32092），固定输入，结束后自动全局analyze。未构建或安装2222。
+
+23:14+08：最终全量6155PASS/9SKIP/0FAIL，全局analyze无问题（18.9秒），receipt全部exit0/source_stabletrue，22:48:52–23:14:11（25分19秒）。固定b53e7387开始debug-native-2222构建，尚未安装。下一步重建签名验证、原生五场景、普通main构建及保数据安装。
+
+23:28+08：debug-native-2222全部重建/签名/语义门禁PASS，SHA7eadfc1da2b9d5e30c16b922f80674f7a0f653ee92ea63040c6acbfa1eefc1cf；覆盖安装UID/firstInstall保持。native-entry-2222 exit1：4场景完成，独立场景1257行warmRoomReadEntered=false；原生头像连续110帧及其余场景通过。原失败保留；实施者只读定位设备时序/产品差异，未修改产品，普通main尚未安装。
+
+23:33+08：同一已安装诊断APK受控重跑native-entry-2222-r2全部五场景PASS/222.156秒，firstframe/feedback/postSDKentry/avatarhandoff全部true，未重新打包；过滤日志保存。首次失败保留，review指出bulk屏障未标识新旧代次，另须确定性核验旧读取held期间发生sync是否造成目标入房等待；实现者只编辑专项测试构建证据，尚无产品修改，普通main待该核查。
+
+23:39+08：补充确定性诊断两次34秒相同：sync前cache有效，sync后失效，点击ownSQL=true且无关bulk仍held，RoomPage=false（自己的SQL held）。未证实有效cache被bulk挡住，未重现原native失败。诊断补丁/日志保留并恢复，mobile clean/HEADb53，V释放；产品不改，不缩小隐私失效范围。debug-main-2222已启动普通main固定签名构建。下一步普通包验证安装和真实账户冷启动视觉验收。
+
+23:51+08：普通main全部打包门禁PASS，23:45:47保数据安装成功，APK SHA0ca7e72dd909e9c4cbb1a8f5ce1022d282ab156a3c29a454e2ea1bfb71382298/126097754B。首次cold admissionRejected加载回退保留；cold-r2 HIT先显示真实列表/群头像再SDKready。两个房间入房气泡、长历史滚动、返回观察通过，无真实消息发送。final-audit核验16源码SHA/mobile clean/当前进程fatal-ANR0/自建forward及V-W清理。任务完成Debug交付，模拟器留消息列表；生产2221不变，等待用户自行测试。报告docs/verification/2026-10-17-android2222-cached-room-entry.md。
