@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-17 Android2221正式包及普通更新已发布
+
+20:53:44+08发布0.4.52+2221 ARM64，SHAab4652c0…9e572/73,524,314B/固定75b31；含冷启动头像、误离线、入房加载页及取消重入修复。20构建门禁0，独立SPEC→QUALITY通过；共享失败6134/9/2及后续29修正、15+41/原生五场景同源证据保留复用。CDN/公开HEAD元数据/三审计/真实路由/35容器保持全部PASS，iOS2215/min3/URL不变，备份0700。两工作区两静态文件精确回填，primary旧2213registry已按已审查CAS纠正；自建隧道关闭。旧K80告警、libcrypto16KiB及ARM64真机/旧版可见弹窗缺口保留。已装2221Debug不重复提示同build。见[任务](tasks/2026-10-17-android2221-release.md)及[报告](../verification/2026-10-17-android2221-release.md)。
+
 ## 2026-10-17 首屏本地投影：2221 Debug已完成反馈修复并安装
 
 最终产品45355d5f，普通0.4.52+2221 Debug固定75b31签名APK042e2be1…6f1289e于17:46+08保数据安装5556，UID/首次安装/设备SHA确认。修复缓存群头像、误离线、入房加载页及取消重入吞点击；native4五场景全PASS、头像112帧连续、原队列/锚点/首帧断言保留。真实cold-r4 HIT/头像交接/无误离线、暖入房首帧气泡/滚动通过；postinstall首次admissionRejected保留非fastpath证据。最终56相关覆盖（15新+41复用）、fullanalyze0、SPEC→QUALITY通过；原全量6134PASS9SKIP2旧夹具FAIL与后续修正记录均保留，不称原命令exit0。未发布生产或发送真实消息。等待用户自行测试。见[任务](tasks/2026-10-17-startup-local-projection.md)和[反馈报告](../verification/2026-10-17-startup-feedback.md)。

@@ -7,6 +7,10 @@
 **Tech:** Flutter/Dart, vendored Matrix, SQLCipher, Android Debug.
 **Spec:** docs/superpowers/specs/2026-10-17-startup-local-projection-design.md.
 
+## Authorized Android release follow-up (2026-10-17)
+
+User explicitly requested “好的，请你推送Android新版本更新弹窗” after2221Debug delivery. Root now owns ARM64 standard release build/rebuild/fixed signer, fresh production capture, immutable/CDN availability before alias/static and transactional Android popup publication, audit/public checks and exact source backfill. Independent specification then quality/security review binds the final package/executor before remote writes. Target0.4.52+2221; preserveiOS2215, minima3 and other services. No product code changes or new forced-upgrade policy. Evidence/task separate: docs/workflow/tasks/2026-10-17-android2221-release.md and docs/verification/artifacts/2026-10-17/android2221-release/. Reuse same-source shared/native evidence under change-impact rules, retaining all original failures and known device/libcrypto/antivirus limitations.
+
 ## Constraints / ownership
 
 - Same isolated tree7747e54a (productc29597e0). Root docs/version/packaging; startup_pipeline sole product writer; reviewer read-only after freeze. No child agents by implementer.
