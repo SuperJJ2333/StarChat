@@ -18,11 +18,13 @@ final class UserAvatar extends StatefulWidget {
       this.avatarHeaders,
       this.localOnly = false,
       this.localImageProvider,
+      this.onLocalImagePainted,
       this.diagnosticSource = 'unspecified',
       this.size = 48});
   final String? avatarCacheKey;
   final bool localOnly;
   final ImageProvider? localImageProvider;
+  final VoidCallback? onLocalImagePainted;
   final String nickname;
   final String fallbackSeed;
   final String? avatarUrl;
@@ -156,6 +158,12 @@ final class _UserAvatarState extends State<UserAvatar> {
                   ? _fallback()
                   : Image(
                       image: local,
+                      frameBuilder: (_, child, frame, synchronous) {
+                        if (synchronous || frame != null) {
+                          widget.onLocalImagePainted?.call();
+                        }
+                        return child;
+                      },
                       fit: BoxFit.cover,
                       errorBuilder: (_, error, stack) => _fallback())));
     }
@@ -169,17 +177,19 @@ final class _UserAvatarState extends State<UserAvatar> {
             size: widget.size,
             headers: widget.avatarHeaders,
           );
-    final retained = AvatarCache.lastSuccessful(_cacheIdentity);
+    final retained =
+        widget.localImageProvider ?? AvatarCache.lastSuccessful(_cacheIdentity);
     return ClipRRect(
       borderRadius: BorderRadius.circular(WeChatRadius.avatar),
       child: SizedBox(
         width: widget.size,
         height: widget.size,
         child: provider == null
-            // No avatar URL at all: nothing is pending, so show the stable
-            // initials immediately (Task L: the call waiting screen must never
-            // render an empty circle).
-            ? _fallback()
+            // An admitted local image can bridge asynchronous URL discovery.
+            // Without that scoped bridge, missing metadata shows initials.
+            ? (widget.localImageProvider == null
+                ? _fallback()
+                : Image(image: widget.localImageProvider!, fit: BoxFit.cover))
             : Image(
                 key: ValueKey((_cacheIdentity, _imageEpoch)),
                 image: provider,

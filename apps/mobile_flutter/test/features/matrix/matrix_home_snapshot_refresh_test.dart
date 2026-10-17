@@ -24,6 +24,39 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+      'owned identity repository keeps rows across mode but not owner replacement',
+      (tester) async {
+    final api = _api();
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    final replacement = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    final theme = ThemeController(store: _MemoryThemeStore());
+    Widget page(MatrixSdkE2eeClient owner, bool preview) => CupertinoApp(
+        home: MatrixHomePage(
+            api: api,
+            matrix: owner,
+            themeController: theme,
+            onCreateGroup: () {},
+            previewOnly: preview,
+            snapshotLoader: () async => _snapshot('stable-owned')));
+    final row =
+        find.byKey(const ValueKey<String>('conversation-!stable-owned:test'));
+    await tester.pumpWidget(page(matrix, true));
+    await tester.pumpAndSettle();
+    final original = tester.element(row);
+    await tester.pumpWidget(page(matrix, false));
+    await tester.pumpAndSettle();
+    expect(tester.element(row), same(original),
+        reason: 'mode is not a new identity owner');
+    await tester.pumpWidget(page(replacement, false));
+    await tester.pumpAndSettle();
+    expect(tester.element(row), isNot(same(original)),
+        reason: 'real owner replacement retires its mounted rows');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('preview disables search more and conversation actions',
       (tester) async {
     final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),

@@ -31,6 +31,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
 import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 
@@ -201,19 +202,23 @@ void registerStartupProjectionEntryTests(
     channels.clear();
   });
   for (final scenario in [
-    (hidden: false, independent: true),
-    (hidden: false, independent: false),
-    (hidden: true, independent: false),
-    (hidden: true, independent: true)
+    (hidden: false, independent: true, avatarHandoff: false),
+    (hidden: false, independent: false, avatarHandoff: false),
+    (hidden: true, independent: false, avatarHandoff: false),
+    (hidden: true, independent: true, avatarHandoff: false),
+    (hidden: false, independent: true, avatarHandoff: true)
   ]) {
+    final avatarHandoff = scenario.avatarHandoff;
     final allHidden = scenario.hidden;
     final independent = scenario.independent;
     testWidgets(
-        independent
-            ? (allHidden
-                ? 'actual main valid empty independent projection releases content frame'
-                : 'actual main independent projection precedes held whole-store preflight')
-            : 'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
+        avatarHandoff
+            ? 'actual main visible avatar remains painted through canonical handoff'
+            : independent
+                ? (allHidden
+                    ? 'actual main valid empty independent projection releases content frame'
+                    : 'actual main independent projection precedes held whole-store preflight')
+                : 'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
         (tester) async {
       final oldPaths = PathProviderPlatform.instance;
       late Directory directory;
@@ -398,6 +403,17 @@ void registerStartupProjectionEntryTests(
                 return http.Response('{"filter_id":"synthetic"}', 200);
               }
               if (request.url.path.contains('/profile/')) {
+                final member =
+                    Uri.decodeComponent(request.url.pathSegments.last);
+                if (avatarHandoff && member.startsWith('@avatar-')) {
+                  final index = member.startsWith('@avatar-0:') ? 0 : 1;
+                  return http.Response(
+                      jsonEncode({
+                        'displayname': 'Synthetic member $index',
+                        'avatar_url': 'mxc://synthetic.test/avatar-$index'
+                      }),
+                      200);
+                }
                 return http.Response('{"displayname":"Synthetic member"}', 200);
               }
               if (request.url.path.endsWith('/members')) {
@@ -508,6 +524,27 @@ void registerStartupProjectionEntryTests(
                     'displayname': 'Synthetic member $member',
                     'avatar_url': 'mxc://synthetic.test/avatar-$member'
                   }));
+              // The fifth scenario verifies the real canonical member state,
+              // not just the independent display projection's member list.
+              if (avatarHandoff) {
+                await full.database!.storeEventUpdate(
+                    EventUpdate(
+                        roomID: room.id,
+                        type: EventUpdateType.state,
+                        content: {
+                          'event_id': 'avatar-member-$member',
+                          'type': EventTypes.RoomMember,
+                          'state_key': '@avatar-$member:synthetic.test',
+                          'sender': user,
+                          'origin_server_ts': 10000,
+                          'content': {
+                            'membership': 'join',
+                            'displayname': 'Synthetic member $member',
+                            'avatar_url': 'mxc://synthetic.test/avatar-$member'
+                          }
+                        }),
+                    full);
+              }
             }
             final outbound = olm.OutboundGroupSession()..create();
             try {
@@ -751,7 +788,13 @@ void registerStartupProjectionEntryTests(
           WidgetsBinding.instance.addPostFrameCallback(observeFrame);
           rawSecure.admissionHold!.complete();
         }
-        await flush(80);
+        // SQLCipher/secure-store work uses real I/O; wait for its semantic
+        // local-ready milestone while pumping both zones, not a fixed count.
+        for (var attempt = 0;
+            attempt < 300 && find.byType(AppHome).evaluate().isEmpty;
+            attempt++) {
+          await flush(1);
+        }
         expect(tester.takeException(), isNull,
             reason: "fixture setup must succeed");
         await tester.pump(const Duration(seconds: 4));
@@ -834,6 +877,18 @@ void registerStartupProjectionEntryTests(
               group.members.where((member) => member.id.startsWith('@avatar-')),
               hasLength(2));
           expect(find.byType(GroupAvatarMosaic), findsWidgets);
+          bool localAvatarPainted() => tester
+              .widgetList<RawImage>(find.descendant(
+                  of: find.byType(GroupAvatarMosaic),
+                  matching: find.byType(RawImage)))
+              .any((image) => image.image != null);
+          for (var attempt = 0;
+              attempt < 200 && !localAvatarPainted();
+              attempt++) {
+            await flush(1);
+          }
+          expect(preflight.originalCalls, 0);
+          expect(databaseOpens, 0);
           expect(
               tester
                   .widgetList<RawImage>(find.descendant(
@@ -843,6 +898,75 @@ void registerStartupProjectionEntryTests(
               isTrue,
               reason:
                   'isolated existing disk avatar bytes paint while original DB and SDK are unopened');
+        }
+        if (avatarHandoff) {
+          auditVisibleFrames = false;
+          final members = find.byWidgetPredicate((widget) =>
+              widget is MatrixUserAvatar &&
+              widget.matrixAvatarUri?.host == 'synthetic.test' &&
+              widget.matrixAvatarUri!.path.startsWith('/avatar-'));
+          final expectedUris = {
+            'mxc://synthetic.test/avatar-0',
+            'mxc://synthetic.test/avatar-1'
+          };
+          var auditing = true;
+          var auditedFrames = 0;
+          final avatarStates = <String, State>{};
+          void auditAvatars(Duration _) {
+            if (!auditing) return;
+            expectSync(find.byType(RoomPage), findsNothing);
+            expectSync(
+                tester
+                    .widgetList<MatrixUserAvatar>(members)
+                    .map((widget) => widget.matrixAvatarUri.toString())
+                    .toSet(),
+                expectedUris);
+            for (final element in members.evaluate()) {
+              final widget = element.widget as MatrixUserAvatar;
+              final key = widget.matrixAvatarUri.toString();
+              final state = (element as StatefulElement).state;
+              final previous = avatarStates.putIfAbsent(key, () => state);
+              expectSync(state, same(previous),
+                  reason: 'same admitted owner retains each mounted member');
+              expectSync(
+                  tester
+                      .widgetList<RawImage>(find.descendant(
+                          of: find.byWidget(element.widget),
+                          matching: find.byType(RawImage)))
+                      .any((image) => image.image != null),
+                  isTrue,
+                  reason:
+                      'every visible member remains painted through SDK handoff');
+            }
+            auditedFrames++;
+            WidgetsBinding.instance.addPostFrameCallback(auditAvatars);
+          }
+
+          auditAvatars(Duration.zero);
+          var sdkReady = false;
+          client.initializationCompleted.then((_) => sdkReady = true);
+          preflight.release.complete();
+          try {
+            for (var attempt = 0; attempt < 300 && !sdkReady; attempt++) {
+              await flush(1);
+            }
+            expect(sdkReady, isTrue);
+            await flush(100);
+            expect(auditedFrames, greaterThan(2));
+            expect(tester.takeException(), isNull);
+            expect(transportSends, 0);
+            report?.call({
+              'scenario': 'actual-main-avatar-handoff',
+              'avatar_handoff_continuous': true,
+              'first_visible_avatar': true,
+              'audited_avatar_frames': auditedFrames,
+              'network_sends_while_held': 0,
+              'network_sends_after_recovery': 0
+            });
+          } finally {
+            auditing = false;
+          }
+          return;
         }
         final contentReadyMs = clock.elapsedMilliseconds;
         await tester.tap(find.text('通讯录').last);

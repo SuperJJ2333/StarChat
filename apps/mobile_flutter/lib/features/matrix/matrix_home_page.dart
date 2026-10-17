@@ -1019,11 +1019,12 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     super.didUpdateWidget(oldWidget);
     final accountChanged = _identityAccountId != widget.matrix.userId;
     _identityAccountId = widget.matrix.userId;
-    final ownerChanged = accountChanged ||
+    final identityOwnerChanged = accountChanged ||
         !identical(widget.matrix, oldWidget.matrix) ||
         !identical(widget.api, oldWidget.api) ||
-        !identical(widget.identityCache, oldWidget.identityCache) ||
-        widget.previewOnly != oldWidget.previewOnly;
+        !identical(widget.identityCache, oldWidget.identityCache);
+    final ownerChanged =
+        identityOwnerChanged || widget.previewOnly != oldWidget.previewOnly;
     if (ownerChanged) _previewIdentityEpoch++;
     if (!identical(widget.api, oldWidget.api)) {
       _supportIdentities = widget.api.supportIdentities;
@@ -1043,13 +1044,22 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       _ownsIdentityCache = false;
       identityChanged = true;
       if (!widget.previewOnly) _identityCache.addListener(_identityChanged);
-    } else if (ownerChanged && replacementIdentity == null) {
+    } else if (identityOwnerChanged && replacementIdentity == null) {
       _identityCache.removeListener(_identityChanged);
       if (_ownsIdentityCache) _identityCache.dispose();
       _identityCache = ProfileRepository(widget.api);
       _ownsIdentityCache = true;
       identityChanged = true;
       if (!widget.previewOnly) _identityCache.addListener(_identityChanged);
+    }
+    if (!identityChanged &&
+        _ownsIdentityCache &&
+        widget.previewOnly != oldWidget.previewOnly) {
+      _identityCache.removeListener(_identityChanged);
+      if (!widget.previewOnly) {
+        _identityCache.addListener(_identityChanged);
+        unawaited(_identityCache.preload().catchError((_) {}));
+      }
     }
     if (identityChanged) {
       _roomProjectionCache.clear();
@@ -1065,7 +1075,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       _directoryRefreshAfter = null;
       _roomProjectionCache.clear();
       _conversationRows.clear();
-      _conversationKeys.clear();
+      // A local-to-full mode transition keeps the admitted owner and mounted
+      // avatar state. Real owner replacement still retires every row subtree.
+      if (identityOwnerChanged || identityChanged) _conversationKeys.clear();
       _detachMatrixListeners();
       if (accountChanged) {
         decryptionStates.dispose();

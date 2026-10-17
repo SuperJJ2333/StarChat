@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
+import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 import 'package:matrix/matrix.dart';
@@ -39,6 +40,34 @@ class _ColdClient extends Client {
     discoveryCalls++;
     return discovery.future;
   }
+}
+
+class _BridgeMedia
+    implements
+        AvatarMediaCapability,
+        ImmediateAvatarMediaCapability,
+        CachedAvatarMediaCapability {
+  _BridgeMedia(this.file, this.url);
+  final File file;
+  final String url;
+  bool local = true;
+  String? identity = 'identity:synthetic:bridge';
+  @override
+  bool get usesLocalAvatarCacheOnly => local;
+  @override
+  String? avatarCacheIdentity(String _) => identity;
+  @override
+  Future<File?> readCachedAvatar(
+          {required Uri? avatarUri, required String displayIdentity}) async =>
+      file;
+  @override
+  ResolvedAvatarUrl? resolveAvatarImmediately(
+          {required Uri? avatarUri, required double size}) =>
+      avatarUri == null ? null : ResolvedAvatarUrl(url);
+  @override
+  Future<ResolvedAvatarUrl?> resolveAvatar(
+          {required Uri? avatarUri, required double size}) async =>
+      resolveAvatarImmediately(avatarUri: avatarUri, size: size);
 }
 
 Widget _avatar(AvatarMediaCapability media) => CupertinoApp(
@@ -93,6 +122,122 @@ void main() {
     await AvatarCache.manager.dispose();
     PathProviderPlatform.instance = originalPaths;
     HttpOverrides.global = originalHttp;
+  });
+
+  testWidgets(
+      'painted local avatar survives full-provider pending frames without losing invalidation',
+      (tester) async {
+    final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+    final file = await _finishIo(
+        tester,
+        AvatarCache.manager.putFile('https://synthetic.test/bridge-source', png,
+            key: 'synthetic-bridge-source', fileExtension: 'png'));
+    final release = Completer<void>();
+    final server = (await tester
+        .runAsync(() => HttpServer.bind(InternetAddress.loopbackIPv4, 0)))!;
+    var requests = 0;
+    server.listen((request) async {
+      requests++;
+      await release.future;
+      request.response.headers.contentType = ContentType('image', 'png');
+      request.response.add(png);
+      await request.response.close();
+    });
+    final media = _BridgeMedia(file, 'http://127.0.0.1:${server.port}/avatar');
+    bool painted() => tester
+        .widgetList<RawImage>(find.byType(RawImage))
+        .any((image) => image.image != null);
+    Future<void> tick() async {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+
+    try {
+      await tester.pumpWidget(_avatar(media));
+      for (var i = 0; i < 100 && !painted(); i++) {
+        await tick();
+      }
+      expect(painted(), isTrue);
+      expect(requests, 0);
+      media.local = false;
+      await tester.pumpWidget(_avatar(media));
+      expect(painted(), isTrue,
+          reason:
+              'first full-provider pending frame retains the already painted same-owner image');
+      for (var i = 0; i < 20; i++) {
+        await tick();
+        expect(painted(), isTrue,
+            reason: 'every held provider frame stays painted');
+      }
+      expect(requests, 1);
+      release.complete();
+      for (var i = 0; i < 40; i++) {
+        await tick();
+        expect(painted(), isTrue);
+      }
+      for (final changedUri in <Uri?>[
+        null,
+        Uri.parse('mxc://media.example/replaced')
+      ]) {
+        media.local = true;
+        await tester.pumpWidget(_avatar(media));
+        for (var i = 0; i < 100 && !painted(); i++) {
+          await tick();
+        }
+        expect(painted(), isTrue);
+        media.local = false;
+        await tester.pumpWidget(CupertinoApp(
+            home: MatrixUserAvatar(
+                avatarMedia: media,
+                nickname: 'Alice',
+                fallbackSeed: 'alice',
+                matrixAvatarUri: changedUri)));
+        expect(
+            tester
+                .widget<UserAvatar>(find.byType(UserAvatar))
+                .localImageProvider,
+            isNull,
+            reason:
+                'removal and URI replacement synchronously discard the old bridge');
+      }
+      media.local = true;
+      await tester.pumpWidget(_avatar(media));
+      for (var i = 0; i < 100 && !painted(); i++) {
+        await tick();
+      }
+      expect(painted(), isTrue);
+      final replacementOwner = _BridgeMedia(file, media.url)..local = false;
+      await tester.pumpWidget(_avatar(replacementOwner));
+      expect(
+          tester.widget<UserAvatar>(find.byType(UserAvatar)).localImageProvider,
+          isNull,
+          reason:
+              'even the same identity and URI cannot bridge across owner replacement');
+      media.local = true;
+      await tester.pumpWidget(_avatar(media));
+      for (var i = 0; i < 100 && !painted(); i++) {
+        await tick();
+      }
+      expect(painted(), isTrue);
+      media.local = false;
+      media.identity = 'identity:other:bridge';
+      await tester.pumpWidget(_avatar(media));
+      expect(
+          tester.widget<UserAvatar>(find.byType(UserAvatar)).localImageProvider,
+          isNull);
+      media.identity = null;
+      await tester.pumpWidget(_avatar(media));
+      expect(find.byType(RawImage), findsNothing);
+    } finally {
+      if (!release.isCompleted) release.complete();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      await tester.runAsync(
+          () => server.close(force: true).timeout(const Duration(seconds: 3)));
+      await tester.pump(const Duration(seconds: 20));
+    }
   });
 
   testWidgets(

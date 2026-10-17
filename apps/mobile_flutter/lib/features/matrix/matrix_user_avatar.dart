@@ -60,6 +60,28 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   ResolvedAvatarUrl? resolved;
   File? _localFile;
   bool _localOnly = false;
+  AvatarMediaCapability? _fileOwner;
+  String? _fileIdentity;
+  Uri? _fileUri;
+  bool _localPainted = false;
+
+  bool get _fileIsCurrent =>
+      _localFile != null &&
+      identical(_fileOwner, widget.avatarMedia) &&
+      _fileIdentity != null &&
+      _fileIdentity == _cacheMedia?.avatarCacheIdentity(widget.fallbackSeed) &&
+      _fileUri == _effectiveUri &&
+      _fileUri != null &&
+      _fileUri.toString().isNotEmpty;
+
+  void _clearLocalFile() {
+    _localFile = null;
+    _fileOwner = null;
+    _fileIdentity = null;
+    _fileUri = null;
+    _localPainted = false;
+  }
+
   CachedAvatarMediaCapability? get _cacheMedia =>
       widget.avatarMedia is CachedAvatarMediaCapability
           ? widget.avatarMedia as CachedAvatarMediaCapability
@@ -98,7 +120,7 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
         resolved = null;
       }
       _retry.reset();
-      _localFile = null;
+      if (!_fileIsCurrent) _clearLocalFile();
       _primeImmediate();
       _resolve();
     }
@@ -129,17 +151,30 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
     if (_localOnly) {
       resolved = null;
       try {
-        final file = await cache!.readCachedAvatar(
+        final owner = widget.avatarMedia;
+        final identity = cache!.avatarCacheIdentity(widget.fallbackSeed);
+        final uri = _effectiveUri;
+        final file = await cache.readCachedAvatar(
             avatarUri: _effectiveUri, displayIdentity: widget.fallbackSeed);
         if (!mounted ||
             generation != _resolutionGeneration ||
-            !cache.usesLocalAvatarCacheOnly) {
+            !cache.usesLocalAvatarCacheOnly ||
+            !identical(owner, widget.avatarMedia) ||
+            identity == null ||
+            identity != cache.avatarCacheIdentity(widget.fallbackSeed) ||
+            uri != _effectiveUri) {
           return;
         }
-        setState(() => _localFile = file);
+        setState(() {
+          _localFile = file;
+          _fileOwner = owner;
+          _fileIdentity = identity;
+          _fileUri = uri;
+          _localPainted = false;
+        });
       } catch (_) {
         if (mounted && generation == _resolutionGeneration) {
-          setState(() => _localFile = null);
+          setState(_clearLocalFile);
         }
       }
       return;
@@ -203,13 +238,22 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
     final cache = _cacheMedia;
     final identity = cache?.avatarCacheIdentity(widget.fallbackSeed);
     final admitted = cache == null || identity != null;
+    if (!_fileIsCurrent) _clearLocalFile();
+    final file = _localFile;
     return UserAvatar(
       nickname: widget.nickname,
       fallbackSeed: widget.fallbackSeed,
       avatarCacheKey: identity,
       localOnly: _localOnly || !admitted,
       localImageProvider:
-          !admitted || _localFile == null ? null : FileImage(_localFile!),
+          !admitted || file == null || (!_localOnly && !_localPainted)
+              ? null
+              : FileImage(file),
+      onLocalImagePainted: () {
+        if (mounted && identical(file, _localFile) && _fileIsCurrent) {
+          _localPainted = true;
+        }
+      },
       avatarUrl: _localOnly ? null : resolved?.url ?? widget.fallbackAvatarUrl,
       avatarHeaders: resolved?.headers,
       diagnosticSource: widget.diagnosticSource,
