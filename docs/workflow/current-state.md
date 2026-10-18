@@ -1,5 +1,13 @@
 # 当前工作状态
 
+## 2026-10-18 缓存房间准入修正：2227 Debug已装，验收继续
+
+用户要求快照准入拒绝后不再先等本地时间线才入房，最小身份绑定后合法缓存先显示、完整检查后台继续。产品60707939，测试夹具96711666；共享6261PASS/9SKIP/0FAIL、analyze0，fixture定向7PASS/analyze0。普通0.4.58+2227固定签名重建APK356e0a98…d3023c已保数据安装5556，UID10090/firstInstall及设备SHA确认，未发真实消息、未改生产。
+
+当前验收未完成：普通14房冷启均观察到内容，4个roomHIT324–419ms、10个MISS1045–4498ms；push15–49ms/lease→push3–28ms。原生最终r3仍FAIL：首例后续通讯录命中0、terminal另有两条未展开异常；不能用成功报告条数替代测试结果。已证明的四次warm缓存重入都在SQL关闭时当前可见且有真实气泡。后台快照能提交，但首批覆盖缓慢；r5同revision/active0的只读结构计数heads0→17，VM时长不作性能。新8条首屏→40后台补齐方案已获DOMAIN后QUALITY有条件设计审查，TDD进行中，尚未包含在已装2227。
+
+下一步：观察red-staged-cache预期失败，最小两阶段实现并补deep失败/隐私/迟到/清理测试；继续原生导航/terminal取证，最终门禁及普通MAIN/LAUNCHER全房复测。14个早期合成worker测试DB清理被自动审批拒绝，忽略且不入APK，不再尝试。聚合verify缺.env，未导入生产凭据。见[任务](tasks/2026-10-18-room-entry-readiness.md)、[报告](../verification/2026-10-18-room-entry-readiness.md)，原始产物留interactive-cache-startup工作树。
+
 ## 2026-10-18 最近表情位置修复：2225 Debug已安装；冷启动等待仍开放
 
 用户要求最近表情本次展开保持位置、收起重开再更新。已按真实坐标RED/GREEN修复，记录照常持久化，迟到加载不再移动目标；39相关PASS、完整analyze0、SPEC→独立QUALITY通过。普通0.4.56+2225固定签名重建APK SHAe992a25726f3849c9f0662632caadeb9df2b14df016ac91bd3206311815e9ba8，源码84152b0f；2141mobile blobs编译前后绑定、重建/签名/语义验证PASS，install-r保留UID10090/firstInstall及设备哈希。模拟器普通UI同位置连续选择/重开最近顺序PASS，未发送消息，原空草稿恢复。初构建NPE及诊断命令参数失败保留，最终完整r2通过；不交付诊断中间包。

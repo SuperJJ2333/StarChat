@@ -7379,6 +7379,11 @@ final class MatrixSdkE2eeClient
   StartupProjectionCoordinator? _projectionCoordinator;
   bool _projectionWriting = false;
   bool _projectionRefreshPending = false;
+  Completer<void>? _projectionQuickReady;
+  StartupProjectionCapture? _publishedProjectionCapture;
+  StartupProjectionAdmission? _publishedProjectionIdentity;
+  String? _publishedProjectionDigest;
+  int _publishedProjectionDepth = 0;
   Future<void>? _displayRefreshFlight;
   bool _displayRefreshPending = false;
   String? _requestedDisplayRoom;
@@ -7484,6 +7489,11 @@ final class MatrixSdkE2eeClient
       _displayRefreshPending = true;
       return _displayRefreshFlight!;
     }
+    final quickReady = _projectionQuickReady;
+    if (_projectionWriting && quickReady != null && !quickReady.isCompleted) {
+      return quickReady.future.then((_) =>
+          _refreshRoomDisplayHeads(prioritizedRoomIds: prioritizedRoomIds));
+    }
     return _displayRefreshFlight = () async {
       try {
         final client = _client;
@@ -7532,7 +7542,7 @@ final class MatrixSdkE2eeClient
           if (permit == null) return;
           final generation = room.historyGeneration;
           final source =
-              await client.database?.getEventList(room, limit: 40) ?? <Event>[];
+              await client.database?.getEventList(room, limit: 8) ?? <Event>[];
           // Background display preparation must not mark lazy room state as
           // fully loaded before canonical participant recovery has run.
           final timeline = Timeline(
@@ -7611,8 +7621,14 @@ final class MatrixSdkE2eeClient
     }
     final permit = coordinator.beginCapture();
     if (permit == null) return;
+    final previousDisplay = _displayRefreshFlight;
+    final quickReady = Completer<void>();
+    _projectionQuickReady = quickReady;
     _projectionWriting = true;
     try {
+      // An already running shallow display read finishes before the writer.
+      // New repair requests wait only for the shallow commit, never deep SQL.
+      await previousDisplay;
       await cache.withWriter(() async {
         if (!coordinator.isCurrent(permit)) return;
         final active = _client!;
@@ -7621,19 +7637,6 @@ final class MatrixSdkE2eeClient
           return;
         }
         final installation = await cache.primeInstallation();
-        final admission =
-            await secure.prepareStartupProjectionHead(installation);
-        if (admission == null) {
-          markStartupProjection(
-              StartupProjectionPhase.projectionCommitFailure, startupClock,
-              reason: StartupProjectionReason.identityUnavailable);
-          return;
-        }
-        if (admission.userId != active.userID ||
-            admission.deviceId != active.deviceID ||
-            !coordinator.isCurrent(permit)) {
-          return;
-        }
         final database = active.database;
         final account = active.userID;
         final device = active.deviceID;
@@ -7648,240 +7651,291 @@ final class MatrixSdkE2eeClient
             capturedRooms.entries.every((entry) =>
                 identical(active.getRoomById(entry.key.id), entry.key) &&
                 entry.key.historyGeneration == entry.value);
-        final snapshot = await conversations.snapshot();
-        final history = await _loadLocalHistory(active);
-        final rows = <StartupProjectionRoom>[];
-        final byId = {for (final row in snapshot.rooms) row.id: row};
-        final ordered = orderConversations([
-          for (final row in snapshot.rooms)
-            if (!row.preference.hidden &&
-                row.id != snapshot.vaultRoomId &&
-                row.id != snapshot.reminderRoomId)
-              ConversationProjection(
-                  roomId: row.id,
-                  isGroup: !row.isDirect,
-                  lastActivity: row.lastActivityAt ??
-                      DateTime.fromMillisecondsSinceEpoch(0),
-                  preference: row.preference),
-        ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
-        final selectedIds = ordered.take(40).map((row) => row.roomId).toSet();
-        _roomDisplayHeads.removeWhere((id, head) =>
-            (!selectedIds.contains(id) && id != _requestedDisplayRoom) ||
-            !head.isCurrent());
-        for (final item in ordered.take(40)) {
-          final row = byId[item.roomId]!;
-          if (!coordinator.isCurrent(permit)) return;
-          final room = active.getRoomById(row.id);
-          if (room == null) continue;
-          final historyGeneration = room.historyGeneration;
-          capturedRooms[room] = historyGeneration;
-          if (!captureCurrent()) return;
-          final filter = history.readFilter(room.id);
-          // Display capture needs persisted bounded events, not complete lazy
-          // room state, sender loading or full timeline authority preparation.
-          final source = await database?.getEventList(room, limit: 40);
-          if (!captureCurrent()) return;
-          final timeline = source == null
-              ? await room.getTimeline()
-              : Timeline(
-                  room: room,
-                  chunk: TimelineChunk(events: source),
-                  persistedInitialIds: source
-                      .where((e) => e.status.isSynced)
-                      .map((e) => e.eventId));
-          final events = <StartupProjectionEvent>[];
-          try {
-            await timeline.hydrateCachedEvents(
-                timeline.events.take(40).toList(),
-                isActive: captureCurrent);
-            if (!captureCurrent()) return;
-            for (final event in timeline.events.take(40)) {
-              if (event.redacted ||
-                  filter(event.eventId, event.originServerTs)) {
-                continue;
-              }
-              final kind = event.type == EventTypes.Sticker
-                  ? 'm.sticker'
-                  : event.type == EventTypes.Message
-                      ? event.messageType
-                      : event.type;
-              if (!StartupProjectionEvent.kinds.contains(kind)) continue;
-              final candidate = StartupProjectionEvent(
-                  id: event.eventId,
-                  sender: event.senderId,
-                  body: kind.startsWith('com.changliao.') ? '[消息]' : event.body,
-                  kind: kind,
-                  media: _projectionMedia(event.content),
-                  timestamp: event.originServerTs.millisecondsSinceEpoch,
-                  senderName: event.senderId);
-              try {
-                StartupProjectionEvent.fromJson(candidate.toJson());
-                events.add(candidate);
-              } on FormatException {
-                /* Explicit partial coverage omits oversized records. */
-              }
-            }
-          } finally {
-            timeline.cancelSubscriptions();
-          }
-          final preview = row.lastEvent;
-          final members = <StartupProjectionMember>[];
-          final projected = StartupProjectionRoom(
-              id: row.id,
-              name: row.displayName,
-              direct: row.isDirect,
-              peer: row.directPeerId,
-              avatar: row.avatar?.toString(),
-              members: members,
-              unread: row.notificationCount,
-              pinned: row.preference.pinned,
-              muted: row.preference.muted,
-              encrypted: room.encrypted,
-              membership: room.membership.name,
-              canSend: room.canSendDefaultMessages,
-              activity:
-                  (row.lastActivityAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-                      .millisecondsSinceEpoch,
-              preview: preview == null ||
-                      preview.type != EventTypes.Message ||
-                      preview.redacted
-                  ? null
-                  : StartupProjectionEvent(
-                      id: preview.eventId,
-                      sender: preview.senderId,
-                      kind: StartupProjectionEvent.kinds
-                              .contains(preview.messageType)
-                          ? preview.messageType
-                          : 'm.notice',
-                      media: _projectionMedia(preview.content),
-                      body: preview.messageType.startsWith('com.changliao.')
-                          ? '[消息]'
-                          : preview.body,
-                      timestamp: preview.originServerTs.millisecondsSinceEpoch,
-                      senderName: preview.sender.displayName),
-              events: events);
-          try {
-            StartupProjectionRoom.fromJson(projected.toJson());
-            // Optional mosaic metadata must never displace a valid room.
-            // Validate the base first, then admit each bounded member only if
-            // both its record and the aggregate room metadata still fit.
-            for (final member in row.members.take(9)) {
-              final candidate = StartupProjectionMember(
-                  id: member.id,
-                  name: member.displayName,
-                  avatar: member.avatar?.toString());
-              try {
-                StartupProjectionMember.fromJson(candidate.toJson());
-              } on FormatException {
-                continue;
-              }
-              members.add(candidate);
-              try {
-                StartupProjectionRoom.fromJson(projected.toJson());
-              } on FormatException {
-                members.removeLast();
-              }
-            }
-            if (!captureCurrent()) return;
-            rows.add(projected);
-            if (coordinator.isCurrent(permit) &&
-                identical(active, _client) &&
-                identical(active.getRoomById(row.id), room) &&
-                room.historyGeneration == historyGeneration &&
-                utf8.encode(jsonEncode(projected.toJson())).length +
-                        _roomDisplayHeads.entries
-                            .where((e) => e.key != row.id)
-                            .fold<int>(
-                                0,
-                                (n, e) =>
-                                    n +
-                                    utf8
-                                        .encode(
-                                            jsonEncode(e.value.row.toJson()))
-                                        .length) <
-                    startupProjectionMaxEnvelope - 128) {
-              _roomDisplayHeads[row.id] = (
-                row: projected,
-                isCurrent: () =>
-                    identical(coordinator, _projectionCoordinator) &&
-                    coordinator.isCurrent(permit),
-                room: room,
-                generation: historyGeneration
-              );
-              while (_roomDisplayHeads.length > 40) {
-                _roomDisplayHeads.remove(_roomDisplayHeads.keys
-                    .firstWhere((id) => id != _requestedDisplayRoom));
-              }
-            }
-          } on FormatException {
-            /* Oversized metadata cannot enter the projection. */
-          }
-        }
-        if (!captureCurrent()) return;
-        // Keep metadata for every admitted row; add newest heads round-robin.
-        final selected = <StartupProjectionRoom>[];
-        StartupProjectionRoom withEvents(
-                StartupProjectionRoom r, List<StartupProjectionEvent> events) =>
-            StartupProjectionRoom(
-                id: r.id,
-                name: r.name,
-                direct: r.direct,
-                peer: r.peer,
-                avatar: r.avatar,
-                members: r.members,
-                unread: r.unread,
-                pinned: r.pinned,
-                muted: r.muted,
-                canSend: r.canSend,
-                activity: r.activity,
-                encrypted: r.encrypted,
-                membership: r.membership,
-                preview: r.preview,
-                events: events);
-        for (final row in rows) {
-          selected.add(withEvents(row, []));
-        }
-        var payloadBytes = StartupProjection(selected).encode().length;
-        for (var index = 0; index < 40; index++) {
-          for (var roomIndex = 0; roomIndex < rows.length; roomIndex++) {
-            final original = rows[roomIndex];
-            if (index >= original.events.length) continue;
-            final previous = selected[roomIndex];
-            final event = original.events[index];
-            final addedBytes = utf8.encode(jsonEncode(event.toJson())).length +
-                (previous.events.isEmpty ? 0 : 1);
-            if (payloadBytes + addedBytes + 38 > startupProjectionMaxEnvelope) {
-              continue;
-            }
-            selected[roomIndex] =
-                withEvents(previous, [...previous.events, event]);
-            payloadBytes += addedBytes;
-          }
-        }
-        final prepared =
-            await cache.prepare(admission, StartupProjection(selected));
-        if (!captureCurrent()) return;
-        var committed = false;
-        final published = await coordinator.commit(permit, () async {
-          if (!captureCurrent()) return;
-          committed = await secure.commitStartupProjectionHead(
-              admission, prepared.digest, prepared.length);
-        });
-        if (committed && !captureCurrent()) {
-          await secure.invalidateStartupProjection();
-          return;
-        }
-        if (published && committed) {
-          markStartupProjection(
-              StartupProjectionPhase.projectionCommitSuccess, startupClock,
-              bytes: prepared.length,
-              rooms: selected.length,
-              events: selected.fold<int>(0, (n, r) => n + r.events.length));
-          await cache.clean(prepared.digest);
-        } else {
+        final initialAdmission =
+            await secure.prepareStartupProjectionHead(installation);
+        if (initialAdmission == null) {
           markStartupProjection(
               StartupProjectionPhase.projectionCommitFailure, startupClock,
-              reason: StartupProjectionReason.commitRejected);
+              reason: StartupProjectionReason.identityUnavailable);
+          return;
+        }
+        final previousCapture = _publishedProjectionCapture;
+        final previousIdentity = _publishedProjectionIdentity;
+        final haveCurrentHead = previousCapture != null &&
+            previousIdentity != null &&
+            coordinator.isCurrent(previousCapture) &&
+            initialAdmission.sameIdentity(previousIdentity) &&
+            initialAdmission.digest == _publishedProjectionDigest &&
+            _publishedProjectionDepth >= 8;
+        if (haveCurrentHead && !quickReady.isCompleted) quickReady.complete();
+        // A valid committed head remains readable while deeper data is prepared.
+        // Each pass re-reads admission so prepare keeps the current AEAD file.
+        final eventLimits =
+            database == null || haveCurrentHead ? const [40] : const [8, 40];
+        var firstPass = true;
+        for (final eventLimit in eventLimits) {
+          if (!captureCurrent()) return;
+          final admission = firstPass
+              ? initialAdmission
+              : await secure.prepareStartupProjectionHead(installation);
+          firstPass = false;
+          if (admission == null) {
+            markStartupProjection(
+                StartupProjectionPhase.projectionCommitFailure, startupClock,
+                reason: StartupProjectionReason.identityUnavailable);
+            return;
+          }
+          if (admission.userId != active.userID ||
+              admission.deviceId != active.deviceID ||
+              !coordinator.isCurrent(permit)) {
+            return;
+          }
+          final snapshot = await conversations.snapshot();
+          final history = await _loadLocalHistory(active);
+          final rows = <StartupProjectionRoom>[];
+          final byId = {for (final row in snapshot.rooms) row.id: row};
+          final ordered = orderConversations([
+            for (final row in snapshot.rooms)
+              if (!row.preference.hidden &&
+                  row.id != snapshot.vaultRoomId &&
+                  row.id != snapshot.reminderRoomId)
+                ConversationProjection(
+                    roomId: row.id,
+                    isGroup: !row.isDirect,
+                    lastActivity: row.lastActivityAt ??
+                        DateTime.fromMillisecondsSinceEpoch(0),
+                    preference: row.preference),
+          ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
+          final selectedIds = ordered.take(40).map((row) => row.roomId).toSet();
+          _roomDisplayHeads.removeWhere((id, head) =>
+              (!selectedIds.contains(id) && id != _requestedDisplayRoom) ||
+              !head.isCurrent());
+          for (final item in ordered.take(40)) {
+            final row = byId[item.roomId]!;
+            if (!coordinator.isCurrent(permit)) return;
+            final room = active.getRoomById(row.id);
+            if (room == null) continue;
+            final historyGeneration = room.historyGeneration;
+            capturedRooms.putIfAbsent(room, () => historyGeneration);
+            if (!captureCurrent()) return;
+            final filter = history.readFilter(room.id);
+            // Display capture needs persisted bounded events, not complete lazy
+            // room state, sender loading or full timeline authority preparation.
+            final source =
+                await database?.getEventList(room, limit: eventLimit);
+            if (!captureCurrent()) return;
+            final timeline = source == null
+                ? await room.getTimeline()
+                : Timeline(
+                    room: room,
+                    chunk: TimelineChunk(events: source),
+                    persistedInitialIds: source
+                        .where((e) => e.status.isSynced)
+                        .map((e) => e.eventId));
+            final events = <StartupProjectionEvent>[];
+            try {
+              await timeline.hydrateCachedEvents(
+                  timeline.events.take(eventLimit).toList(),
+                  isActive: captureCurrent);
+              if (!captureCurrent()) return;
+              for (final event in timeline.events.take(eventLimit)) {
+                if (event.redacted ||
+                    filter(event.eventId, event.originServerTs)) {
+                  continue;
+                }
+                final kind = event.type == EventTypes.Sticker
+                    ? 'm.sticker'
+                    : event.type == EventTypes.Message
+                        ? event.messageType
+                        : event.type;
+                if (!StartupProjectionEvent.kinds.contains(kind)) continue;
+                final candidate = StartupProjectionEvent(
+                    id: event.eventId,
+                    sender: event.senderId,
+                    body:
+                        kind.startsWith('com.changliao.') ? '[消息]' : event.body,
+                    kind: kind,
+                    media: _projectionMedia(event.content),
+                    timestamp: event.originServerTs.millisecondsSinceEpoch,
+                    senderName: event.senderId);
+                try {
+                  StartupProjectionEvent.fromJson(candidate.toJson());
+                  events.add(candidate);
+                } on FormatException {
+                  /* Explicit partial coverage omits oversized records. */
+                }
+              }
+            } finally {
+              timeline.cancelSubscriptions();
+            }
+            final preview = row.lastEvent;
+            final members = <StartupProjectionMember>[];
+            final projected = StartupProjectionRoom(
+                id: row.id,
+                name: row.displayName,
+                direct: row.isDirect,
+                peer: row.directPeerId,
+                avatar: row.avatar?.toString(),
+                members: members,
+                unread: row.notificationCount,
+                pinned: row.preference.pinned,
+                muted: row.preference.muted,
+                encrypted: room.encrypted,
+                membership: room.membership.name,
+                canSend: room.canSendDefaultMessages,
+                activity: (row.lastActivityAt ??
+                        DateTime.fromMillisecondsSinceEpoch(0))
+                    .millisecondsSinceEpoch,
+                preview: preview == null ||
+                        preview.type != EventTypes.Message ||
+                        preview.redacted
+                    ? null
+                    : StartupProjectionEvent(
+                        id: preview.eventId,
+                        sender: preview.senderId,
+                        kind: StartupProjectionEvent.kinds
+                                .contains(preview.messageType)
+                            ? preview.messageType
+                            : 'm.notice',
+                        media: _projectionMedia(preview.content),
+                        body: preview.messageType.startsWith('com.changliao.')
+                            ? '[消息]'
+                            : preview.body,
+                        timestamp:
+                            preview.originServerTs.millisecondsSinceEpoch,
+                        senderName: preview.sender.displayName),
+                events: events);
+            try {
+              StartupProjectionRoom.fromJson(projected.toJson());
+              // Optional mosaic metadata must never displace a valid room.
+              // Validate the base first, then admit each bounded member only if
+              // both its record and the aggregate room metadata still fit.
+              for (final member in row.members.take(9)) {
+                final candidate = StartupProjectionMember(
+                    id: member.id,
+                    name: member.displayName,
+                    avatar: member.avatar?.toString());
+                try {
+                  StartupProjectionMember.fromJson(candidate.toJson());
+                } on FormatException {
+                  continue;
+                }
+                members.add(candidate);
+                try {
+                  StartupProjectionRoom.fromJson(projected.toJson());
+                } on FormatException {
+                  members.removeLast();
+                }
+              }
+              if (!captureCurrent()) return;
+              rows.add(projected);
+              if (coordinator.isCurrent(permit) &&
+                  identical(active, _client) &&
+                  identical(active.getRoomById(row.id), room) &&
+                  room.historyGeneration == historyGeneration &&
+                  utf8.encode(jsonEncode(projected.toJson())).length +
+                          _roomDisplayHeads.entries
+                              .where((e) => e.key != row.id)
+                              .fold<int>(
+                                  0,
+                                  (n, e) =>
+                                      n +
+                                      utf8
+                                          .encode(
+                                              jsonEncode(e.value.row.toJson()))
+                                          .length) <
+                      startupProjectionMaxEnvelope - 128) {
+                _roomDisplayHeads[row.id] = (
+                  row: projected,
+                  isCurrent: () =>
+                      identical(coordinator, _projectionCoordinator) &&
+                      coordinator.isCurrent(permit),
+                  room: room,
+                  generation: historyGeneration
+                );
+                while (_roomDisplayHeads.length > 40) {
+                  _roomDisplayHeads.remove(_roomDisplayHeads.keys
+                      .firstWhere((id) => id != _requestedDisplayRoom));
+                }
+              }
+            } on FormatException {
+              /* Oversized metadata cannot enter the projection. */
+            }
+          }
+          if (!captureCurrent()) return;
+          // Keep metadata for every admitted row; add newest heads round-robin.
+          final selected = <StartupProjectionRoom>[];
+          StartupProjectionRoom withEvents(StartupProjectionRoom r,
+                  List<StartupProjectionEvent> events) =>
+              StartupProjectionRoom(
+                  id: r.id,
+                  name: r.name,
+                  direct: r.direct,
+                  peer: r.peer,
+                  avatar: r.avatar,
+                  members: r.members,
+                  unread: r.unread,
+                  pinned: r.pinned,
+                  muted: r.muted,
+                  canSend: r.canSend,
+                  activity: r.activity,
+                  encrypted: r.encrypted,
+                  membership: r.membership,
+                  preview: r.preview,
+                  events: events);
+          for (final row in rows) {
+            selected.add(withEvents(row, []));
+          }
+          var payloadBytes = StartupProjection(selected).encode().length;
+          for (var index = 0; index < eventLimit; index++) {
+            for (var roomIndex = 0; roomIndex < rows.length; roomIndex++) {
+              final original = rows[roomIndex];
+              if (index >= original.events.length) continue;
+              final previous = selected[roomIndex];
+              final event = original.events[index];
+              final addedBytes =
+                  utf8.encode(jsonEncode(event.toJson())).length +
+                      (previous.events.isEmpty ? 0 : 1);
+              if (payloadBytes + addedBytes + 38 >
+                  startupProjectionMaxEnvelope) {
+                continue;
+              }
+              selected[roomIndex] =
+                  withEvents(previous, [...previous.events, event]);
+              payloadBytes += addedBytes;
+            }
+          }
+          final prepared =
+              await cache.prepare(admission, StartupProjection(selected));
+          if (!captureCurrent()) return;
+          var committed = false;
+          final published = await coordinator.commit(permit, () async {
+            if (!captureCurrent()) return;
+            committed = await secure.commitStartupProjectionHead(
+                admission, prepared.digest, prepared.length);
+          });
+          if (committed && !captureCurrent()) {
+            await secure.invalidateStartupProjection();
+            return;
+          }
+          if (published && committed) {
+            _publishedProjectionCapture = permit;
+            _publishedProjectionIdentity = admission;
+            _publishedProjectionDigest = prepared.digest;
+            _publishedProjectionDepth = eventLimit;
+            markStartupProjection(
+                StartupProjectionPhase.projectionCommitSuccess, startupClock,
+                bytes: prepared.length,
+                rooms: selected.length,
+                events: selected.fold<int>(0, (n, r) => n + r.events.length));
+            await cache.clean(prepared.digest);
+            if (!quickReady.isCompleted) quickReady.complete();
+          } else {
+            markStartupProjection(
+                StartupProjectionPhase.projectionCommitFailure, startupClock,
+                reason: StartupProjectionReason.commitRejected);
+            return;
+          }
         }
       });
     } catch (_) {
@@ -7890,6 +7944,10 @@ final class MatrixSdkE2eeClient
           reason: StartupProjectionReason.captureFailed);
       rethrow;
     } finally {
+      if (!quickReady.isCompleted) quickReady.complete();
+      if (identical(_projectionQuickReady, quickReady)) {
+        _projectionQuickReady = null;
+      }
       _projectionWriting = false;
       if (_projectionRefreshPending) {
         _projectionRefreshPending = false;

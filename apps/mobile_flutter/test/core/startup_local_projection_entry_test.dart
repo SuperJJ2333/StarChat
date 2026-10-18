@@ -93,7 +93,9 @@ class _HeldDatabase extends MatrixSdkDatabase {
   @override
   Future<List<Event>> getEventList(Room room,
       {int start = 0, bool onlySending = false, int? limit}) async {
-    if (bulkRoomRead != null && room.id == '!room-63:synthetic.test') {
+    if (bulkRoomRead != null &&
+        limit == 8 &&
+        room.id == '!room-63:synthetic.test') {
       if (!bulkRoomReadEntered.isCompleted) bulkRoomReadEntered.complete();
       await bulkRoomRead!.future;
     }
@@ -279,6 +281,31 @@ void registerStartupProjectionEntryTests(
                         : 'actual main independent projection precedes held whole-store preflight')
                     : 'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
         (tester) async {
+      var diagnosticStage = 'fixture_setup';
+      if (Platform.isAndroid && report != null) {
+        final originalErrorHandler = FlutterError.onError;
+        var observedErrors = 0;
+        FlutterError.onError = (details) {
+          if (++observedErrors <= 8) {
+            try {
+              report({
+                'scenario': 'framework-error-observation',
+                'diagnostic_only': true,
+                'stage': diagnosticStage,
+                'error_index': observedErrors,
+                'exception_type': details.exception.runtimeType.toString(),
+                'stack':
+                    details.stack?.toString().split('\n').take(14).join('\n') ??
+                        '',
+              });
+            } catch (_) {
+              // Diagnostic observers cannot replace the framework failure.
+            }
+          }
+          originalErrorHandler?.call(details);
+        };
+        addTearDown(() => FlutterError.onError = originalErrorHandler);
+      }
       final oldPaths = PathProviderPlatform.instance;
       late Directory directory;
       late SecureSessionStore store;
@@ -670,10 +697,50 @@ void registerStartupProjectionEntryTests(
       }
 
       Future<void> tapReady(Finder finder) async {
+        diagnosticStage = 'tap_ready_wait';
         for (var attempt = 0;
             attempt < 300 && finder.hitTestable().evaluate().isEmpty;
             attempt++) {
           await flush(1);
+        }
+        if (finder.hitTestable().evaluate().isEmpty) {
+          final bounds = <Map<String, Object>>[];
+          for (final element in finder.evaluate().take(4)) {
+            final render = element.renderObject;
+            if (render is! RenderBox || !render.attached || !render.hasSize) {
+              continue;
+            }
+            final topLeft = render.localToGlobal(Offset.zero);
+            final center =
+                render.localToGlobal(render.size.center(Offset.zero));
+            bounds.add({
+              'left': topLeft.dx,
+              'top': topLeft.dy,
+              'width': render.size.width,
+              'height': render.size.height,
+              'route_current': ModalRoute.of(element)?.isCurrent == true,
+              'hit_path_types': tester
+                  .hitTestOnBinding(center)
+                  .path
+                  .take(12)
+                  .map((entry) => entry.target.runtimeType.toString())
+                  .toList(),
+            });
+          }
+          report?.call({
+            'scenario': 'native-hit-test-failure-observation',
+            'diagnostic_only': true,
+            'total_matches': finder.evaluate().length,
+            'hit_testable_matches': finder.hitTestable().evaluate().length,
+            'view_inset_bottom': tester.view.viewInsets.bottom,
+            'view_padding_bottom': tester.view.padding.bottom,
+            'device_pixel_ratio': tester.view.devicePixelRatio,
+            'focused_widget_type': FocusManager
+                    .instance.primaryFocus?.context?.widget.runtimeType
+                    .toString() ??
+                'none',
+            'bounds': bounds,
+          });
         }
         expect(
           finder.hitTestable(),
@@ -928,8 +995,11 @@ void registerStartupProjectionEntryTests(
             expect(full.getRoomById('!room-64:synthetic.test')!.partial, isTrue,
                 reason:
                     'display capture must not mark canonical room complete');
-            expect(held.boundedReads, hasLength(40));
-            expect(held.boundedReads.every((read) => read.$2 == 40), isTrue);
+            expect(held.boundedReads, hasLength(80));
+            expect(held.boundedReads.take(40).every((read) => read.$2 == 8),
+                isTrue);
+            expect(held.boundedReads.skip(40).every((read) => read.$2 == 40),
+                isTrue);
             held.postLoadHold = null;
           }
           final installation = await cache.readInstallation();
@@ -1548,6 +1618,9 @@ void registerStartupProjectionEntryTests(
           expect(held.bulkRoomReadEntered.isCompleted, isTrue,
               reason:
                   'nonempty SDK sync refreshes priority head before unrelated bulk hydration');
+          // Business refresh intentionally remains unavailable in this
+          // composition. Display-only repair must work independently of
+          // durable snapshot write eligibility.
           held.warmRoomRead = Completer<void>();
           auditVisibleFrames = true;
           firstRoomContent = false;
@@ -1612,15 +1685,18 @@ void registerStartupProjectionEntryTests(
               reason: 'ordinary entry eventually reads its persisted timeline');
           expect(held.warmRoomRead!.isCompleted, isFalse);
           expect(tester.state(find.byType(RoomPage)), same(cachedRoomState));
-          expect(
-              (cachedRoomState as dynamic)
-                  .controller
-                  .messages
-                  .map((dynamic message) => message.id)
-                  .toList(),
+          final expandedIds = (cachedRoomState as dynamic)
+              .controller
+              .messages
+              .map((dynamic message) => message.id)
+              .toList();
+          expect(expandedIds.where(cachedMessageIds.contains).toList(),
               cachedMessageIds,
               reason:
-                  'scrolling may move the last bubble outside the viewport');
+                  'pagination may add history but must retain cached order');
+          expect(expandedIds.toSet().length, expandedIds.length,
+              reason:
+                  'pagination and canonical handoff must not duplicate messages');
           final hydratedWaitOffset = heldScroll.position.pixels;
           await tester.drag(heldViewport, const Offset(0, -180));
           await flush(15);
@@ -1709,6 +1785,7 @@ void registerStartupProjectionEntryTests(
           'network_sends_after_recovery': transportSends
         });
       } finally {
+        diagnosticStage = 'fixture_teardown';
         if (!scenarioReported && navigationChecks.isNotEmpty) {
           report?.call({
             'scenario': 'native-navigation-failure-observation',
