@@ -87,6 +87,7 @@ void main() {
           deviceId: 'original-device');
       expect(logins, 1);
       expect(reopened.encryption.olmManager.uploads, 1);
+      expect(reopened.immediateSyncStarts, 1);
       expect(matrix.credentialsInvalid, isFalse);
       expect(reopened.logoutCalls, 0);
     });
@@ -132,6 +133,7 @@ void main() {
       }
       expect(tokenLogins, 1);
       expect(client.encryption.olmManager.uploads, 1);
+      expect(client.immediateSyncStarts, succeeds ? 1 : 0);
       expect(matrix.credentialsInvalid, !succeeds);
       expect(client.logoutCalls, 0);
     });

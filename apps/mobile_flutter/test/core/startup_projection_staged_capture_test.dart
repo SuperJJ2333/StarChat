@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +29,13 @@ class _Database extends MatrixSdkDatabase {
   Future<void> Function(Room, int?)? beforeRead;
   Future<void> Function(Room)? afterFirstDeepRead;
   bool notified = false;
+  Future<void> Function()? beforeStoreBatch;
+  @override
+  Future<void> storePrevBatch(String value) async {
+    await beforeStoreBatch?.call();
+    await super.storePrevBatch(value);
+  }
+
   @override
   Future<List<Event>> getEventList(Room room,
       {int start = 0, bool onlySending = false, int? limit}) async {
@@ -48,7 +58,31 @@ class _Database extends MatrixSdkDatabase {
 }
 
 class _Client extends Client {
-  _Client(super.name, this.db, this.user);
+  _Client(super.name, this.db, this.user, {http.Client? transport})
+      : super(
+            httpClient: transport ??
+                MockClient((request) async => http.Response(
+                    jsonEncode({
+                      'user_id': user,
+                      'device_id': 'SYNTHETIC',
+                      'access_token': 'synthetic-refreshed'
+                    }),
+                    200)));
+  @override
+  void startSyncImmediately() {}
+  var aborts = 0;
+  @override
+  Future<void> abortSync() {
+    aborts++;
+    return super.abortSync();
+  }
+
+  @override
+  Future<(DiscoveryInformation?, GetVersionsResponse, List<LoginFlow>)>
+      checkHomeserver(Uri homeserverUrl,
+              {bool checkWellKnown = true,
+              Set<String>? overrideSupportedVersions}) async =>
+          (null, GetVersionsResponse(versions: const []), const <LoginFlow>[]);
   final _Database db;
   final String user;
   @override
@@ -112,6 +146,10 @@ class _Fixture {
   static Future<_Fixture> create(String name,
       {bool display = false,
       bool pending = false,
+      http.Client? transport,
+      Future<void> Function(Client)? suspendClient,
+      Future<Client> Function()? resumeClient,
+      Future<void> Function(String, String)? selectClientAccount,
       Future<void> Function(Room, int?)? beforeRead}) async {
     SharedPreferences.setMockInitialValues({});
     final root = Directory(
@@ -132,7 +170,8 @@ class _Fixture {
         _Database(name, database: connection, sqfliteFactory: factory);
     database.beforeRead = beforeRead;
     await database.open();
-    final client = _Client(name, database, '@$name:synthetic.test');
+    final client =
+        _Client(name, database, '@$name:synthetic.test', transport: transport);
     await secure.saveSession(
         accessToken: 'synthetic',
         refreshToken: 'synthetic',
@@ -189,15 +228,19 @@ class _Fixture {
     }
     final owner = MatrixSdkE2eeClient(client,
         homeserver: Uri.parse('https://synthetic.test'),
+        suspendClient: suspendClient,
+        resumeClient: resumeClient,
+        selectClientAccount: selectClientAccount,
         secureSessionStore: secure,
         startupAdmission: displayAdmission,
         startupProjection: displayProjection,
-        readContinuityMetadata: (_) async => MatrixClientContinuityMetadata(
-            isLoggedIn: true,
-            userId: client.userID,
-            deviceId: client.deviceID,
-            ed25519Fingerprint: 'fingerprint',
-            databaseGeneration: 'generation'));
+        readContinuityMetadata: (active) async =>
+            MatrixClientContinuityMetadata(
+                isLoggedIn: true,
+                userId: active.userID,
+                deviceId: active.deviceID,
+                ed25519Fingerprint: 'fingerprint',
+                databaseGeneration: 'generation'));
     return _Fixture(directory, connection, database, client, secure, owner);
   }
 
@@ -219,6 +262,155 @@ class _Fixture {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('retained broker adoption waits for an actual SDK SQL transaction',
+      () async {
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    var logins = 0;
+    final transport = MockClient((request) async {
+      if (request.url.path.endsWith('/filter')) {
+        return http.Response('{"filter_id":"filter"}', 200);
+      }
+      if (request.url.path.endsWith('/login')) {
+        logins++;
+        return http.Response(
+            '{"user_id":"@transaction:synthetic.test","device_id":"SYNTHETIC","access_token":"adopted"}',
+            200);
+      }
+      return http.Response('{"next_batch":"old-transaction"}', 200);
+    });
+    final fixture = await _Fixture.create('transaction', transport: transport);
+    fixture.client.homeserver = Uri.parse('https://synthetic.test');
+    fixture.client.accessToken = 'synthetic-old';
+    fixture.database.beforeStoreBatch = () async {
+      entered.complete();
+      await release.future;
+    };
+    fixture.client.backgroundSync = false;
+    final syncing = fixture.client.oneShotSync();
+    Future<void>? login;
+    try {
+      await entered.future.timeout(const Duration(seconds: 3));
+      login = fixture.owner.loginWithTokenForExpectedIdentity(
+          expectedMatrixUserId: fixture.client.userID,
+          loginToken: 'synthetic-grant',
+          homeserver: Uri.parse('https://synthetic.test'));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(fixture.client.aborts, 1);
+      expect(logins, 0,
+          reason: 'the retiring transaction must drain before broker login');
+      expect(fixture.client.accessToken, 'synthetic-old');
+      release.complete();
+      await Future.wait([syncing, login]);
+      expect(logins, 1);
+      expect(fixture.client.accessToken, 'adopted');
+    } finally {
+      if (!release.isCompleted) release.complete();
+      await syncing;
+      await login;
+      fixture.database.beforeStoreBatch = null;
+      await fixture.close();
+      transport.close();
+    }
+  });
+  test('selected accounts rebuild encrypted shallow heads while deep SQL waits',
+      () async {
+    late _Fixture fixture;
+    late _Client next;
+    fixture = await _Fixture.create('switch-a',
+        suspendClient: (_) async {},
+        resumeClient: () async => next,
+        selectClientAccount: (home, user) async {
+          await fixture.secure.selectMatrixAccount(home, user);
+          await fixture.secure.saveSession(
+              accessToken: 'synthetic',
+              refreshToken: 'synthetic',
+              matrixUserId: user);
+          await fixture.secure.matrixDatabaseKey();
+          await fixture.secure.registrationDeviceKey();
+          await fixture.secure.saveMatrixBinding(MatrixLocalBinding(
+              version: 2,
+              matrixUserId: user,
+              deviceId: 'SYNTHETIC',
+              homeserver: home,
+              databaseGeneration: 'generation',
+              ed25519Fingerprint: 'fingerprint'));
+        });
+    final factory =
+        sql.createDatabaseFactoryFfi(ffiInit: SQfLiteEncryptionHelper.ffiInit);
+    final bConnection = await factory.openDatabase(sql.inMemoryDatabasePath,
+        options: sql.OpenDatabaseOptions(onConfigure: (db) async {
+      await db.execute("PRAGMA key = 'synthetic-B-encryption-key'");
+    }));
+    final bDatabase =
+        _Database('switch-b', database: bConnection, sqfliteFactory: factory);
+    await bDatabase.open();
+    final b = _Client('switch-b', bDatabase, '@switch-b:synthetic.test');
+    final bRoom = _Room(b, 0);
+    b.localRooms.add(bRoom);
+    final event = {
+      'event_id': 'message-B',
+      'type': EventTypes.Message,
+      'sender': b.userID,
+      'origin_server_ts': 99999,
+      'content': {'msgtype': 'm.text', 'body': 'Synthetic B only'}
+    };
+    await bDatabase.storeEventUpdate(
+        EventUpdate(
+            roomID: bRoom.id, type: EventUpdateType.timeline, content: event),
+        b);
+    bRoom.lastEvent = Event.fromJson(event, bRoom);
+    try {
+      for (final selected in [b, fixture.client]) {
+        final previous = fixture.secure.startupProjectionCoordinator!;
+        final oldPermit = previous.beginDisplayCapture()!;
+        final oldSettled =
+            (selected == b ? fixture.client : b).onLocalDisplayApplySettled;
+        next = selected;
+        await fixture.owner.selectAccount(
+            selected.userID, Uri.parse('https://synthetic.test'));
+        expect(previous.isDisplayCurrent(oldPermit), isFalse);
+        expect(
+            fixture.secure.startupProjectionCoordinator!.canCapture, isFalse);
+        await fixture.owner.loginWithTokenForExpectedIdentity(
+            expectedMatrixUserId: selected.userID,
+            loginToken: 'synthetic-grant',
+            homeserver: Uri.parse('https://synthetic.test'));
+        final database = selected.db;
+        database.reset();
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        database.afterFirstDeepRead = (_) async {
+          entered.complete();
+          await release.future;
+        };
+        final capture = fixture.owner.primeStartupProjection(fixture.cache);
+        try {
+          await entered.future.timeout(const Duration(seconds: 10));
+          final head = (await fixture.read())!;
+          expect(head.$1.userId, selected.userID);
+          expect(head.$2.rooms.first.events, isNotEmpty);
+          expect(fixture.owner.hasCachedRoomDisplay(bRoom.id), isTrue);
+          final bodies =
+              head.$2.rooms.expand((r) => r.events).map((e) => e.body).toList();
+          expect(bodies.contains('Synthetic B only'), selected == b,
+              reason:
+                  'identical room IDs must not expose another account rows');
+          oldSettled?.call(SyncUpdate(nextBatch: 'retired-callback'));
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          expect((await fixture.read())!.$1.userId, selected.userID);
+          expect(release.isCompleted, isFalse);
+        } finally {
+          release.complete();
+          await capture;
+          database.afterFirstDeepRead = null;
+        }
+      }
+    } finally {
+      await fixture.close();
+      if (bConnection.isOpen) await bConnection.close();
+    }
+  });
   test('pending writer rejection releases independent display repair',
       () async {
     final entered = Completer<void>();

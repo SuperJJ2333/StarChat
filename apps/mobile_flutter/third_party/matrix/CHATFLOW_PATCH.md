@@ -1,5 +1,16 @@
 # ChatFlow integration patch on Matrix 0.34.0
 
+2026-10-19 retained credential handoff: `startSyncImmediately()` resumes a
+quiesced, successfully persisted retained login through the normal SDK loop
+with a timeout-zero first poll. It resets only the retired credentials' delay;
+an active loop or repeated call keeps its current backoff. The application
+first awaits `abortSync()` and its existing transaction drain, validates the
+server identity, retained keys and continuity, and fences revoked login intents.
+Late retired sync responses cannot invalidate newly adopted credentials. New
+device init and general retry policy are unchanged. Regressions are in
+`test/features/matrix/account_switch_readiness_test.dart` and
+`test/core/startup_projection_staged_capture_test.dart`.
+
 Upstream package: matrix 0.34.0, existing locked dependency from pub.dev mirror.
 Original LICENSE and attribution retained. Vendored lib tree is unchanged except
 `lib/src/voip/call_session.dart`, `lib/src/timeline.dart`, and the attachment

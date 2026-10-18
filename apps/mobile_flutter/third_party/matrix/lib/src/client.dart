@@ -2518,6 +2518,18 @@ class Client extends MatrixApi {
     return _sync();
   }
 
+  /// Resume after a quiesced, successfully persisted credential handoff.
+  /// The first poll is immediate; subsequent polls use the normal sync policy.
+  /// Repeated calls cannot replace a running loop or reset its error backoff.
+  void startSyncImmediately() {
+    if (_backgroundSync || _currentSync != null || _disposed || !isLogged()) {
+      return;
+    }
+    _retryDelay = Future<void>.value();
+    _backgroundSync = true;
+    runInRoot(() async => _sync(timeout: Duration.zero));
+  }
+
   /// Pass a timeout to set how long the server waits before sending an empty response.
   /// (Corresponds to the timeout param on the /sync request.)
   Future<void> _sync({Duration? timeout}) {

@@ -323,6 +323,10 @@ class LogoutTrackingClient extends Client {
   final Object? syncError;
   var logoutCalls = 0;
   var syncCalls = 0;
+  var immediateSyncStarts = 0;
+
+  @override
+  void startSyncImmediately() => immediateSyncStarts++;
   Room? roomOverride;
 
   @override

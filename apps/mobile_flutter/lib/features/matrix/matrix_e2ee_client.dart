@@ -8408,6 +8408,8 @@ final class MatrixSdkE2eeClient
   // SDK can persist credentials or initialize/upload fresh Olm keys.
   String? _confirmedNewDeviceUserId;
   Future<void> _accountSelectionQueue = Future<void>.value();
+  Future<void> _tokenLoginQueue = Future<void>.value();
+  int _tokenLoginGeneration = 0;
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
   Timer? _syncProjectionTimer;
@@ -9886,6 +9888,32 @@ final class MatrixSdkE2eeClient
     required Uri homeserver,
     String? deviceId,
     String? authorizedUserId,
+  }) {
+    // Lifecycle acquisition alone does not serialize credential adoption.
+    // Keep overlapping broker replies from replacing a newer login's token.
+    final generation = _tokenLoginGeneration;
+    final operation = _tokenLoginQueue.then((_) {
+      if (generation != _tokenLoginGeneration) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+      return _performTokenLogin(
+          generation: generation,
+          loginToken: loginToken,
+          homeserver: homeserver,
+          deviceId: deviceId,
+          authorizedUserId: authorizedUserId);
+    });
+    _tokenLoginQueue =
+        operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return operation;
+  }
+
+  Future<void> _performTokenLogin({
+    required int generation,
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+    String? authorizedUserId,
   }) async {
     try {
       await _withClient((active) async {
@@ -9895,6 +9923,7 @@ final class MatrixSdkE2eeClient
           throw StateError('Confirmed Matrix recovery target changed');
         }
         await active.checkHomeserver(homeserver);
+        LoginResponse? retainedCredentials;
         if (active.userID != null && active.deviceID != null) {
           _credentialsInvalid = true;
           final expectedUserId = active.userID;
@@ -9904,6 +9933,14 @@ final class MatrixSdkE2eeClient
           }
           if (authorizedUserId != null && authorizedUserId != expectedUserId) {
             throw StateError('Matrix credential refresh identity mismatch');
+          }
+          // Retire old HTTP responses before adopting new credentials, while
+          // retaining the SDK's drain of any transaction already processing.
+          await active.abortSync();
+          if (generation != _tokenLoginGeneration ||
+              _accessRevoked ||
+              !identical(_client, active)) {
+            throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
           }
           // 调用方传进来的 device id 只是"保留身份"的提示。它来自挂起时的观察值，
           // 而本机库可能已经在上一次轮换里被服务端改写。真正能刷新的设备是本进程
@@ -9933,6 +9970,7 @@ final class MatrixSdkE2eeClient
           if (response.userId != expectedUserId) {
             throw StateError('Matrix credential refresh identity mismatch');
           }
+          retainedCredentials = response;
           // 单设备策略下服务端可能轮换 device id（本机在别处登录后旧设备
           // 被顶掉，典型：iOS 覆盖安装后强制重登）。token 已证明账号归属，
           // 此时采纳服务端权威 device id 并继续；拒绝会造成无法恢复的 L04。
@@ -10025,12 +10063,29 @@ final class MatrixSdkE2eeClient
             );
           }
         }
-        _credentialsInvalid = false;
         await _persistLoggedInContinuity(active);
+        if (generation != _tokenLoginGeneration ||
+            _accessRevoked ||
+            !identical(_client, active)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        if (retainedCredentials != null &&
+            (active.userID != retainedCredentials.userId ||
+                active.deviceID != retainedCredentials.deviceId ||
+                active.accessToken != retainedCredentials.accessToken)) {
+          throw StateError('Matrix credential adoption was superseded');
+        }
+        _credentialsInvalid = false;
         _confirmedNewDeviceUserId = null;
-      }, authorizeAccess: true, freshLogin: true);
+        // Soft-logout init persists credentials but does not restart the loop.
+        // Normal new-device init already performs its own immediate first sync.
+        if (retainedCredentials != null) active.startSyncImmediately();
+      },
+          authorizeAccess: true,
+          freshLogin: true,
+          authorizationCurrent: () => generation == _tokenLoginGeneration);
     } catch (error, stackTrace) {
-      if (authorizedUserId != null) {
+      if (authorizedUserId != null && generation == _tokenLoginGeneration) {
         // _withClient authorizes lifecycle access before network login. A
         // failed identity check must close that access again even if the
         // caller keeps its Business session for an explicit retry.
@@ -10048,9 +10103,9 @@ final class MatrixSdkE2eeClient
     _activeContinuityValidated = false;
     _bindDecryptionCache(await _readContinuityMetadata(active));
     _ensureOutgoingWorkIdentity(active);
-    _activeContinuityValidated = true;
     await active.recoveryOwner?.drain();
     _bindRecoveryWrites(active);
+    _activeContinuityValidated = true;
   }
 
   Stream<void> get syncEvents => _syncEvents.stream;
@@ -10320,6 +10375,7 @@ final class MatrixSdkE2eeClient
 
   /// 同步撤销对外能力。必须在进入串行区之前完成，避免等待期间被继续使用。
   void _beginSuspensionRevocation() {
+    _tokenLoginGeneration++;
     _projectionCoordinator?.retire();
     if (identical(secureSessionStore?.startupProjectionCoordinator,
         _projectionCoordinator)) {
@@ -10551,6 +10607,7 @@ final class MatrixSdkE2eeClient
         }
         final metadata = await _readContinuityMetadata(next);
         _client = next;
+        _bindStartupProjectionOwner(next);
         _replaceOutgoingWork(next);
         _suspendedMetadata = metadata;
         _activeContinuityValidated = true;
@@ -10569,6 +10626,7 @@ final class MatrixSdkE2eeClient
       } catch (error, stackTrace) {
         // 目标账号的连续性未能确认：绝不发布这个 client，也不留下
         // "scope 已切换但没有任何身份"的半成品状态。
+        _beginSuspensionRevocation();
         _client = null;
         _suspendedMetadata = null;
         _suspendedIdentity = null;
@@ -10691,7 +10749,14 @@ final class MatrixSdkE2eeClient
     Future<T> Function(Client client) operation, {
     bool authorizeAccess = false,
     bool freshLogin = false,
+    bool Function()? authorizationCurrent,
   }) async {
+    void requireCurrentAuthorization() {
+      if (authorizationCurrent?.call() == false) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+    }
+
     if (startupProjection != null && _client?.isInitializationPending == true) {
       await initializationCompleted;
     }
@@ -10700,21 +10765,25 @@ final class MatrixSdkE2eeClient
     }
     late Client active;
     await _serializeLifecycle(() async {
+      requireCurrentAuthorization();
       if (_accessRevoked && !authorizeAccess) {
         throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
       }
       if (authorizeAccess) _accessRevoked = false;
       active = await _resumeWithinLifecycle(freshLogin: freshLogin);
+      requireCurrentAuthorization();
       if (authorizeAccess && active.recoveryOwner?.active != true) {
         final previous = active.recoveryOwner;
         if (previous != null) {
           await previous.drain().timeout(lifecycleDrainTimeout);
         }
+        requireCurrentAuthorization();
         _bindRecoveryWrites(active);
       }
       _beginClientOperation();
     });
     try {
+      requireCurrentAuthorization();
       return await operation(active);
     } finally {
       _finishClientOperation();
