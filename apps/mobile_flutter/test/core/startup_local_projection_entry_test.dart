@@ -594,14 +594,92 @@ void registerStartupProjectionEntryTests(
         }
       }
 
+      final navigationChecks = <Map<String, Object>>[];
+      var scenarioReported = false;
+      void emitReport(Map<String, Object> data) {
+        scenarioReported = true;
+        report?.call(data);
+      }
+
+      ModalRoute<dynamic>? currentRoom() {
+        for (final element in find.byType(RoomPage).evaluate()) {
+          final route = ModalRoute.of(element);
+          if (route?.isCurrent == true) return route;
+        }
+        return null;
+      }
+
+      Future<TransitionRoute<dynamic>> currentRoomWhileSqlHeld(
+        String label,
+      ) async {
+        final waited = Stopwatch()..start();
+        var attempts = 0;
+        while (currentRoom() == null && attempts < 300) {
+          await flush(1);
+          attempts++;
+        }
+        final current = currentRoom();
+        navigationChecks.add({
+          'step': label,
+          'wait_pumps': attempts,
+          'wait_elapsed_ms': waited.elapsedMilliseconds,
+          'route_current': current?.isCurrent == true,
+          'sql_closed': !held.warmRoomRead!.isCompleted,
+        });
+        expect(
+          current,
+          isA<TransitionRoute<dynamic>>(),
+          reason:
+              'a current room must appear before held SQL release; ${jsonEncode(navigationChecks)}',
+        );
+        expect(held.warmRoomRead!.isCompleted, isFalse);
+        return current!;
+      }
+
+      Future<void> popCompleted(
+        TransitionRoute<dynamic> route,
+        String label,
+      ) async {
+        expect(route.isCurrent, isTrue, reason: label);
+        var completed = false;
+        final completion = route.completed.then((_) => completed = true);
+        route.navigator!.pop();
+        await flush(40);
+        final atOldDelay = completed;
+        final waited = Stopwatch()..start();
+        var attempts = 0;
+        while (!completed && attempts < 300) {
+          await flush(1);
+          attempts++;
+        }
+        navigationChecks.add({
+          'step': label,
+          'completed_at_old_delay': atOldDelay,
+          'wait_pumps': attempts,
+          'wait_elapsed_ms': waited.elapsedMilliseconds,
+          'exact_route_completed': completed,
+          'sql_closed': !held.warmRoomRead!.isCompleted,
+        });
+        expect(
+          completed,
+          isTrue,
+          reason:
+              'exact popped route must complete before next navigation; ${jsonEncode(navigationChecks)}',
+        );
+        await completion;
+      }
+
       Future<void> tapReady(Finder finder) async {
         for (var attempt = 0;
             attempt < 300 && finder.hitTestable().evaluate().isEmpty;
             attempt++) {
           await flush(1);
         }
-        expect(finder.hitTestable(), findsOneWidget,
-            reason: 'native route/tab transitions must finish before the tap');
+        expect(
+          finder.hitTestable(),
+          findsOneWidget,
+          reason: 'native route/tab transitions must finish before the tap',
+        );
         await tester.tap(finder.hitTestable());
       }
 
@@ -1044,7 +1122,7 @@ void registerStartupProjectionEntryTests(
           expect(sdkReady, isTrue, reason: 'full SDK continuation must settle');
           await flush(100);
           expect(held.fullRead, isTrue);
-          report?.call({
+          emitReport({
             'scenario': independent
                 ? 'actual-main-empty-independent'
                 : 'actual-main-hidden-sdk',
@@ -1175,7 +1253,7 @@ void registerStartupProjectionEntryTests(
             expect(auditedFrames, greaterThan(2));
             expect(tester.takeException(), isNull);
             expect(transportSends, 0);
-            report?.call({
+            emitReport({
               'scenario': 'actual-main-avatar-handoff',
               'avatar_handoff_continuous': true,
               'first_visible_avatar': true,
@@ -1319,7 +1397,7 @@ void registerStartupProjectionEntryTests(
           await flush(80);
           expect(transportSends, 0,
               reason: 'late work must not dispatch the old queued owner');
-          report?.call({
+          emitReport({
             'scenario': 'actual-main-pending-refresh-revoked',
             'cached_bubbles_before_verification': true,
             'durable_queue_before_verification': true,
@@ -1376,38 +1454,69 @@ void registerStartupProjectionEntryTests(
               rootNavigator: true);
           for (final source in [
             RoomOpenSource.search,
-            RoomOpenSource.contactProfile
+            RoomOpenSource.contactProfile,
           ]) {
             final origin = CupertinoPageRoute<void>(
-                builder: (_) => const CupertinoPageScaffold(
-                    child: Center(child: Text('Synthetic origin'))));
+              builder: (_) => const CupertinoPageScaffold(
+                child: Center(child: Text('Synthetic origin')),
+              ),
+            );
             unawaited(navigator.push(origin));
             await flush(40);
             held.warmRoomRead = Completer<void>();
-            final pending = home.onOpenRoom!(RoomOpenRequest(
+            final pending = home.onOpenRoom!(
+              RoomOpenRequest(
                 roomId: '!room-64:synthetic.test',
                 roomName: 'Synthetic room 64',
-                source: source));
+                source: source,
+              ),
+            );
             await flush(20);
-            expect(find.byType(RoomPage), findsOneWidget,
-                reason: 'cached entry from search/profile must precede SQL');
+            navigationChecks.add({
+              'step': '${source.wireName}_first_200ms',
+              'room_present': find.byType(RoomPage).evaluate().isNotEmpty,
+              'current_room_present': currentRoom() != null,
+              'sql_closed': !held.warmRoomRead!.isCompleted,
+            });
+            final openedRoute = await currentRoomWhileSqlHeld(
+              '${source.wireName}_first_current',
+            );
+            expect(find.byType(RoomPage), findsOneWidget);
             expect(find.text('Cached message 59'), findsWidgets);
-            expect(held.warmRoomRead!.isCompleted, isFalse);
-            navigator.pop();
-            await flush(40);
+            await popCompleted(openedRoute, '${source.wireName}_room_pop');
             expect(origin.isCurrent, isTrue);
-            navigator.pop();
-            await flush(40);
-            await tester.tap(find.text('Synthetic room 64'));
+            await popCompleted(origin, '${source.wireName}_origin_pop');
+            expect(held.warmRoomRead!.isCompleted, isFalse);
+            await tapReady(find.text('Synthetic room 64'));
             await flush(20);
-            expect(find.byType(RoomPage), findsOneWidget,
-                reason:
-                    'same-room reentry must not be swallowed by old cleanup');
+            navigationChecks.add({
+              'step': '${source.wireName}_reentry_200ms',
+              'room_present': find.byType(RoomPage).evaluate().isNotEmpty,
+              'current_room_present': currentRoom() != null,
+              'sql_closed': !held.warmRoomRead!.isCompleted,
+            });
+            final reenteredRoute = await currentRoomWhileSqlHeld(
+              '${source.wireName}_reentry_current',
+            );
+            expect(
+              find.byType(RoomPage),
+              findsOneWidget,
+              reason: 'same-room reentry must precede old SQL cleanup',
+            );
+            expect(find.text('Cached message 59'), findsWidgets);
+            navigationChecks.add({
+              'step': '${source.wireName}_current_reentry',
+              'sql_closed': !held.warmRoomRead!.isCompleted,
+              'route_current': reenteredRoute.isCurrent,
+            });
             expect(StatisticsRoomScope.current, '!room-64:synthetic.test');
             held.warmRoomRead!.complete();
             await flush(80);
-            navigator.pop();
-            await flush(80);
+            await popCompleted(
+              reenteredRoute,
+              '${source.wireName}_reentry_pop',
+            );
+            await flush(40);
             await pending;
             expect(StatisticsRoomScope.current, isNull);
           }
@@ -1574,7 +1683,7 @@ void registerStartupProjectionEntryTests(
           expect(firstRoomContent, isTrue);
           auditVisibleFrames = false;
         }
-        report?.call({
+        emitReport({
           'scenario': independent
               ? 'actual-main-held-entire-preflight'
               : 'actual-main-held-sdk',
@@ -1592,6 +1701,7 @@ void registerStartupProjectionEntryTests(
           if (independent) 'cached_group_avatar_members': true,
           'original_preflight_calls_while_held': 0,
           'original_opener_calls_while_held': 0,
+          'native_navigation_checks': navigationChecks,
           'content_ready_ms': contentReadyMs,
           'interactive_ms': clock.elapsedMilliseconds,
           'projected_rooms': 40,
@@ -1599,6 +1709,14 @@ void registerStartupProjectionEntryTests(
           'network_sends_after_recovery': transportSends
         });
       } finally {
+        if (!scenarioReported && navigationChecks.isNotEmpty) {
+          report?.call({
+            'scenario': 'native-navigation-failure-observation',
+            'diagnostic_only': true,
+            'native_navigation_checks': navigationChecks,
+            'network_sends_after_recovery': transportSends,
+          });
+        }
         if (!businessRefreshRelease.isCompleted) {
           businessRefreshRelease.complete();
         }
