@@ -24,9 +24,11 @@ class _Client extends Client {
   String get userID => '@synthetic:example.test';
   @override
   String get deviceID => 'SYNTHETIC';
-  late final crypto = Encryption(client: this);
+  Encryption? _fixtureCrypto;
+  Encryption get crypto =>
+      super.encryption ?? (_fixtureCrypto ??= Encryption(client: this));
   @override
-  Encryption get encryption => crypto;
+  Encryption? get encryption => super.encryption ?? _fixtureCrypto;
 }
 
 void main() {
@@ -829,6 +831,11 @@ void main() {
         await db.storeOutboundGroupSession(
             room.id, native.pickle(client.userID), '{}', 1);
         await client.crypto.keyManager.loadOutboundGroupSession(room.id);
+        expect(
+            client.crypto.keyManager.getOutboundGroupSession(room.id)?.isValid,
+            isTrue,
+            reason:
+                'fresh SDK fixture must load its persisted outbound session');
       }
       final payload = {
         'algorithm': AlgorithmTypes.megolmV1AesSha2,
@@ -1095,6 +1102,7 @@ Future<_Client> _open(_VaultServer server, {bool held = false}) async {
   await db.open();
   final client = _Client(database: db, transport: MockClient(server.call));
   await client.init();
+  client.crypto; // Explicit active fixture after SDK initialization.
   client.homeserver = Uri.parse('https://example.test');
   client.accessToken = 'synthetic-matrix';
   client.recoveryOwner =

@@ -1289,18 +1289,19 @@ void registerStartupProjectionEntryTests(
           firstRoomContent = false;
           await tester.tap(find.text('Synthetic room 64'));
           for (var attempt = 0;
-              attempt < 300 && !held.warmRoomReadEntered.isCompleted;
+              attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
               attempt++) {
             await flush(1);
           }
-          expect(held.warmRoomReadEntered.isCompleted, isTrue,
-              reason:
-                  'ordinary post-recovery entry reads the persisted local timeline');
-          for (var attempt = 0;
-              attempt < 100 && find.byType(RoomPage).evaluate().isEmpty;
-              attempt++) {
-            await flush(1);
-          }
+          debugPrint('Cached entry boundary: ${jsonEncode({
+                'cached_head':
+                    home.matrix.hasCachedRoomDisplay('!room-64:synthetic.test'),
+                'page_present': find.byType(RoomPage).evaluate().isNotEmpty,
+                'own_sql_entered': held.warmRoomReadEntered.isCompleted,
+                'bulk_sql_entered': held.bulkRoomReadEntered.isCompleted,
+                'bulk_sql_released': held.bulkRoomRead!.isCompleted,
+                'sdk_pending': client.isInitializationPending,
+              })}');
           expect(find.text('正在读取本机消息…'), findsNothing,
               reason:
                   'warm restored room entry must not expose a loading page while local SQL is pending');
@@ -1310,6 +1311,11 @@ void registerStartupProjectionEntryTests(
           expect(find.text('Cached message 59'), findsWidgets);
           expect(held.warmRoomRead!.isCompleted, isFalse);
           final cachedRoomState = tester.state(find.byType(RoomPage));
+          final cachedMessageIds = (cachedRoomState as dynamic)
+              .controller
+              .messages
+              .map((dynamic message) => message.id)
+              .toList();
           final cachedViewport = find.byKey(const Key('room-message-viewport'));
           // Use the same actual viewport finder as the cold-entry proof.
           final heldViewport =
@@ -1324,13 +1330,39 @@ void registerStartupProjectionEntryTests(
           expect(heldScroll.position.pixels, isNot(heldOffset));
           expect(held.warmRoomRead!.isCompleted, isFalse);
           expect(held.bulkRoomRead!.isCompleted, isFalse);
-          held.warmRoomRead!.complete();
           // A new request outside the old top forty takes the next refresh
           // turn after the already-running SQL read; it cannot wait for 39
           // unrelated reads from the obsolete selection.
           home.matrix.prioritizeRoomDisplay('!room-1:synthetic.test');
           held.readRoomIds.clear();
           held.bulkRoomRead!.complete();
+          // SQL reads may serialize behind the held background read. The
+          // product contract is usable cached content before either release,
+          // followed by eventual canonical hydration on the same page.
+          for (var attempt = 0;
+              attempt < 300 && !held.warmRoomReadEntered.isCompleted;
+              attempt++) {
+            await flush(1);
+          }
+          expect(held.warmRoomReadEntered.isCompleted, isTrue,
+              reason: 'ordinary entry eventually reads its persisted timeline');
+          expect(held.warmRoomRead!.isCompleted, isFalse);
+          expect(tester.state(find.byType(RoomPage)), same(cachedRoomState));
+          expect(
+              (cachedRoomState as dynamic)
+                  .controller
+                  .messages
+                  .map((dynamic message) => message.id)
+                  .toList(),
+              cachedMessageIds,
+              reason:
+                  'scrolling may move the last bubble outside the viewport');
+          final hydratedWaitOffset = heldScroll.position.pixels;
+          await tester.drag(heldViewport, const Offset(0, -180));
+          await flush(15);
+          expect(heldScroll.position.pixels, isNot(hydratedWaitOffset));
+          expect(held.warmRoomRead!.isCompleted, isFalse);
+          held.warmRoomRead!.complete();
           for (var attempt = 0;
               attempt < 300 &&
                   !held.readRoomIds.contains('!room-1:synthetic.test');
