@@ -558,6 +558,17 @@ void registerStartupProjectionEntryTests(
         }
       }
 
+      Future<void> tapReady(Finder finder) async {
+        for (var attempt = 0;
+            attempt < 300 && finder.hitTestable().evaluate().isEmpty;
+            attempt++) {
+          await flush(1);
+        }
+        expect(finder.hitTestable(), findsOneWidget,
+            reason: 'native route/tab transitions must finish before the tap');
+        await tester.tap(finder.hitTestable());
+      }
+
       if (independent) {
         await tester.runAsync(() async {
           priming = true;
@@ -1256,9 +1267,9 @@ void registerStartupProjectionEntryTests(
             await pending;
             expect(StatisticsRoomScope.current, isNull);
           }
-          await tester.tap(find.text('通讯录').last);
+          await tapReady(find.text('通讯录').last);
           await flush(10);
-          await tester.tap(find.text('消息').last);
+          await tapReady(find.text('消息').last);
           await flush(10);
           expect(find.byType(RoomPage), findsNothing);
           final settled = client.onLocalDisplayApplySettled;
@@ -1287,7 +1298,7 @@ void registerStartupProjectionEntryTests(
           held.warmRoomRead = Completer<void>();
           auditVisibleFrames = true;
           firstRoomContent = false;
-          await tester.tap(find.text('Synthetic room 64'));
+          await tapReady(find.text('Synthetic room 64'));
           for (var attempt = 0;
               attempt < 300 && find.byType(RoomPage).evaluate().isEmpty;
               attempt++) {
