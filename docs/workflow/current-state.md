@@ -1,12 +1,12 @@
 # 当前工作状态
 
-## 2026-10-18 缓存房间准入修正：2227 Debug已装，验收继续
+## 2026-10-18 缓存房间准入修正：2228 Debug已装，缓存覆盖与原生门禁仍开放
 
-用户要求快照准入拒绝后不再先等本地时间线才入房，最小身份绑定后合法缓存先显示、完整检查后台继续。产品60707939，测试夹具96711666；共享6261PASS/9SKIP/0FAIL、analyze0，fixture定向7PASS/analyze0。普通0.4.58+2227固定签名重建APK356e0a98…d3023c已保数据安装5556，UID10090/firstInstall及设备SHA确认，未发真实消息、未改生产。
+用户要求最小身份绑定后合法缓存先显示，完整身份/数据库与SDK后台继续；快照拒绝后的共享prepare→push慢路径已改为合法租约后先开同页。普通0.4.59+2228产品d1ded931，固定签名重建APK8f568efa…60ee607已保数据安装5556，UID10090/firstInstall不变，零真实发送、无生产修改。共享6271PASS/9既有SKIP/0FAIL，analyze0、source_stable=true，DOMAIN→独立QUALITY通过。8→40两阶段真实SQLCipher/AEAD与失败/隐私/迟到断言通过；不承诺完整身份检查墙钟下降。
 
-当前验收未完成：普通14房冷启均观察到内容，4个roomHIT324–419ms、10个MISS1045–4498ms；push15–49ms/lease→push3–28ms。原生最终r3仍FAIL：首例后续通讯录命中0、terminal另有两条未展开异常；不能用成功报告条数替代测试结果。已证明的四次warm缓存重入都在SQL关闭时当前可见且有真实气泡。后台快照能提交，但首批覆盖缓慢；r5同revision/active0的只读结构计数heads0→17，VM时长不作性能。新8条首屏→40后台补齐方案已获DOMAIN后QUALITY有条件设计审查，TDD进行中，尚未包含在已装2227。
+验收未完成：普通14房真实MAIN/LAUNCHER均观察到内容，push16–89ms，但仅1房HIT621ms、13MISS815–7163ms，13次启动headUncommitted；这是覆盖失败而非全通过。VM确认后台有提交，仍有失效→首批补齐窗口。native2228-r3/r4各5/6，首例同步后房间条目被遮罩挡住，inset0；正常关闭已确认的“保持来电提醒”后同失败继续，不归因于键盘/唯一引导。原断言/SQL闸门不删。b15bcb35仅扩展失败hit祖先类型/静态标题布尔，定向6PASS、analyze0、DOMAIN→QUALITY通过，诊断包独立构建中，普通产品d1不变。
 
-下一步：观察red-staged-cache预期失败，最小两阶段实现并补deep失败/隐私/迟到/清理测试；继续原生导航/terminal取证，最终门禁及普通MAIN/LAUNCHER全房复测。14个早期合成worker测试DB清理被自动审批拒绝，忽略且不入APK，不再尝试。聚合verify缺.env，未导入生产凭据。见[任务](tasks/2026-10-18-room-entry-readiness.md)、[报告](../verification/2026-10-18-room-entry-readiness.md)，原始产物留interactive-cache-startup工作树。
+下一步：新诊断包定位真实遮罩；审查缩短缓存重建窗口的最小安全修正，最终恢复普通main及root唤醒lease原值0（当前临时7）。14个早期合成worker DB清理被自动审批拒绝，忽略且不入APK，不再尝试。聚合verify缺.env，未导入生产凭据。见[任务](tasks/2026-10-18-room-entry-readiness.md)、[报告](../verification/2026-10-18-room-entry-readiness.md)，原始产物留interactive-cache-startup工作树。
 
 ## 2026-10-18 最近表情位置修复：2225 Debug已安装；冷启动等待仍开放
 

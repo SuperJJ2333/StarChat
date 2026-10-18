@@ -612,16 +612,66 @@ void registerStartupProjectionEntryTests(
         }
       }
 
+      final navigationChecks = <Map<String, Object>>[];
+      var handlingNativeOnboarding = false;
+      var nativeOnboardingCount = 0;
+      Future<void> handleNativeOnboarding() async {
+        if (!Platform.isAndroid || handlingNativeOnboarding) return;
+        final dialog = find.byType(CupertinoAlertDialog);
+        if (dialog.evaluate().length != 1) return;
+        Finder inside(Finder matching) =>
+            find.descendant(of: dialog, matching: matching);
+        final decline = inside(find.text('稍后设置')).hitTestable();
+        if (inside(find.text('保持来电提醒')).evaluate().length != 1 ||
+            inside(find.textContaining('请在系统设置中检查并允许')).evaluate().length !=
+                1 ||
+            inside(find.text('检查设置')).evaluate().length != 1 ||
+            decline.evaluate().length != 1) {
+          return;
+        }
+        final route = ModalRoute.of(tester.element(dialog));
+        if (route is! PopupRoute<dynamic> || !route.isCurrent) return;
+        expect(nativeOnboardingCount, lessThan(2),
+            reason: 'repeated native onboarding must not be dismissed forever');
+        nativeOnboardingCount++;
+        handlingNativeOnboarding = true;
+        final clock = Stopwatch()..start();
+        var completed = false;
+        final completion = route.completed.then((_) => completed = true);
+        try {
+          await tester.tap(decline);
+          for (var i = 0; i < 80 && !completed; i++) {
+            await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 10)));
+            await tester.pump(const Duration(milliseconds: 10));
+            auditFrame();
+          }
+          navigationChecks.add({
+            'step': 'native_background_call_onboarding_decline',
+            'occurrence': nativeOnboardingCount,
+            'exact_title_body_actions': true,
+            'exact_route_completed': completed,
+            'elapsed_ms': clock.elapsedMilliseconds,
+            'grant_action_tapped': false,
+          });
+          expect(completed, isTrue,
+              reason: 'the exact declined onboarding route must complete');
+          await completion;
+        } finally {
+          handlingNativeOnboarding = false;
+        }
+      }
+
       Future<void> flush([int count = 30]) async {
         for (var i = 0; i < count; i++) {
           await tester.runAsync(
               () => Future<void>.delayed(const Duration(milliseconds: 10)));
           await tester.pump(const Duration(milliseconds: 10));
           auditFrame();
+          await handleNativeOnboarding();
         }
       }
 
-      final navigationChecks = <Map<String, Object>>[];
       var scenarioReported = false;
       void emitReport(Map<String, Object> data) {
         scenarioReported = true;

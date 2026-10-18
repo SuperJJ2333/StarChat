@@ -2227,79 +2227,181 @@ final class MatrixRoomLease
       return capability;
     }
     return _withLeaseOperation((room) async {
+      final client = room.client;
+      final database = client.database;
+      final identity = (client.userID, client.deviceID, client.homeserver);
+      final generation = room.historyGeneration;
+      bool sourceCurrent() =>
+          !canceled &&
+          !owner._accessRevoked &&
+          identical(owner._client, client) &&
+          identical(client.database, database) &&
+          identical(_room, room) &&
+          identical(client.getRoomById(roomId), room) &&
+          identity == (client.userID, client.deviceID, client.homeserver) &&
+          generation == room.historyGeneration;
       if (cachedFirst && room.client.database != null && !room.isArchived) {
-        final generation = room.historyGeneration;
-        final client = room.client;
-        final identity = (client.userID, client.deviceID, client.homeserver);
-        final displayCapture =
-            owner._projectionCoordinator?.beginDisplayCapture();
+        final coordinator = owner._projectionCoordinator;
+        final displayCapture = coordinator?.beginDisplayCapture();
+        bool displayCurrent() =>
+            identical(coordinator, owner._projectionCoordinator) &&
+            (coordinator == null ||
+                (displayCapture != null &&
+                    coordinator.isDisplayCurrent(displayCapture)));
         final trace = PerformanceTrace.currentOperation;
         trace?.mark(PerformanceStage.localTimelineSqlStarted);
-        final events = await client.database!.getEventList(room, limit: 40);
+        final events = await database!.getEventList(room, limit: 40);
         trace?.mark(PerformanceStage.localTimelineSqlDone);
-        if (canceled ||
-            owner._accessRevoked ||
-            !identical(owner._client, client) ||
-            !identical(_room, room) ||
-            identity != (client.userID, client.deviceID, client.homeserver) ||
-            generation != room.historyGeneration) {
+        if (!sourceCurrent()) {
           throw StateError('Matrix cached timeline lease revoked');
         }
-        final cachedEvents = List<Event>.of(events);
-        final timeline = Timeline(
-            room: room,
-            chunk: TimelineChunk(events: events),
-            persistedInitialIds: events
-                .where((event) => event.status.isSynced)
-                .map((event) => event.eventId),
-            onUpdate: onUpdate);
-        final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
-        _timelines.add(capability);
-        unawaited(() async {
-          Timeline? hydrated;
-          try {
-            Future<void> hydrateLocal() => timeline.hydrateCachedEvents(
-                cachedEvents,
-                retainedFragments: () {
-                  final context = capability._contextTimeline;
-                  return context == null ? const <Timeline>[] : [context];
-                },
-                isActive: () =>
-                    !capability._disposed &&
-                    !canceled &&
-                    !owner._accessRevoked &&
-                    identical(owner._client, client) &&
-                    identical(_room, room) &&
-                    identity ==
-                        (client.userID, client.deviceID, client.homeserver) &&
-                    generation == room.historyGeneration);
-            // The retained Olm identity is already validated. Decrypt only
-            // these forty cached rows with local keys before full recovery.
-            if (client.isInitializationPending) await hydrateLocal();
-            await client.initializationCompleted;
-            capability._ensureActive();
-            hydrated = await room.getTimeline(onUpdate: onUpdate);
-            await hydrateLocal();
-            await owner._rememberHydratedHead(
-                room, timeline.events, displayCapture, generation);
-            await _enableSdkResidentWindow(timeline);
-            capability._ensureActive();
-            if (generation != room.historyGeneration) {
-              throw StateError('Matrix history generation changed');
+        // A display revision can retire without retiring the canonical lease.
+        // In that case do not publish these old rows; recover fresh below.
+        if (displayCurrent()) {
+          final cachedEvents = List<Event>.of(events);
+          final timeline = Timeline(
+              room: room,
+              chunk: TimelineChunk(events: events),
+              persistedInitialIds: events
+                  .where((event) => event.status.isSynced)
+                  .map((event) => event.eventId),
+              onUpdate: onUpdate);
+          final capability =
+              _SdkRoomTimelineCapability(this, timeline, onUpdate);
+          _timelines.add(capability);
+          unawaited(() async {
+            Timeline? hydrated;
+            bool recoveryCurrent() => !capability._disposed && sourceCurrent();
+            try {
+              Future<void> hydrateLocal() =>
+                  timeline.hydrateCachedEvents(cachedEvents,
+                      retainedFragments: () {
+                        final context = capability._contextTimeline;
+                        return context == null ? const <Timeline>[] : [context];
+                      },
+                      isActive: () => recoveryCurrent() && displayCurrent());
+              // The retained Olm identity is already validated. Decrypt only
+              // these forty cached rows before full room recovery even when the
+              // SDK is ready. A failed optional decode must not stop recovery.
+              try {
+                await hydrateLocal();
+              } catch (_) {
+                debugPrint('[chatflow/startup] local_decode=retry_canonical');
+              }
+              if (!recoveryCurrent()) return;
+              await client.initializationCompleted;
+              capability._ensureActive();
+              if (!recoveryCurrent()) return;
+              final recoveryHead = {
+                for (final event in timeline.events) event.eventId: event
+              };
+              final recoveryCapture = coordinator?.beginDisplayCapture();
+              bool recoveredCurrent() =>
+                  recoveryCurrent() &&
+                  identical(coordinator, owner._projectionCoordinator) &&
+                  (coordinator == null ||
+                      (recoveryCapture != null &&
+                          coordinator.isDisplayCurrent(recoveryCapture)));
+              hydrated = await room.getTimeline(onUpdate: onUpdate);
+              if (!recoveryCurrent()) return;
+              Iterable<Timeline> fragments() {
+                final context = capability._contextTimeline;
+                return context == null ? const <Timeline>[] : [context];
+              }
+
+              var headPermit = displayCapture;
+              var headRows = timeline.events;
+              if (displayCurrent()) {
+                try {
+                  await hydrateLocal();
+                } catch (_) {
+                  debugPrint('[chatflow/startup] local_decode=retry_canonical');
+                }
+              } else {
+                // The original batch lost its display revision. Fresh SQL,
+                // never a new permit on old rows, rebuilds this same timeline.
+                headPermit = null;
+                final freshPermit = coordinator?.beginDisplayCapture();
+                bool freshCurrent() =>
+                    recoveryCurrent() &&
+                    identical(coordinator, owner._projectionCoordinator) &&
+                    freshPermit != null &&
+                    coordinator!.isDisplayCurrent(freshPermit);
+                var restored = false;
+                try {
+                  if (freshCurrent()) {
+                    final fresh = await database.getEventList(room, limit: 40);
+                    if (!recoveryCurrent()) return;
+                    if (freshCurrent()) {
+                      timeline.reconcileStartupHead(fresh,
+                          projectedEvents: recoveryHead,
+                          historyGeneration: generation,
+                          isActive: freshCurrent,
+                          retainedFragments: fragments);
+                      await timeline.hydrateCachedEvents(fresh,
+                          isActive: freshCurrent, retainedFragments: fragments);
+                      if (freshCurrent()) {
+                        final freshIds = fresh.map((e) => e.eventId).toSet();
+                        headRows = timeline.events
+                            .where((event) => freshIds.contains(event.eventId))
+                            .toList();
+                        headPermit = freshPermit;
+                        restored = true;
+                      }
+                    }
+                  }
+                } catch (_) {
+                  debugPrint('[chatflow/startup] local_decode=retry_canonical');
+                }
+                if (!recoveryCurrent()) return;
+                if (!restored && recoveredCurrent()) {
+                  // The canonical read has its own captured revision. A later
+                  // privacy mutation must not revive even this fallback batch.
+                  timeline.reconcileStartupHead(hydrated.events,
+                      projectedEvents: recoveryHead,
+                      historyGeneration: generation,
+                      isActive: recoveredCurrent,
+                      retainedFragments: fragments);
+                  try {
+                    await timeline.hydrateCachedEvents(hydrated.events,
+                        isActive: recoveredCurrent,
+                        retainedFragments: fragments);
+                  } catch (_) {
+                    debugPrint(
+                        '[chatflow/startup] local_decode=retry_canonical');
+                  }
+                }
+              }
+              try {
+                await owner._rememberHydratedHead(
+                    room, headRows, headPermit, generation,
+                    isActive: recoveryCurrent);
+              } catch (_) {
+                debugPrint('[chatflow/startup] display_head=retry_background');
+              }
+              if (!recoveryCurrent()) return;
+              await _enableSdkResidentWindow(timeline);
+              capability._ensureActive();
+              if (!recoveryCurrent()) return;
+              onHydrated?.call();
+              onUpdate();
+            } catch (_) {
+              // Lease retirement rejects all late results. Optional display
+              // invalidation is handled separately by hydrateLocal's predicate.
+            } finally {
+              hydrated?.cancelSubscriptions();
             }
-            hydrated.cancelSubscriptions();
-            onHydrated?.call();
-            onUpdate();
-          } catch (_) {
-            hydrated?.cancelSubscriptions();
-          }
-        }());
-        return capability;
+          }());
+          return capability;
+        }
       }
       final timeline = await room.getTimeline(onUpdate: onUpdate);
       try {
+        if (!sourceCurrent()) {
+          throw StateError('Matrix canonical timeline lease revoked');
+        }
         await _enableSdkResidentWindow(timeline);
-        if (canceled || owner._accessRevoked) {
+        if (!sourceCurrent()) {
           throw StateError('Matrix timeline lease revoked during hydration');
         }
       } catch (_) {
@@ -7137,7 +7239,8 @@ final class MatrixSdkE2eeClient
   }
 
   Future<void> _rememberHydratedHead(Room room, List<Event> source,
-      StartupProjectionDisplayCapture? permit, int generation) async {
+      StartupProjectionDisplayCapture? permit, int generation,
+      {bool Function()? isActive}) async {
     final coordinator = _projectionCoordinator;
     final secure = secureSessionStore;
     final admission = startupAdmission;
@@ -7151,6 +7254,7 @@ final class MatrixSdkE2eeClient
     final client = _client;
     bool current() =>
         !_accessRevoked &&
+        (isActive?.call() ?? true) &&
         identical(coordinator, _projectionCoordinator) &&
         identical(client, _client) &&
         identical(client, room.client) &&

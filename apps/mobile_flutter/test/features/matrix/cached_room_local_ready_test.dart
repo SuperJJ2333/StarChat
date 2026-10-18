@@ -89,7 +89,8 @@ void main() {
         ..accessToken = 'synthetic-token'
         ..homeserver = Uri.parse('https://synthetic.test');
       final room = client.room;
-      client.crypto.holdTail = pin == 'during';
+      client.crypto.holdTail =
+          pin == 'before' || pin == 'hidden' || pin == 'during';
       if (pin == 'startup') client.startupRecovery = Completer<void>();
       room.setState(Event(
           room: room,
@@ -172,14 +173,15 @@ void main() {
           expect(client.startupRecovery!.isCompleted, isFalse);
           client.startupRecovery!.complete();
         }
-        await room.postLoadEntered.future;
-        expect(
-            timeline.snapshot(),
-            hasLength(pin == 'startup'
-                ? 40
-                : pin == 'none'
-                    ? 0
-                    : 30));
+        if (client.crypto.holdTail) {
+          await client.crypto.entered.future
+              .timeout(const Duration(seconds: 10));
+          expect(room.postLoadEntered.isCompleted, isFalse,
+              reason: 'local decoding must precede complete room recovery');
+        } else {
+          await room.postLoadEntered.future;
+          expect(timeline.snapshot(), hasLength(40));
+        }
         if (pin != 'none') {
           controller.restoreOutboxMessage(OutboxMessage(
               localId: 'pending-local',
@@ -198,13 +200,14 @@ void main() {
         if (pin == 'before' || pin == 'hidden' || pin == 'startup') {
           controller.pinWindow();
         }
-        room.releasePostLoad.complete();
-        if (pin == 'during') {
-          await client.crypto.entered.future
-              .timeout(const Duration(seconds: 10));
-          controller.pinWindow();
+        if (client.crypto.holdTail) {
+          if (pin == 'during') {
+            controller.pinWindow();
+          }
           client.crypto.release.complete();
         }
+        await room.postLoadEntered.future;
+        room.releasePostLoad.complete();
         await hydrated.future.timeout(const Duration(seconds: 10));
         expect(broadcasts, 0);
         expect(timeline.snapshot(), hasLength(pin == 'hidden' ? 39 : 40));
