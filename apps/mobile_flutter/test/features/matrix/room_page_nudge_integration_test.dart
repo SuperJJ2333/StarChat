@@ -58,6 +58,7 @@ final class _NudgeRoom extends Room {
     Event? inReplyTo,
     String? editEventId,
     String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
     String? threadLastEventId,
   }) async {
     sent.add((type: type, content: content));

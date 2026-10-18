@@ -117,6 +117,7 @@ class RetryRoom extends Room {
     Event? inReplyTo,
     String? editEventId,
     String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
     String? threadLastEventId,
   }) async {
     sends.add(content);

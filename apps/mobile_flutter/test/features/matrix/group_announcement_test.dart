@@ -313,6 +313,7 @@ class _PublishingRoom extends Room {
       Event? inReplyTo,
       String? editEventId,
       String? threadRootEventId,
+      MatrixSendTimingObserver? onTiming,
       String? threadLastEventId}) async {
     if (fail) throw StateError('send failed');
     sent = content;

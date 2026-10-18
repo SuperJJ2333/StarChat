@@ -92,6 +92,7 @@ class _UploadRoom extends Room {
     Event? inReplyTo,
     String? editEventId,
     String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
     String? threadLastEventId,
   }) async {
     sent = content;

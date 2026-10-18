@@ -750,6 +750,7 @@ class _Room extends Room {
       Event? inReplyTo,
       String? editEventId,
       String? threadRootEventId,
+      MatrixSendTimingObserver? onTiming,
       String? threadLastEventId}) async {
     operations.add('document');
     if (failSend) throw StateError('offline');

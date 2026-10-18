@@ -73,6 +73,7 @@ final class RetryMediaRoom extends ForwardRoom {
       Event? inReplyTo,
       String? editEventId,
       String? threadRootEventId,
+      MatrixSendTimingObserver? onTiming,
       String? threadLastEventId}) async {
     onSend?.call();
     return r'$fixture';

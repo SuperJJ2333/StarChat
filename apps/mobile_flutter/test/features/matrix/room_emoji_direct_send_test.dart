@@ -66,6 +66,7 @@ final class _NudgeRoom extends Room {
     Event? inReplyTo,
     String? editEventId,
     String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
     String? threadLastEventId,
   }) async {
     transactions.add(txid);

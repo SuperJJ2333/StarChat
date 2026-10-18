@@ -1663,6 +1663,7 @@ class _OutgoingTrackingRoom extends Room {
     Event? inReplyTo,
     String? editEventId,
     String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
     String? threadLastEventId,
   }) async {
     sentTxids.add(txid);

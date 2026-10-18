@@ -74,6 +74,7 @@ class _Room extends Room {
       Event? inReplyTo,
       String? editEventId,
       String? threadRootEventId,
+      MatrixSendTimingObserver? onTiming,
       String? threadLastEventId}) async {
     sends++;
     if (failSend) throw StateError('synthetic uncertain send');

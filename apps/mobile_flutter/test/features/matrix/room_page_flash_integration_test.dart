@@ -133,6 +133,7 @@ final class _FlashRoom extends Room {
     Event? inReplyTo,
     String? editEventId,
     String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
     String? threadLastEventId,
   }) async =>
       r'$flash-echo';

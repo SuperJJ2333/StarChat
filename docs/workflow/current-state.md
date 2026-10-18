@@ -1,5 +1,10 @@
 # 当前工作状态
 
+## 2026-10-18 冷启动/发送性能优化：2224 Debug实现已冻结，完整门禁运行中
+
+按用户四项要求实现：复制流合并哈希保留三遍全内容检查；闭集计时覆盖身份I/O和SDK发送阶段；合并可选缓存刷新、复用fresh heads及已持久失效状态；身份验证后current/pinned/draft/recent最多8房间只加载已有发送会话，保留发送前成员/轮换和逐消息密钥状态保存。SPEC后独立QUALITY通过，细化竞争/中途I/O故障证据已闭合。候选0.4.55+2224，冻结0afb5b53；完整test/analyze运行中，尚未构建/安装，模拟器仍2223。正式分发Android2216/iOS2215不变。工作树interactive-cache-startup，见[任务](tasks/2026-10-18-startup-send-performance.md)。证据保留该工作树docs/verification/artifacts/2026-10-18/startup-send-performance，V由全量runner临时占用。下一步检查full-r1结果后签名native/main构建及冷启动测试群计时。
+
+
 ## 2026-10-18 Android2222冷启动已实测，2223 Debug修正群资料并安装模拟器
 
 2222测试群两轮可靠实测：入房236/241ms，发送至确认1495/1597ms，SDK sendEvent1236/1516ms为主要跨度，其中一次真实消息HTTP245.603ms；HTTP外约990ms尚未逐子阶段计时。缓存内容1687/1754ms、SDKready5140/5489ms均从Dart入口，自动化冷启动→确认13.23～14.81s含查找/输入开销，不称纯APP延迟。roomInfo缓存头遮住canonical成员导致非好友头像缺失/人数0，已按display-only缓存成员→canonical资料同页交接修正，未知人数不显示0，timeline缓存保留。
