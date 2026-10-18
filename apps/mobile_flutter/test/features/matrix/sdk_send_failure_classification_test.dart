@@ -39,34 +39,42 @@ final class _SendClient extends Client {
 }
 
 void main() {
-  test('actual room send times echo queue HTTP and ACK at their own boundaries',
-      () async {
-    final client = _SendClient();
-    final response = Completer<String>();
-    client.responses.add(() => response.future);
-    client.holdAck = Completer<void>();
-    client.ackEntered = Completer<void>();
-    final samples = <MatrixSendTiming>[];
-    final room = Room(id: '!room:test', client: client);
-    final send = room.sendEvent({'msgtype': 'm.text', 'body': 'fixture'},
-        txid: 'stable', onTiming: (phase, us) => samples.add(phase));
-    await Future<void>.delayed(Duration.zero);
-    expect(samples, [MatrixSendTiming.localEcho, MatrixSendTiming.queueWait]);
-    response.complete(r'$accepted');
-    await client.ackEntered!.future;
-    expect(samples.last, MatrixSendTiming.http);
-    expect(samples, isNot(contains(MatrixSendTiming.acknowledgement)));
-    client.holdAck!.complete();
-    expect(await send, r'$accepted');
-    expect(samples, [
-      MatrixSendTiming.localEcho,
-      MatrixSendTiming.queueWait,
-      MatrixSendTiming.http,
-      MatrixSendTiming.acknowledgement
-    ]);
-    expect(client.transactions, ['stable']);
-    await client.dispose();
-  });
+  for (final textEntry in [false, true]) {
+    test(
+        'actual ${textEntry ? 'text' : 'event'} send times echo queue HTTP and ACK at their own boundaries',
+        () async {
+      final client = _SendClient();
+      final response = Completer<String>();
+      client.responses.add(() => response.future);
+      client.holdAck = Completer<void>();
+      client.ackEntered = Completer<void>();
+      final samples = <MatrixSendTiming>[];
+      final room = Room(id: '!room:test', client: client);
+      final send = textEntry
+          ? room.sendTextEvent('fixture',
+              txid: 'stable',
+              parseCommands: false,
+              onTiming: (phase, us) => samples.add(phase))
+          : room.sendEvent({'msgtype': 'm.text', 'body': 'fixture'},
+              txid: 'stable', onTiming: (phase, us) => samples.add(phase));
+      await Future<void>.delayed(Duration.zero);
+      expect(samples, [MatrixSendTiming.localEcho, MatrixSendTiming.queueWait]);
+      response.complete(r'$accepted');
+      await client.ackEntered!.future;
+      expect(samples.last, MatrixSendTiming.http);
+      expect(samples, isNot(contains(MatrixSendTiming.acknowledgement)));
+      client.holdAck!.complete();
+      expect(await send, r'$accepted');
+      expect(samples, [
+        MatrixSendTiming.localEcho,
+        MatrixSendTiming.queueWait,
+        MatrixSendTiming.http,
+        MatrixSendTiming.acknowledgement
+      ]);
+      expect(client.transactions, ['stable']);
+      await client.dispose();
+    });
+  }
 
   test('throwing diagnostic observer does not retry an accepted room send',
       () async {

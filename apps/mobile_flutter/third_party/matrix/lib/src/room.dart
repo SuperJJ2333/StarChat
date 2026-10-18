@@ -610,6 +610,7 @@ class Room {
   /// by the server for this message.
   Future<String?> sendTextEvent(String message,
       {String? txid,
+      MatrixSendTimingObserver? onTiming,
       Event? inReplyTo,
       String? editEventId,
       bool parseMarkdown = true,
@@ -643,6 +644,7 @@ class Room {
     return sendEvent(
       event,
       txid: txid,
+      onTiming: onTiming,
       inReplyTo: inReplyTo,
       editEventId: editEventId,
       threadRootEventId: threadRootEventId,

@@ -208,6 +208,28 @@ final class MatrixClientContinuityMetadata {
       databaseGeneration == other.databaseGeneration;
 }
 
+MatrixSendTimingObserver? get _sdkSendTimingObserver =>
+    PerformanceMetrics.instance.enabled
+        ? (phase, elapsed) => PerformanceMetrics.instance.record(
+            switch (phase) {
+              MatrixSendTiming.localEcho => PerformanceOperation.sendLocalEcho,
+              MatrixSendTiming.queueWait => PerformanceOperation.sendQueueWait,
+              MatrixSendTiming.sessionLoad =>
+                PerformanceOperation.sendSessionLoad,
+              MatrixSendTiming.sessionCheck =>
+                PerformanceOperation.sendSessionCheck,
+              MatrixSendTiming.sessionCreate =>
+                PerformanceOperation.sendSessionCreate,
+              MatrixSendTiming.encrypt => PerformanceOperation.sendEncrypt,
+              MatrixSendTiming.sessionPersist =>
+                PerformanceOperation.sendSessionPersist,
+              MatrixSendTiming.http => PerformanceOperation.sendHttp,
+              MatrixSendTiming.acknowledgement =>
+                PerformanceOperation.sendAcknowledgement,
+            },
+            elapsed)
+        : null;
+
 /// 采纳一次经过服务端 token 登录证明的 device id 轮换。
 typedef MatrixDeviceRotation = Future<void> Function(
   Client client, {
@@ -4240,7 +4262,8 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<String> sendText(String text) => _withSendOperation(() async =>
-      await _lease._activeRoom.sendTextEvent(text, parseCommands: false) ??
+      await _lease._activeRoom.sendTextEvent(text,
+          parseCommands: false, onTiming: _sdkSendTimingObserver) ??
       // SDK 耗尽重试窗口才返回 null（只有网络类错误会走到这里；服务端拒绝
       // 以 MatrixException 抛出）→ 类型化网络异常 → waitingNetwork 自动重发。
       (throw const MessageSendNetworkException('消息发送失败')));
@@ -4248,8 +4271,10 @@ final class _SdkRoomTimelineCapability
   @override
   Future<String> sendTextWithTransaction(String text, String transactionId) =>
       _withSendOperation(() async =>
-          await _lease._activeRoom
-              .sendTextEvent(text, txid: transactionId, parseCommands: false) ??
+          await _lease._activeRoom.sendTextEvent(text,
+              txid: transactionId,
+              parseCommands: false,
+              onTiming: _sdkSendTimingObserver) ??
           (throw const MessageSendNetworkException('消息发送失败')));
 
   @override
@@ -9378,29 +9403,7 @@ final class MatrixSdkE2eeClient
           eventId = await target.sendEvent(
             Map<String, dynamic>.from(content),
             txid: attempt.txid,
-            onTiming: PerformanceMetrics.instance.enabled
-                ? (phase, elapsed) => PerformanceMetrics.instance.record(
-                    switch (phase) {
-                      MatrixSendTiming.localEcho =>
-                        PerformanceOperation.sendLocalEcho,
-                      MatrixSendTiming.queueWait =>
-                        PerformanceOperation.sendQueueWait,
-                      MatrixSendTiming.sessionLoad =>
-                        PerformanceOperation.sendSessionLoad,
-                      MatrixSendTiming.sessionCheck =>
-                        PerformanceOperation.sendSessionCheck,
-                      MatrixSendTiming.sessionCreate =>
-                        PerformanceOperation.sendSessionCreate,
-                      MatrixSendTiming.encrypt =>
-                        PerformanceOperation.sendEncrypt,
-                      MatrixSendTiming.sessionPersist =>
-                        PerformanceOperation.sendSessionPersist,
-                      MatrixSendTiming.http => PerformanceOperation.sendHttp,
-                      MatrixSendTiming.acknowledgement =>
-                        PerformanceOperation.sendAcknowledgement,
-                    },
-                    elapsed)
-                : null,
+            onTiming: _sdkSendTimingObserver,
           );
         } finally {
           attempt.performanceTrace?.mark(PerformanceStage.matrixSendFinish);

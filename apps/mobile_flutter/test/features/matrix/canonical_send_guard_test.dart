@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/duplicate_room_registry.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/logical_conversation_timeline.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
 
 class _Client extends Client {
   _Client() : super('canonical-guard');
@@ -42,6 +43,7 @@ class _Room extends Room {
   Membership membershipValue = Membership.join;
   bool sendAllowed = true;
   int sends = 0;
+  final timingObservers = <MatrixSendTimingObserver?>[];
   bool failSend = false;
   bool failTimeline = false;
   final timeline = _Timeline();
@@ -77,6 +79,7 @@ class _Room extends Room {
       MatrixSendTimingObserver? onTiming,
       String? threadLastEventId}) async {
     sends++;
+    timingObservers.add(onTiming);
     if (failSend) throw StateError('synthetic uncertain send');
     return r'$sent';
   }
@@ -85,6 +88,31 @@ class _Room extends Room {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('ordinary and durable text carry SDK timing through text serialization',
+      () async {
+    final client = _Client();
+    final room = _Room(client, '!ordinary:test');
+    client.roomsById[room.id] = room;
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    owner.authorizeRoomSend = (_, __, ___) async => true;
+    final lease = await owner.openRoomLease(room.id);
+    final timeline = await lease.openRoomTimeline(onUpdate: () {});
+    try {
+      await timeline.sendText('synthetic');
+      await timeline.sendTextWithTransaction(
+          'synthetic', 'synthetic-transaction');
+      expect(room.timingObservers, hasLength(2));
+      expect(
+          room.timingObservers,
+          everyElement(
+              PerformanceMetrics.instance.enabled ? isNotNull : isNull));
+    } finally {
+      timeline.dispose();
+      await lease.cancel();
+    }
+  });
 
   test('new target preparation resolves direct rooms only and never sends',
       () async {
