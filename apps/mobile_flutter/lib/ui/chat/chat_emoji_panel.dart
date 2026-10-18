@@ -107,21 +107,20 @@ final class _ChatEmojiPanelState extends State<ChatEmojiPanel> {
     if (store == null) return;
     final revision = _recentRevision;
     unawaited(store.load().then((values) {
-      if (!mounted || _recentStore != store) return;
-      setState(() {
-        _recents = _recentRevision == revision
-            ? values
-            : StaticEmojiRecentStore.normalize([..._recents, ...values]);
-      });
+      if (!mounted || _recentStore != store || _recentRevision != revision) {
+        return;
+      }
+      setState(() => _recents = values);
     }).catchError((Object _) {
       // Preference availability must not block the composer.
     }));
   }
 
   void _selectStatic(String char) {
+    // Keep the open panel's tap targets stable. Persist usage now; a fresh
+    // panel reads the new order after the composer closes and reopens it.
+    // A late initial load must also stop rearranging after the first tap.
     _recentRevision++;
-    setState(
-        () => _recents = StaticEmojiRecentStore.normalize([char, ..._recents]));
     final store = _recentStore;
     if (store != null) {
       unawaited(store.record(char).catchError((Object _) {}));

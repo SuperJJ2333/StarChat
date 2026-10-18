@@ -1,13 +1,30 @@
 import 'dart:typed_data';
 
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'package:liuhetong_mobile/features/emoji/static_emoji_recent_store.dart';
 import 'package:liuhetong_mobile/features/emoji/fluent_emoji_catalog.dart';
 import 'package:liuhetong_mobile/features/emoji/fluent_vector_emoji_catalog.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_emoji_panel.dart';
+
+class _HeldPreferences extends InMemorySharedPreferencesStore {
+  _HeldPreferences(super.data) : super.withData();
+
+  final release = Completer<void>();
+  bool readStarted = false;
+
+  @override
+  Future<Map<String, Object>> getAll() async {
+    readStarted = true;
+    await release.future;
+    return super.getAll();
+  }
+}
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -120,6 +137,80 @@ void main() {
         2);
   });
 
+  testWidgets('recent targets stay fixed for repeated taps until panel reopens',
+      (tester) async {
+    final store = StaticEmojiRecentStore(accountId: 'alice');
+    final original = vectorEmojis.take(3).map((emoji) => emoji.char).toList();
+    SharedPreferences.setMockInitialValues({store.storageKey: original});
+    final selected = <String>[];
+    await tester.pumpWidget(accountPanel('alice',
+        key: const Key('stable-open'), onSelected: selected.add));
+    await tester.pumpAndSettle();
+    final targets = [
+      for (final emoji in vectorEmojis.take(3))
+        find.byKey(Key('recent-static-emoji-${emoji.name}'))
+    ];
+    final positions = targets.map(tester.getCenter).toList();
+    await tester.tapAt(positions[1]);
+    await tester.pumpAndSettle();
+    expect(targets.map(tester.getCenter).toList(), positions);
+    await tester.tapAt(positions[1]);
+    await tester.pumpAndSettle();
+    expect(selected, [vectorEmojis[1].char, vectorEmojis[1].char]);
+    await tester.tap(find.byKey(Key('vector-emoji-${vectorEmojis[3].name}')));
+    await tester.pumpAndSettle();
+    expect(targets.map(tester.getCenter).toList(), positions);
+    expect(find.byKey(Key('recent-static-emoji-${vectorEmojis[3].name}')),
+        findsNothing);
+    expect(await store.load(), [
+      vectorEmojis[3].char,
+      vectorEmojis[1].char,
+      vectorEmojis[0].char,
+      vectorEmojis[2].char
+    ]);
+    await tester.pumpWidget(accountPanel('alice', key: const Key('next-open')));
+    await tester.pumpAndSettle();
+    final newest =
+        find.byKey(Key('recent-static-emoji-${vectorEmojis[3].name}'));
+    expect(tester.getCenter(newest), positions.first);
+  });
+
+  testWidgets('late initial recents load cannot move targets after selection',
+      (tester) async {
+    final store = StaticEmojiRecentStore(accountId: 'alice');
+    final platform = _HeldPreferences({
+      'flutter.${store.storageKey}': [vectorEmojis[1].char]
+    });
+    SharedPreferencesStorePlatform.instance = platform;
+    addTearDown(() async {
+      if (!platform.release.isCompleted) platform.release.complete();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      await store.load();
+      SharedPreferences.setMockInitialValues({});
+    });
+    final selected = <String>[];
+    await tester.pumpWidget(accountPanel('alice',
+        key: const Key('held-open'), onSelected: selected.add));
+    await tester.pump();
+    expect(platform.readStarted, isTrue);
+    expect(find.byKey(const Key('recent-static-emoji-grid')), findsNothing);
+    final target = find.byKey(Key('vector-emoji-${vectorEmojis[0].name}'));
+    final position = tester.getCenter(target);
+    await tester.tap(target);
+    platform.release.complete();
+    await tester.pumpAndSettle();
+    expect(selected, [vectorEmojis[0].char]);
+    expect(tester.getCenter(target), position);
+    expect(find.byKey(const Key('recent-static-emoji-grid')), findsNothing);
+    expect(await store.load(), [vectorEmojis[0].char, vectorEmojis[1].char]);
+    await tester
+        .pumpWidget(accountPanel('alice', key: const Key('after-held')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(Key('recent-static-emoji-${vectorEmojis[0].name}')),
+        findsOneWidget);
+  });
+
   testWidgets('account switch cannot display previous account recents',
       (tester) async {
     SharedPreferences.setMockInitialValues({
@@ -142,7 +233,7 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('static selection appears in a dedicated recent region',
+  testWidgets('selection does not insert recent rows into the open panel',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(
         home: SizedBox(
@@ -157,9 +248,9 @@ void main() {
     await tester
         .tap(find.byKey(Key('vector-emoji-${vectorEmojis.first.name}')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('recent-static-emoji-grid')), findsOneWidget);
+    expect(find.byKey(const Key('recent-static-emoji-grid')), findsNothing);
     expect(find.byKey(Key('recent-static-emoji-${vectorEmojis.first.name}')),
-        findsOneWidget);
+        findsNothing);
   });
 
   testWidgets('every fresh panel opens static even after choosing dynamic',
