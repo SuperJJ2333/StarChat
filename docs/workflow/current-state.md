@@ -1,9 +1,12 @@
 # 当前工作状态
 
-## 2026-10-18 冷启动/发送性能优化：2224 Debug实现已冻结，完整门禁运行中
+## 2026-10-18 冷启动/发送性能优化：2224 Debug已安装并完成实测
 
-按用户四项要求实现：复制流合并哈希保留三遍全内容检查；闭集计时覆盖身份I/O和SDK发送阶段；合并可选缓存刷新、复用fresh heads及已持久失效状态；身份验证后current/pinned/draft/recent最多8房间只加载已有发送会话，保留发送前成员/轮换和逐消息密钥状态保存。SPEC后独立QUALITY通过，细化竞争/中途I/O故障证据已闭合。候选0.4.55+2224，冻结0afb5b53；完整test/analyze运行中，尚未构建/安装，模拟器仍2223。正式分发Android2216/iOS2215不变。工作树interactive-cache-startup，见[任务](tasks/2026-10-18-startup-send-performance.md)。证据保留该工作树docs/verification/artifacts/2026-10-18/startup-send-performance，V由全量runner临时占用。下一步检查full-r1结果后签名native/main构建及冷启动测试群计时。
+四项实现及SPEC→独立QUALITY通过；产品b434ca03，最终测试c6e641f4仅修订点击夹具。0.4.55+2224普通main固定签名APK SHA0b25c384…af33b3a已保数据安装5556，设备哈希/UID10090/首次安装时间一致，最终停在测试群（7），自定义头像及输入框正常。最终原生r6五场景PASS，含延迟恢复时可点击/可滚动与恢复后只发送一次、114头像审计帧。两SQL闸门及原逐帧断言保持，旧失败记录保留。
 
+三轮真实冷启动身份检查2212/2490/2682ms，SDK2672/631/932ms，提交至确认3327/738/1311ms；首轮缓存未命中长尾保留。纯加密1.18～2.95ms，主要发送耗时来自两次本地同步。完整文件读取4→3已证明，但身份总耗时尚未稳定缩短；缓存封套仍有界全局重建。默认受影响156PASS、计时专项28PASS、analyze0；full-r3原6204PASS/9SKIP/2ERROR exit1保留，恢复夹具27及缓存入房5补验通过。扩大计时17个旧FakeTimer失败在归档基线同名同因复现并纠正身份绑定，不称全量命令全绿。聚合verify缺.env，未导入生产凭据。构建/驱动结束，无本任务遗留映射或转发。
+
+下一步由用户测试模拟器普通Debug；无待完成构建/安装。正式Android2216/iOS2215及弹窗/下载入口不变。见[任务](tasks/2026-10-18-startup-send-performance.md)、[报告](../verification/2026-10-18-startup-send-performance.md)；原始证据保留在interactive-cache-startup工作树对应artifacts目录。
 
 ## 2026-10-18 Android2222冷启动已实测，2223 Debug修正群资料并安装模拟器
 
