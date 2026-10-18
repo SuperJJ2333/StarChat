@@ -7380,8 +7380,9 @@ final class MatrixSdkE2eeClient
 
   void _scheduleSendingSessionWarmup() {
     final client = _client;
-    if (client == null || client.isInitializationPending || _accessRevoked)
+    if (client == null || client.isInitializationPending || _accessRevoked) {
       return;
+    }
     unawaited(_withClient((active) async {
       if (!identical(active, client) || !_activeContinuityValidated) return;
       if (!identical(_sendingWarmupClient, active)) {
@@ -7407,7 +7408,9 @@ final class MatrixSdkE2eeClient
               if (room == null ||
                   !room.encrypted ||
                   room.membership != Membership.join ||
-                  preferenceForRoom(room).hidden) return;
+                  preferenceForRoom(room).hidden) {
+                return;
+              }
               await active.encryption?.keyManager.loadOutboundGroupSession(
                   roomId,
                   canPublish: () =>

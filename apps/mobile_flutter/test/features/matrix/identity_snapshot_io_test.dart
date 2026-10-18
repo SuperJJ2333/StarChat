@@ -66,8 +66,9 @@ class _MidCopyIo extends _AdversarialIo {
       yield chunk;
       if (!injected && file.path == sourcePath) {
         injected = true;
-        if (fail)
+        if (fail) {
           throw const FileSystemException('fixture midstream read failure');
+        }
         final bytes = await file.readAsBytes();
         bytes[0] ^= 1; // already copied: guarantees final source mismatch
         bytes[bytes.length - 1] ^= 1; // a byte not yet read by the stream
@@ -160,10 +161,12 @@ void main() {
       await db.insert('box_client', {'k': 'user_id', 'v': '@fixture:test'});
       await db.close();
       final original = await source.readAsBytes();
-      if (mutation == 'wal-remove')
+      if (mutation == 'wal-remove') {
         await File('${source.path}-wal').writeAsBytes([]);
-      if (mutation == 'shm-remove')
+      }
+      if (mutation == 'shm-remove') {
         await File('${source.path}-shm').writeAsBytes([]);
+      }
       final io = _AdversarialIo()
         ..afterCopy = (file, target) async {
           switch (mutation) {
@@ -211,8 +214,9 @@ void main() {
             ReadOnlySqlCipherIdentityReader(io: io).read(source.path, ''),
             throwsA(anything));
         expect(await Directory(io.snapshotDirectory!).exists(), isFalse);
-        if (mutation != 'source-truncate')
+        if (mutation != 'source-truncate') {
           expect(await source.readAsBytes(), original);
+        }
       } finally {
         await directory.delete(recursive: true);
       }
