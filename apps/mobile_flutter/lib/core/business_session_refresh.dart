@@ -48,16 +48,44 @@ extension _RecoverableBusinessRefresh on BusinessApiClient {
     if (epoch != _sessionEpoch) throw BusinessApiClient._ended;
     final before = await sessionStore.session();
     if (before != expected) throw BusinessApiClient._ended;
+    BusinessRefreshWriteContext? context;
+    var prepared = false;
     try {
-      await sessionStore.saveSession(
-          accessToken: target.accessToken,
-          refreshToken: target.refreshToken,
-          matrixUserId: target.matrixUserId,
-          deviceKey: target.deviceKey,
-          pendingRefreshOperation: target.pendingRefreshOperation);
+      context =
+          await sessionStore.prepareSameOwnerRefreshWrite(expected, target);
+      prepared = true;
+      if (context != null) {
+        await context.persist();
+      } else {
+        await sessionStore.saveSession(
+            accessToken: target.accessToken,
+            refreshToken: target.refreshToken,
+            matrixUserId: target.matrixUserId,
+            deviceKey: target.deviceKey,
+            pendingRefreshOperation: target.pendingRefreshOperation);
+      }
+    } on BusinessRefreshWriteOwnerChanged {
+      throw BusinessApiClient._ended;
     } catch (_) {
       _refreshDiagnostic(failureStage);
       if (epoch != _sessionEpoch) throw BusinessApiClient._ended;
+      if (!prepared) throw _storageUnavailable;
+      if (context != null) {
+        late final bool persisted;
+        try {
+          persisted = await context.targetIsPersisted();
+        } on BusinessRefreshWriteOwnerChanged {
+          throw BusinessApiClient._ended;
+        } catch (_) {
+          throw _storageUnavailable;
+        }
+        if (epoch != _sessionEpoch || !context.isCurrent) {
+          throw BusinessApiClient._ended;
+        }
+        if (!persisted) throw _storageUnavailable;
+        _acceptCredentialsRefresh(epoch, expected, target);
+        return target;
+      }
       final after = await sessionStore.session();
       if (after == target) {
         _acceptCredentialsRefresh(epoch, expected, target);
@@ -66,7 +94,9 @@ extension _RecoverableBusinessRefresh on BusinessApiClient {
       if (after != expected) throw BusinessApiClient._ended;
       throw _storageUnavailable;
     }
-    if (epoch != _sessionEpoch) throw BusinessApiClient._ended;
+    if (epoch != _sessionEpoch || context?.isCurrent == false) {
+      throw BusinessApiClient._ended;
+    }
     _acceptCredentialsRefresh(epoch, expected, target);
     return target;
   }

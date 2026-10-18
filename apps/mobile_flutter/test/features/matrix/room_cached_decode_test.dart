@@ -1,5 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
+import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
+import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
+import 'profile_repository_test.dart' show MemoryProfileStore;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -291,6 +298,99 @@ void main() {
       timeline?.dispose();
       await lease?.cancel();
       await fixture.close();
+    }
+  });
+
+  testWidgets('ready canonical local E2EE paints and scrolls before postLoad',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final fixture =
+        (await tester.runAsync(() => _Fixture.create('decode-ui')))!;
+    final lease = (await tester.runAsync(
+        () => fixture.owner.openRoomLease('!decode:synthetic.test')))!;
+    final dispatch = ValueNotifier(false);
+    ConversationReadState.shared()
+      ..resetForTest()
+      ..bindAccount(fixture.client.userID);
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.synthetic.test'),
+        sessionStore: fixture.secure,
+        client: MockClient((_) async => http.Response('{}', 503)));
+    try {
+      await tester.pumpWidget(CupertinoApp(
+          home: RoomPage(
+              api: api,
+              roomLease: lease,
+              roomName: 'Synthetic decode',
+              dispatchReady: dispatch,
+              initialIdentityCache: ProfileRepository.forTesting(
+                  accountKey: 'decode-ui', store: MemoryProfileStore()),
+              onCreateGroup: () {})));
+      for (var i = 0; i < 150; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 16));
+        if (find.text('Decoded local 39').evaluate().isNotEmpty) break;
+      }
+      expect(fixture.owner.startupAdmission, isNull);
+      expect(fixture.client.isInitializationPending, isFalse);
+      expect(fixture.database.postLoadEntered.isCompleted, isTrue);
+      expect(fixture.database.postLoadRelease.isCompleted, isFalse);
+      expect(find.text('Decoded local 39'), findsOneWidget);
+      expect(
+          tester
+              .getRect(find.text('Decoded local 39'))
+              .overlaps(const Rect.fromLTWH(0, 0, 360, 800)),
+          isTrue);
+      final state = tester.state(find.byType(RoomPage)) as dynamic;
+      final controller = state.controller;
+      expect(controller.messages.length, 40);
+      final list = find.byType(AnchoredTimelineList);
+      final scroll = tester.widget<AnchoredTimelineList>(list).controller;
+      await tester.drag(list, const Offset(0, 260));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(scroll.offset, greaterThan(0));
+      final offset = scroll.offset;
+      fixture.database.postLoadRelease.complete();
+      for (var i = 0; i < 30; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(identical(state.controller, controller), isTrue);
+      expect(scroll.offset, closeTo(offset, 1));
+      expect(controller.messages.map((dynamic e) => e.id).toSet().length, 40);
+    } finally {
+      if (!fixture.database.postLoadRelease.isCompleted) {
+        fixture.database.postLoadRelease.complete();
+      }
+      await tester.pumpWidget(const SizedBox());
+      var closed = false;
+      Object? closeFailure;
+      () async {
+        try {
+          await lease.cancel();
+          await fixture.close();
+        } catch (error) {
+          closeFailure = error;
+        } finally {
+          closed = true;
+        }
+      }();
+      for (var i = 0; i < 500 && !closed; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(closed, isTrue,
+          reason: 'real cleanup must settle with widget timers');
+      expect(closeFailure, isNull);
+      dispatch.dispose();
+      ConversationReadState.shared().resetForTest();
     }
   });
 

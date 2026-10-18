@@ -1,3 +1,31 @@
+# Android 0.4.60（2229）候选：本地气泡解密前置
+
+<!--2229_STATUS-->
+2026-10-19 02:48+08检查点：冻结源码b6e3e31bd6b5073f66d56c583179768dfeb2536a，0.4.60+2229。DOMAIN/SPEC→独立QUALITY/security通过；定向69PASS、恢复14PASS（重叠）、analyze0issues/37.8s、版本3PASS、平台19PASS/1deselected和6316跟踪路径原字面量扫描PASS。verify聚合仍缺.env未运行。最终共享门禁仍运行，真实普通包逐房耗时待无宿主门禁/构建争用时采样。
+
+原生native-acceptance-2229-r1于18:26:02→18:30:55UTC完成，driver退出0，严格六场景完成协议PASS，保留原SQL/逐帧/撤销/发送次数断言。完整preflight/SDK/当前房SQL被hold时真实缓存内容和滚动、SDKready和同步后SQLheld入房、114帧头像交接、身份恢复失败撤销均通过。合成网络发送仅在恢复授权后两场景各一次；零真实消息。DOMAIN后独立QUALITY证据复核PASS；不作为性能或全部真实房间头像证据。
+
+普通main-2229于18:31:08.1859460→18:40:02.8865546UTC完成固定签名重建/语义校验，SHA08e5ad7a92adada82b96382c1615f1b4b75ec0853b41cd3f674cd03711510aa0/126130522B；18:44:19 install-r确认设备同字节、UID10090和firstInstall2026-09-26不变，已恢复普通包并观察到账号消息列表。Activity启动指标6353ms位于宿主全量期间，不作为缓存气泡性能。root唤醒lease临时7，结束须恢复原0。
+<!--2229_STATUS_END-->
+
+## 2229改变了什么
+
+在无可用显示head的合法canonical lease路径，代码本已读到40条本地事件，但SDKready时仍先await完整room.getTimeline/postLoad，随后才解密；pendingSDK反而能先尝试本地解密。B0保持原40条预算，统一把现有本地解密提前，完整房间恢复在同一capability继续。它不授予未提交快照准入、业务认证或发送权限，也不放宽全局隐私失效。
+
+SQL返回、异步解密与恢复均绑定准确owner/client/DB/当前canonical Room/身份/historyGeneration/capability及适用permit。旧display revision失效时仅用新permit+新bounded40 SQL修复，不给旧行新许可。异常fallback只能使用getTimeline读取前独立捕获且仍当前的恢复revision。optional解密/head失败继续canonical恢复，辅助timeline在finally取消，disposed capability不能迟到写head。
+
+真实源E2EE与SQLCipher测试证明：SDK已经ready、没有startupAdmission、postLoad故意held时40个本地明文ViewModel已出现，随后相同capability完成恢复。覆盖SQL后及解密中换库/换Room/history/cancel/permit、可恢复解密错误、repairSQL异常、独立timeline dispose和唯一ID交接。初始RED以及中间失败全部保留，详见任务记录；不把测试通过当作耗时承诺。
+
+原生2228-r5失败当时精确固定标题保持来电提醒=true，Cupertino dialog1，hit祖先是ModalBarrier/AnimatedModalBarrier。新Android合成fixture通过正常稍后设置按钮完成已确认引导，等待被点击的准确PopupRoute.completed，每帧继续原审计，最多两次/每次80pumps；不预设prefs、不授系统权限、不释放SQL、不关闭未知弹窗，原六场景成功协议不变。新原生r1六场景及driver退出0已通过，见首部检查点。
+
+## 证据身份与下一步
+
+根目录docs/verification/artifacts/2026-10-18/room-entry-readiness。b0-focused-final-r1、b0-repair-failure-final、b0-analyze-r2、version-2229、platform-2229、tracked-privacy-2229分别绑定上述门禁。final-shared-2229在room-cache-2229-full-gate（相同b6）运行，日志留canonical；source-2229是git archive，mobile blobs构建前后核对。native-2229和后续main-2229是独立目标/产物，必须各自通过重建/签名/语义校验。
+
+下一可执行：等待冻结2229共享门禁结束，在真MAIN/LAUNCHER入口复测全房，分别报告route/content/cacheHIT，不以空白房间或最终截图冒充缓存首屏。零真实发送、无生产发布。14个早期合成worker DB清理被自动审批拒绝，仍忽略且不入APK，不再尝试；root唤醒原值0必须最终恢复。
+
+## 以下为2228及之前的历史检查点
+
 # Android 0.4.59（2228）缓存房间准入与冷启动验收
 
 2026-10-19 01:44+08检查点：产品d1/2228的共享门禁已完成，普通Debug已保数据安装。真实MAIN/LAUNCHER全房测试发现页面前等待已移除，但缓存覆盖仍未闭合；原生r3/r4各5/6成功、1处后续导航失败，不是全部通过。正在仅扩展诊断包的遮罩元数据，普通产品不变。
@@ -109,3 +137,13 @@ DOMAIN/SPEC后独立QUALITY两阶段设计与实现均通过，含受保护的�
 自动审批拒绝14个早期失败测试的合成加密worker DB清理，包括递归及精确叶子非递归尝试，仅返回blocked by policy。未执行删除，不再尝试；它们在忽略的apps/mobile_flutter/.dart_tool/docs/verification/artifacts/2026-10-18/room-entry-readiness/fixtures，不进入APK；新夹具用绝对路径并正常清理。fixture-cleanup.json保留。
 
 下一可执行：完成诊断r4重建语义校验→原生六场景→恢复普通APK→14可见会话逐一真实冷启动，无实际消息发送→最终时长/缓存命中与拒绝分布、审查/索引同步。未发布生产。
+
+## Fifth-stage implementation / 2230 candidate (2026-10-19)
+
+2229 shared gate completed6285PASS/9existingSKIP/0FAIL, analyze0, source_stable=true (18:14:50.3916826→18:53:30.4421448UTC). Strict native6PASS and ordinary2229 installed; controlled ordinary14 room samples still0HIT/14MISS/content2207–3171ms, push12–22ms. Early3sample1HIT250ms/2MISS1143,1354ms is partial. B0 actual RoomPage widget1PASS adds visible decrypted text/real scroll/samecontroller evidence; old view-model unit coverage is not firstpaint.
+
+Source proved generic saveSession in both pending/result refresh writes starts identity mutation even same owner. RED actualBusinessApi+realAEAD reproduction failed original display permit; narrow refresh-only persistence GREEN preserves it while pending still denies writer. Strict sameowner two transitions only; original generic fences unchanged. context holds auth+identity-operationgeneration/exactcoordinator/businessidentity, serializedCAS/awaitchecks; typedclosed errors precede catchall; writeerrorreadback only exacttarget under sameowner, finalepoch/context check immediately before acceptance. Unknown/malformed/changedlineage retains fullfence. Real observedrevision4 soleattribution remains inference.
+
+DOMAIN/SPEC then independentQUALITY implementationPASS. refresh-preserve-security-r2 33PASS; refresh-adjacent-r1 sevenfiles139PASS/150s; analyzer-r1 sevenlintinfos corrected, r2 zeroissues/12.2s. Paired0.4.61+2230 with version3PASS; noproductionmetadatachanged. Previousb6fullgate not evidence for newruntime. Next: freeze, newshared/platform/native/mainrebuild, install-r preserving UID/firstInstall, trueMAIN/LAUNCHER allroom comparison without hostcontention. Wakelease7 must restore original0finally; zero real sends.
+
+Unused sync diagnostic worktree never built/installed; its missing-helper RED/pub logs copied to unused-sync-diagnostic before nativearchive request. Both prior fullgate worktrees confirmedarchived. No aggregateverify due missing.env, no secrets synthesized.

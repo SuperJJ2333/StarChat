@@ -310,6 +310,52 @@ final class StoredBusinessSession {
       matrixUserId, deviceKey, pendingRefreshOperation);
 }
 
+/// A closed persistence failure, never an uncertain-write success.
+final class BusinessRefreshWriteOwnerChanged implements Exception {
+  const BusinessRefreshWriteOwnerChanged();
+}
+
+/// One same-owner refresh write. This grants no authentication or transport.
+final class BusinessRefreshWriteContext {
+  BusinessRefreshWriteContext._(
+      this._store,
+      this._expected,
+      this._target,
+      this._authorizationGeneration,
+      this._identityGeneration,
+      this._coordinator,
+      this._businessIdentity);
+  final SecureSessionStore _store;
+  final StoredBusinessSession _expected, _target;
+  final int _authorizationGeneration, _identityGeneration;
+  final StartupProjectionCoordinator _coordinator;
+  final String _businessIdentity;
+  bool _attempted = false;
+
+  bool get isCurrent =>
+      _store._businessAuthorizationGeneration == _authorizationGeneration &&
+      _store._projectionIdentityGeneration == _identityGeneration &&
+      identical(_store.startupProjectionCoordinator, _coordinator) &&
+      _store._businessIdentity == _businessIdentity;
+
+  void _ensureCurrent() {
+    if (!isCurrent) throw const BusinessRefreshWriteOwnerChanged();
+  }
+
+  Future<void> persist() {
+    _ensureCurrent();
+    if (_attempted) throw const BusinessRefreshWriteOwnerChanged();
+    _attempted = true;
+    return _store._persistSameOwnerRefresh(this);
+  }
+
+  Future<bool> targetIsPersisted() {
+    _ensureCurrent();
+    if (!_attempted) throw const BusinessRefreshWriteOwnerChanged();
+    return _store._readBackSameOwnerRefresh(this);
+  }
+}
+
 final class SecureSessionStore {
   SecureSessionStore([SecureKeyValueStore? storage])
       : _storage =
@@ -318,6 +364,7 @@ final class SecureSessionStore {
   final _AccountScopedSecureStore _storage;
   String? _businessIdentity;
   int _businessAuthorizationGeneration = 0;
+  int _projectionIdentityGeneration = 0;
   String? get businessIdentity => _businessIdentity;
   int get businessAuthorizationGeneration => _businessAuthorizationGeneration;
   static String? _tokenIdentity(String token) {
@@ -1384,33 +1431,202 @@ final class SecureSessionStore {
         ));
   }
 
+  static StoredBusinessSession _decodeBusinessSession(String encoded) {
+    final value = jsonDecode(encoded);
+    if (value is! Map<String, dynamic> ||
+        value['version'] != 1 ||
+        value['access_token'] is! String ||
+        value['refresh_token'] is! String ||
+        (value['pending_refresh_operation'] != null &&
+            !_validRefreshOperation(value['pending_refresh_operation']))) {
+      throw const FormatException('Invalid stored business session');
+    }
+    return StoredBusinessSession(
+      version: 1,
+      accessToken: value['access_token'] as String,
+      refreshToken: value['refresh_token'] as String,
+      matrixUserId: value['matrix_user_id']?.toString(),
+      deviceKey: value['device_key']?.toString(),
+      pendingRefreshOperation: value['pending_refresh_operation'] as String?,
+    );
+  }
+
   Future<StoredBusinessSession?> session() async {
     final generation = _businessAuthorizationGeneration;
     final encoded = await _storage.read(_sessionKey);
     if (encoded != null) {
-      final value = jsonDecode(encoded);
-      if (value is! Map<String, dynamic> ||
-          value['version'] != 1 ||
-          value['access_token'] is! String ||
-          value['refresh_token'] is! String ||
-          (value['pending_refresh_operation'] != null &&
-              !_validRefreshOperation(value['pending_refresh_operation']))) {
-        throw const FormatException('Invalid stored business session');
-      }
+      final result = _decodeBusinessSession(encoded);
       if (generation == _businessAuthorizationGeneration) {
-        _businessIdentity ??= _tokenIdentity(value['access_token'] as String);
+        _businessIdentity ??= _tokenIdentity(result.accessToken);
       }
-      return StoredBusinessSession(
-        version: 1,
-        accessToken: value['access_token'] as String,
-        refreshToken: value['refresh_token'] as String,
-        matrixUserId: value['matrix_user_id']?.toString(),
-        deviceKey: value['device_key']?.toString(),
-        pendingRefreshOperation: value['pending_refresh_operation'] as String?,
-      );
+      return result;
     }
     return _migrateLegacySession();
   }
+
+  static bool _refreshOwnerField(Object? value, {int maxLength = 512}) =>
+      value is String &&
+      value.isNotEmpty &&
+      value.length <= maxLength &&
+      !RegExp(r'[\s\x00-\x1f\x7f]').hasMatch(value);
+
+  static (String, String, String)? _refreshLineage(String token) {
+    try {
+      if (token.length > 16384 || token.split('.').length != 3) return null;
+      final value = jsonDecode(utf8
+          .decode(base64Url.decode(base64Url.normalize(token.split('.')[1]))));
+      if (value is! Map) return null;
+      final subject = value['sub'];
+      final family = value['family_id'];
+      final device = value['device_id'];
+      if (!_refreshOwnerField(subject) ||
+          !_refreshOwnerField(family) ||
+          !_refreshOwnerField(device)) {
+        return null;
+      }
+      return (subject as String, family as String, device as String);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static bool _sameOwnerRefreshTransition(
+      StoredBusinessSession before, StoredBusinessSession after) {
+    if (before.version != 1 ||
+        after.version != 1 ||
+        !_refreshOwnerField(before.matrixUserId) ||
+        !RegExp(r'^@[^:\s]+:[^\s]+$').hasMatch(before.matrixUserId!) ||
+        !_refreshOwnerField(before.deviceKey, maxLength: 256) ||
+        before.matrixUserId != after.matrixUserId ||
+        before.deviceKey != after.deviceKey ||
+        before.accessToken.isEmpty ||
+        before.refreshToken.isEmpty ||
+        after.accessToken.isEmpty ||
+        after.refreshToken.isEmpty) {
+      return false;
+    }
+    final lineage = _refreshLineage(before.accessToken);
+    if (lineage == null || lineage != _refreshLineage(after.accessToken)) {
+      return false;
+    }
+    if (before.pendingRefreshOperation == null) {
+      return _validRefreshOperation(after.pendingRefreshOperation) &&
+          before.accessToken == after.accessToken &&
+          before.refreshToken == after.refreshToken;
+    }
+    return _validRefreshOperation(before.pendingRefreshOperation) &&
+        after.pendingRefreshOperation == null;
+  }
+
+  static bool _strictRefreshRecord(String encoded) {
+    final value = jsonDecode(encoded);
+    const keys = {
+      'version',
+      'access_token',
+      'refresh_token',
+      'matrix_user_id',
+      'device_key',
+      'pending_refresh_operation'
+    };
+    return value is Map<String, dynamic> &&
+        value.keys.every(keys.contains) &&
+        value['version'] == 1 &&
+        value['matrix_user_id'] is String &&
+        (value['matrix_user_id'] as String).isNotEmpty &&
+        value['device_key'] is String &&
+        (value['device_key'] as String).isNotEmpty &&
+        value['access_token'] is String &&
+        (value['access_token'] as String).isNotEmpty &&
+        value['refresh_token'] is String &&
+        (value['refresh_token'] as String).isNotEmpty &&
+        (value['pending_refresh_operation'] == null ||
+            _validRefreshOperation(value['pending_refresh_operation']));
+  }
+
+  /// Classifies only two refresh transitions. Generic session writes still fence.
+  /// A null result is a pre-context legacy fallback; established contexts close.
+  Future<BusinessRefreshWriteContext?> prepareSameOwnerRefreshWrite(
+      StoredBusinessSession expected, StoredBusinessSession target) {
+    if (!_sameOwnerRefreshTransition(expected, target)) {
+      return Future.value(null);
+    }
+    final coordinator = startupProjectionCoordinator;
+    final identity = _businessIdentity;
+    if (coordinator == null || identity == null) return Future.value(null);
+    if (identity != _tokenIdentity(expected.accessToken)) {
+      throw const BusinessRefreshWriteOwnerChanged();
+    }
+    final context = BusinessRefreshWriteContext._(
+        this,
+        expected,
+        target,
+        _businessAuthorizationGeneration,
+        _projectionIdentityGeneration,
+        coordinator,
+        identity);
+    return _runMatrixIdentityOperation(() async {
+      context._ensureCurrent();
+      final encoded = await _storage.read(_sessionKey);
+      context._ensureCurrent();
+      if (encoded == null) throw const BusinessRefreshWriteOwnerChanged();
+      try {
+        if (_decodeBusinessSession(encoded) != expected) {
+          throw const BusinessRefreshWriteOwnerChanged();
+        }
+        if (!_strictRefreshRecord(encoded)) return null;
+      } on FormatException {
+        throw const BusinessRefreshWriteOwnerChanged();
+      }
+      return context;
+    });
+  }
+
+  Future<StoredBusinessSession> _refreshContextSession(
+      BusinessRefreshWriteContext context) async {
+    context._ensureCurrent();
+    final encoded = await _storage.read(_sessionKey);
+    context._ensureCurrent();
+    if (encoded == null) throw const BusinessRefreshWriteOwnerChanged();
+    try {
+      if (!_strictRefreshRecord(encoded)) {
+        throw const BusinessRefreshWriteOwnerChanged();
+      }
+      return _decodeBusinessSession(encoded);
+    } on FormatException {
+      throw const BusinessRefreshWriteOwnerChanged();
+    }
+  }
+
+  static String _encodeBusinessSession(StoredBusinessSession value) =>
+      jsonEncode({
+        'version': value.version,
+        'access_token': value.accessToken,
+        'refresh_token': value.refreshToken,
+        if (value.matrixUserId != null) 'matrix_user_id': value.matrixUserId,
+        if (value.deviceKey != null) 'device_key': value.deviceKey,
+        if (value.pendingRefreshOperation != null)
+          'pending_refresh_operation': value.pendingRefreshOperation
+      });
+
+  Future<void> _persistSameOwnerRefresh(BusinessRefreshWriteContext context) =>
+      _runMatrixIdentityOperation(() async {
+        if (await _refreshContextSession(context) != context._expected) {
+          throw const BusinessRefreshWriteOwnerChanged();
+        }
+        context._ensureCurrent();
+        await _storage.write(
+            _sessionKey, _encodeBusinessSession(context._target));
+        context._ensureCurrent();
+      });
+
+  Future<bool> _readBackSameOwnerRefresh(BusinessRefreshWriteContext context) =>
+      _runMatrixIdentityOperation(() async {
+        final current = await _refreshContextSession(context);
+        context._ensureCurrent();
+        if (current == context._target) return true;
+        if (current == context._expected) return false;
+        throw const BusinessRefreshWriteOwnerChanged();
+      });
 
   static String newRefreshOperation() {
     final random = Random.secure();
@@ -1459,6 +1675,7 @@ final class SecureSessionStore {
 
   Future<T> _runProjectionIdentityMutation<T>(Future<T> Function() operation,
       {bool skipArchiveRecovery = false}) {
+    _projectionIdentityGeneration++;
     final ticket = startupProjectionCoordinator?.beginMutation('identity');
     return (() async {
       var applied = false;
