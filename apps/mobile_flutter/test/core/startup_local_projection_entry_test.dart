@@ -725,6 +725,22 @@ void registerStartupProjectionEntryTests(
                   .take(12)
                   .map((entry) => entry.target.runtimeType.toString())
                   .toList(),
+              'hit_widget_ancestors': [
+                for (final entry
+                    in tester.hitTestOnBinding(center).path.take(4))
+                  if (entry.target case final RenderObject render)
+                    if (render.debugCreator case final DebugCreator creator)
+                      () {
+                        final types = <String>[
+                          creator.element.widget.runtimeType.toString()
+                        ];
+                        creator.element.visitAncestorElements((element) {
+                          types.add(element.widget.runtimeType.toString());
+                          return types.length < 24;
+                        });
+                        return types;
+                      }(),
+              ],
             });
           }
           report?.call({
@@ -735,6 +751,12 @@ void registerStartupProjectionEntryTests(
             'view_inset_bottom': tester.view.viewInsets.bottom,
             'view_padding_bottom': tester.view.padding.bottom,
             'device_pixel_ratio': tester.view.devicePixelRatio,
+            'visible_cupertino_dialogs':
+                find.byType(CupertinoAlertDialog).evaluate().length,
+            'known_dialog_titles': {
+              for (final title in ['后台消息保障', '保持来电提醒', '开启通知', '数据完整性提醒'])
+                title: find.text(title).evaluate().isNotEmpty,
+            },
             'focused_widget_type': FocusManager
                     .instance.primaryFocus?.context?.widget.runtimeType
                     .toString() ??
