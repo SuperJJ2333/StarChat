@@ -1,4 +1,33 @@
-# Android 0.4.60（2229）候选：本地气泡解密前置
+# Android 0.4.61（2230）候选：同身份续期保留缓存展示
+
+## 最终交付：2230普通Debug，缓存入房验收完成
+
+0.4.61+2230普通Debug已保留数据安装到原emulator-5556，UID10090/firstInstall2026-09-26 04:06:20保持。运行时源码62dc76f285b4bf02ae4be79c532228cd2e58de45，APK SHA61ebcfc280fa2d263b14924dbbe0960a90f3ded2836e036cf8fcd947e8d7cd09，固定签名75b31c…61fff。零真实发送，无生产设置、更新弹窗或下载入口修改。
+
+拒绝快照后的AppHome慢分支确为各房间共用：原代码在合法lease后仍先准备本地timeline才push。拒绝原因并不完全相同；实测有businessRefreshPending/headUncommitted。进一步隔离出同owner业务续期的pending与result两次generic saveSession均会触发全局identity mutation，使所有原缓存展示许可失效。已移除合法lease的导航前置等待、将canonical40条本地解密提前，并仅给严格同owner两种refresh转换使用原serializer下的CAS/context保存。最小身份绑定后即可使用有效缓存；完整身份/数据库检查、SDK恢复与其他房间同步继续后台执行。generic身份替换/登出/密钥/账号/隐私fence及完整发送授权保持，pending仍不授writer。
+
+| 普通包实测 | 缓存命中 | 回调→content_ready | 范围 |
+| --- | --- | --- | --- |
+| 2229历史同方法批次 | 0/14 | 2207–3171ms，中位2492.5ms | 每条目force-stop+MAIN/LAUNCHER，SDKready后点击 |
+| 2230本轮完整批次 | 14/14 | 192–331ms，中位250ms | 同入口，route push18–37ms，全部content_verified |
+| 2230列表出现即点 | 3/3 | 280/311/312ms | 全部SDKready前点击；仅抽测3，不是早期14全覆盖 |
+
+以上均在本任务构建/共享门禁结束后进行，无profiling launch、无发送。时间为应用内回调到content_ready，非物理点击到首个解密气泡绘制；同方法不同批次未逐房ID配对，不证明完整身份检查总时长缩短。真实E2EE/SQLCipher RoomPage widget另证可见解密文本、滚动与同controller交接；原生六场景另证完整preflight/SDK/SQLheld仍可操作，无整页loader/误离线反馈，恢复失败撤销与发送次数保持。
+
+最终共享6319PASS/9既有SKIP/0FAIL，analyze/test/runner退出0、source_stable=true；安全专项33PASS、相邻139PASS、analyze0、平台22PASS/1deselected、6317跟踪路径原隐私字面量断言PASS。严格native6PASS/driver0、连续头像118帧，DOMAIN/SPEC后独立QUALITY实现与原生证据复核通过。原生时长326.579s位于并行hostgate期间，只作功能验收。
+
+首次early-r1在枚举前0样本NOT_VERIFIED，记录保留；正常force-stop+MAIN重新建立列表前置后，未改harness的early-r2完成3条。r2整体PARTIAL是显式limit3，3条均PASS；其逐条after_sdk=false及click_at_list标志为准，继承的通用scope文本不扩大为SDK后或全部14条。并行门禁下的诊断1+3样本只用于路径资格，不混入最终性能范围。
+
+原始证据：final-shared-2230/{receipt,counts}.json、native-2230、native-acceptance-2230-r1、main-2230、install-main-2230-r1、all-main-2230-r1、early-main-2230-r1/r2、final-metrics-2230.json、compiled-refresh-symbols-2230.json。普通APK内三个新增refresh符号及kernel SHA变化已独立核对。APK位于interactive-cache-startup工作树的docs/verification/artifacts/2026-10-18/room-entry-readiness/main-2230/final.apk，主目录只同步文档，不覆盖其无关源码。
+
+共享门禁UTC20:12:52.4896052→20:59:36.1296758（46分43.64秒）；native build20:12:52.4579571→20:25:00.0378630（12分7.58秒），main build20:25:15.1761274→20:35:54.0148237（10分38.84秒），三者区间重叠不可相加。原生20:25:15→20:31:16，普通install20:36:35.8186653→20:37:06.6990224；完整逐房21:00:22.707267→21:05:16.764378，早期抽测21:08:58.391591→21:09:58.570577。主动分析未完整计时，未知。
+
+root临时stay_on已于21:11:24UTC恢复原0，screen_off_timeout仍60000，端口29319/29320/29323及本任务V/Y映射无遗留，设备字节仍为普通2230。所有驱动/构建/共享门禁结束；冻结全量工作树已通过原生工具归档，最终attachment核对为archived_worktree。14个早期合成worker DB清理被自动审批以blocked by policy拒绝，保留、未入APK、不再尝试。聚合verify.ps1仍因缺.env未运行，未导入秘密；本次仅Android交付，未作iOS原生/真机发布。
+
+下一步：用户自行测试模拟器普通2230。当前授权内无待构建/待安装/待发送动作；未进行生产发布。
+
+
+## 2229历史检查点：本地气泡解密前置
 
 <!--2229_STATUS-->
 2026-10-19 02:48+08检查点：冻结源码b6e3e31bd6b5073f66d56c583179768dfeb2536a，0.4.60+2229。DOMAIN/SPEC→独立QUALITY/security通过；定向69PASS、恢复14PASS（重叠）、analyze0issues/37.8s、版本3PASS、平台19PASS/1deselected和6316跟踪路径原字面量扫描PASS。verify聚合仍缺.env未运行。最终共享门禁仍运行，真实普通包逐房耗时待无宿主门禁/构建争用时采样。
@@ -147,3 +176,13 @@ Source proved generic saveSession in both pending/result refresh writes starts i
 DOMAIN/SPEC then independentQUALITY implementationPASS. refresh-preserve-security-r2 33PASS; refresh-adjacent-r1 sevenfiles139PASS/150s; analyzer-r1 sevenlintinfos corrected, r2 zeroissues/12.2s. Paired0.4.61+2230 with version3PASS; noproductionmetadatachanged. Previousb6fullgate not evidence for newruntime. Next: freeze, newshared/platform/native/mainrebuild, install-r preserving UID/firstInstall, trueMAIN/LAUNCHER allroom comparison without hostcontention. Wakelease7 must restore original0finally; zero real sends.
 
 Unused sync diagnostic worktree never built/installed; its missing-helper RED/pub logs copied to unused-sync-diagnostic before nativearchive request. Both prior fullgate worktrees confirmedarchived. No aggregateverify due missing.env, no secrets synthesized.
+
+## Frozen2230 native and ordinary install checkpoint
+
+Runtime/tests62dc76f285b4bf02ae4be79c532228cd2e58de45 / 0.4.61+2230. Platform22PASS/1deselected, original literal assertion6317trackedpathsPASS. Native fixed-signer rebuilt6239a837335e407d6e48071df7e933c3d36d311aa39dce091b72aed1f71e0281/127506778B, source2147mobileblobs, UTC20:12:52.4579571→20:25:00.0378630. Strict native-r1 sixscenarios/driverexit0/326.579s, UTC20:25:15→20:31:16; DOMAIN then independentQUALITY evidenceconsistencyPASS. SQLheld/firstframe/terminal/zeroheldsend assertions unchanged, continuousavatar118frames. Pendingwriter denial remains specialized33test evidence; native doesn't newly prove it. Concurrentbuild/fullgate means notperformance.
+
+Ordinarymain2230 source/rebuild/alignment/fixedsigner/semanticsPASS, UTC20:25:15.1761274→20:35:54.0148237; SHA61ebcfc280fa2d263b14924dbbe0960a90f3ded2836e036cf8fcd947e8d7cd09/126130522B. install-r completed20:37:06.6990224UTC, samebytes/UID10090/firstInstall2026-09-26 04:06:20 verified. ActivityTotalTime8177ms underhostgate is notcache/performance. Normalmain restored, no real sends. Source/mainbuilds finished; exactidleGradle311632/Kotlin302480 identities/latestidle/task verified thenreleased, receipt idle-build-workers-release-2230.
+
+Finalshared2230 stillrunninginmanagedroom-cache-2230-full-gate same62dccommit; controlledallroomandearly measurement waitsforcompletion. Rootwakelease7 stillactive, mustrestoreoriginal0finally. No productionpublish.
+
+Final actual ordinary/early metrics, APK byte identity, shared gate and resource receipt were reviewed DOMAIN/SPEC then independent QUALITY/security: PASS. No runtime edit after62dc76f2.

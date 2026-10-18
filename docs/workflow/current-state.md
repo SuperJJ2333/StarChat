@@ -1,12 +1,12 @@
 # 当前工作状态
 
-## 2026-10-18 缓存房间准入修正：2230候选已审查，待新包门禁
+## 2026-10-18 缓存房间准入修正：2230普通Debug已安装，14/14缓存命中
 
-普通2229已安装保数据，最终共享6285PASS/9SKIP、严格原生6PASS；逐房复测仍0HIT/14MISS/content2207–3171ms，push12–22ms，不能称缓存目标完成。早期3样本1HIT250ms/2MISS。找到并RED复现业务refresh两次generic saveSession会错误撤销同owner展示permit。
+运行时62dc76f285b4bf02ae4be79c532228cd2e58de45，0.4.61+2230固定签名重建普通APK SHA61ebcfc280fa2d263b14924dbbe0960a90f3ded2836e036cf8fcd947e8d7cd09/126130522B，已install-r至原5556，设备同字节、UID10090/firstInstall2026-09-26保持。共用拒绝快照慢分支已去掉合法lease后的prepare前置；严格同owner业务refresh不再错误全局撤销缓存，其他身份/隐私fence与完整SDK发送授权保留。
 
-第五阶段窄refresh-only CAS/context已实现；generic身份/登出/密钥/账号fence保留，pending仍不授writer或dispatch。DOMAIN→独立QUALITY PASS，安全33/相邻139PASS、analyze0/12.2s、paired0.4.61+2230版本3PASS。新runtime待冻结/shared/platform/固定签名重建/native/真实逐房验收，旧b6全量不覆盖新代码。零真实发送、无生产修改。
+新共享6319PASS/9既有SKIP/0FAIL、analyze0/source_stabletrue；安全33/相邻139、平台22、6317路径原隐私断言及DOMAIN→独立QUALITY通过。原生严格6/driver0/118头像帧通过。无本任务宿主争用的真实MAIN/LAUNCHER逐条cold：14/14HIT，应用回调→content_ready192–331ms，中位250ms；早期3样本全部SDKready前HIT280/311/312ms，限3非全14。历史2229为0/14HIT、2207–3171ms；非逐ID配对、非物理输入到气泡绘制，未宣称完整身份总耗时压缩。
 
-下一步：新候选完整门禁及install-r；root临时wake7最终恢复原0。14个早期合成DB清理被自动审批拒绝，保留且不入APK不重试；verify缺.env。见[任务](tasks/2026-10-18-room-entry-readiness.md)、[报告](../verification/2026-10-18-room-entry-readiness.md)，原始产物在interactive-cache-startup工作树。
+零真实发送、无生产弹窗/下载修改；rootwake已恢复原0，端口/映射无遗留。14个早期合成DB清理被自动审批拒绝，保留不入APK不再尝试；聚合verify缺.env。下一步用户自行测试普通2230，无待构建或安装。见[任务](tasks/2026-10-18-room-entry-readiness.md)、[报告](../verification/2026-10-18-room-entry-readiness.md)，原始产物位于interactive-cache-startup工作树。
 
 ## 2026-10-18 最近表情位置修复：2225 Debug已安装；冷启动等待仍开放
 
