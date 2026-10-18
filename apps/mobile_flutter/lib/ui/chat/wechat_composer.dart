@@ -34,7 +34,7 @@ class WeChatComposer extends StatefulWidget {
   final VoidCallback onMore;
   final VoidCallback onVoice;
   final VoidCallback onEmoji;
-  final VoidCallback onSend;
+  final VoidCallback? onSend;
   final ValueChanged<String>? onSubmitted;
 
   /// 点击文本输入框时的回调：emoji 面板展开态下用于收起面板并让出
@@ -217,7 +217,7 @@ final class _ComposerIconButton extends StatelessWidget {
       this.iconColor});
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final Key? surfaceKey;
   final Color? backgroundColor;
   final Color? iconColor;
@@ -225,7 +225,9 @@ final class _ComposerIconButton extends StatelessWidget {
   Widget build(BuildContext context) => DecoratedBox(
         key: surfaceKey,
         decoration: BoxDecoration(
-            color: backgroundColor,
+            color: onPressed == null
+                ? CupertinoColors.systemGrey4
+                : backgroundColor,
             borderRadius: BorderRadius.circular(WeChatRadius.control)),
         child: SizedBox.square(
           dimension: WeChatDimensions.minimumTouchTarget,

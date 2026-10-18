@@ -24,6 +24,32 @@ enum StartupProjectionReason {
   commitRejected,
 }
 
+/// Closed local diagnostics only; admission still fails closed on every branch.
+enum StartupAdmissionRejection {
+  archivePending,
+  registryInvalid,
+  activeScopeInvalid,
+  clearPending,
+  archiveIndexInvalid,
+  identityIncomplete,
+  identityInvalid,
+  businessRefreshPending,
+  accountScopeMismatch,
+  privacyPending,
+  headInvalid,
+  headAbsent,
+  headUncommitted,
+  headDigestInvalid,
+  malformedOrUnavailable,
+}
+
+void markStartupAdmissionRejection(
+    StartupAdmissionRejection reason, Stopwatch? clock) {
+  if (!PerformanceMetrics.instance.enabled || clock == null) return;
+  debugPrint('[chatflow/startup] admission_rejection=${reason.name} '
+      'origin=main_entry elapsed_ms=${clock.elapsedMilliseconds}');
+}
+
 void markStartupProjection(StartupProjectionPhase phase, Stopwatch? clock,
     {int? bytes, int? rooms, int? events, StartupProjectionReason? reason}) {
   if (!PerformanceMetrics.instance.enabled || clock == null) return;

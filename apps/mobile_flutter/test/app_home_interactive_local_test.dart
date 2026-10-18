@@ -18,6 +18,7 @@ import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'package:liuhetong_mobile/features/push/native_message_policy.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_room_sender_registry.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -56,6 +57,7 @@ final class _CachedRoom extends SnapshotRoom {
       : label = 'Cached row $index',
         super(id: '!handoff-$index:test', client: client, joined: true);
   String label;
+  Completer<Timeline>? timelineHold;
   @override
   String get name => label;
   @override
@@ -66,10 +68,11 @@ final class _CachedRoom extends SnapshotRoom {
           void Function()? onNewEvent,
           void Function()? onUpdate,
           String? eventContextId}) async =>
-      _HomeTimeline();
+      timelineHold == null ? _HomeTimeline() : await timelineHold!.future;
 }
 
 final class _HomeTimeline extends Fake implements Timeline {
+  int cancelCount = 0;
   @override
   List<Event> get events => const [];
   @override
@@ -79,7 +82,9 @@ final class _HomeTimeline extends Fake implements Timeline {
   @override
   bool get canRequestFuture => false;
   @override
-  void cancelSubscriptions() {}
+  void cancelSubscriptions() {
+    cancelCount++;
+  }
 }
 
 void main() {
@@ -202,11 +207,37 @@ void main() {
     expect(tester.state(find.byType(AppHome)), same(home));
     await tester.tap(find.text('消息').last);
     await tester.pump();
+    final heldRoom = client.snapshotRooms.single as _CachedRoom;
+    heldRoom.timelineHold = Completer<Timeline>();
     await tester.tap(find.text('Cached row 0'));
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.byType(RoomPage), findsOneWidget);
+    expect((tester.state(find.byType(RoomPage)) as dynamic).controller, isNull);
+    expect(find.text('正在读取本机消息…'), findsNothing);
+    expect(find.text('暂无消息'), findsNothing,
+        reason: 'unread history must not masquerade as an empty conversation');
+    expect(heldRoom.timelineHold!.isCompleted, isFalse);
+    await tester.enterText(
+        find.byKey(const Key('composer-input')), 'draft while held');
+    await tester.pump();
+    final disabledSend = tester.widget<CupertinoButton>(find.descendant(
+        of: find.byKey(const Key('composer-send')),
+        matching: find.byType(CupertinoButton)));
+    expect(disabledSend.onPressed, isNull);
+    final heldState = tester.state(find.byType(RoomPage)) as dynamic;
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    expect((await PersistentOutboxManager.shared!.unsent()), isEmpty);
+    expect(heldState.input.text, 'draft while held');
+    await tester.enterText(find.byKey(const Key('composer-input')), '');
+    heldRoom.timelineHold!.complete(_HomeTimeline());
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+        (tester.state(find.byType(RoomPage)) as dynamic).controller, isNotNull);
     expect(find.byKey(const Key('local-text-composer')), findsOneWidget);
     await tester.enterText(
         find.byKey(const Key('composer-input')), 'durable pending text');
@@ -247,4 +278,107 @@ void main() {
     await client.dispose();
     theme.dispose();
   });
+
+  for (final boundary in ['back', 'reentry', 'account', 'epoch', 'error']) {
+    testWidgets('early room owns delayed preparation exactly: $boundary',
+        (tester) async {
+      final client = SnapshotClient()..loggedIn = true;
+      final room = _CachedRoom(client, 0)..timelineHold = Completer<Timeline>();
+      client.snapshotRooms.add(room);
+      final matrix = MatrixSdkE2eeClient(client,
+          homeserver: Uri.parse('https://matrix.test'),
+          readContinuityMetadata: (active) async =>
+              MatrixClientContinuityMetadata(
+                  isLoggedIn: true,
+                  userId: active.userID,
+                  deviceId: 'SYNTHETIC',
+                  ed25519Fingerprint: 'synthetic-fingerprint',
+                  databaseGeneration: 'synthetic-generation'));
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://business.test'),
+          sessionStore: SecureSessionStore(MemorySecureKeyValueStore()),
+          client: MockClient((_) async => http.Response('{}', 503)));
+      final profile = ProfileRepository.forTesting(
+          accountKey: '@me:test', store: _ProfileStore());
+      final theme = ThemeController(store: _ThemeStore());
+      Future<void> frames([int count = 15]) async {
+        for (var i = 0; i < count; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      final baselineSenders = OutboxRoomSenderRegistry.shared.length;
+      await tester.pumpWidget(CupertinoApp(
+          home: AppHome(
+              localOnly: true,
+              api: api,
+              matrix: matrix,
+              onLogout: () async {},
+              themeController: theme,
+              profileRepositoryFactory: (_, __) async => profile,
+              outboxStoreFactory: InMemoryOutboxStore.new,
+              syncWatchdogFactory: (_) =>
+                  MatrixSyncWatchdog(target: _Target()))));
+      await frames();
+      await tester.tap(find.text('Cached row 0'));
+      await frames();
+      final oldState = tester.state(find.byType(RoomPage)) as dynamic;
+      expect(oldState.controller, isNull);
+      expect(OutboxRoomSenderRegistry.shared.length, baselineSenders);
+      final oldHold = room.timelineHold!;
+      final oldTimeline = _HomeTimeline();
+      if (boundary == 'back' || boundary == 'reentry') {
+        Navigator.of(tester.element(find.byType(RoomPage)), rootNavigator: true)
+            .pop();
+        await frames();
+        expect(find.byType(RoomPage), findsNothing);
+      }
+      dynamic newState;
+      if (boundary == 'reentry') {
+        room.timelineHold = Completer<Timeline>();
+        await tester.tap(find.text('Cached row 0'));
+        await frames();
+        newState = tester.state(find.byType(RoomPage));
+        expect(newState, isNot(same(oldState)));
+      }
+      if (boundary == 'account') client.matrixUserId = '@other:synthetic.test';
+      if (boundary == 'epoch') await api.clearLocalSession();
+      if (boundary == 'error') {
+        oldHold.completeError(StateError('synthetic delayed timeline failure'));
+        await frames();
+        expect(find.text('本机消息暂时无法读取'), findsOneWidget);
+        expect(tester.state(find.byType(RoomPage)), same(oldState));
+        room.timelineHold = Completer<Timeline>();
+        await tester.tap(find.text('重试读取'));
+        await frames();
+        room.timelineHold!.complete(oldTimeline);
+        await frames();
+        expect(oldState.controller, isNotNull);
+        expect(OutboxRoomSenderRegistry.shared.length, baselineSenders + 1);
+      } else {
+        oldHold.complete(oldTimeline);
+        await frames();
+        expect(oldTimeline.cancelCount, 1);
+        expect(OutboxRoomSenderRegistry.shared.length, baselineSenders);
+        if (boundary == 'account' || boundary == 'epoch') {
+          expect(oldState.controller, isNull);
+        }
+        if (boundary == 'reentry') {
+          expect(tester.state(find.byType(RoomPage)), same(newState));
+          expect(newState.controller, isNull);
+          room.timelineHold!.complete(_HomeTimeline());
+          await frames();
+          expect(newState.controller, isNotNull);
+          expect(OutboxRoomSenderRegistry.shared.length, baselineSenders + 1);
+        }
+      }
+      await tester.pumpWidget(const SizedBox());
+      await frames();
+      await tester.pump(const Duration(seconds: 16));
+      await client.dispose();
+      theme.dispose();
+      expect(OutboxRoomSenderRegistry.shared.length, baselineSenders);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

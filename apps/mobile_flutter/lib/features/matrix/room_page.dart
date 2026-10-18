@@ -195,13 +195,32 @@ final class PreparedRoomPageEntry {
   bool _disposed = false;
 
   static Future<PreparedRoomPageEntry> prepare(MatrixRoomLease lease,
-      {String? anchorRoomId, String? anchorEventId}) async {
+          {String? anchorRoomId, String? anchorEventId}) async =>
+      (await _prepare(lease,
+          anchorRoomId: anchorRoomId, anchorEventId: anchorEventId))!;
+
+  static Future<PreparedRoomPageEntry?> prepareCached(MatrixRoomLease lease,
+          {String? anchorRoomId, String? anchorEventId}) =>
+      _prepare(lease,
+          anchorRoomId: anchorRoomId,
+          anchorEventId: anchorEventId,
+          cachedOnly: true);
+
+  static Future<PreparedRoomPageEntry?> _prepare(MatrixRoomLease lease,
+      {String? anchorRoomId,
+      String? anchorEventId,
+      bool cachedOnly = false}) async {
     final account = lease.roomInfo.currentUserId;
     if (account == null || lease.canceled) {
       throw StateError('Room entry owner unavailable');
     }
     final preferences = await SharedPreferences.getInstance();
     if (lease.canceled) throw StateError('Room entry owner retired');
+    // No await between this check and openLogicalRoomTimeline's synchronous
+    // head selection. A revoked head falls back to preparation inside RoomPage.
+    if (cachedOnly && !lease.owner.hasCachedRoomDisplay(lease.roomInfo.id)) {
+      return null;
+    }
     final entry = PreparedRoomPageEntry._(
         lease,
         SharedPreferencesLocalHiddenEvents(
@@ -1040,6 +1059,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   DateTime? _voiceStartedAt;
   Duration _voiceElapsed = Duration.zero;
   RoomTimelineController? controller;
+  int _loadGeneration = 0;
 
   LocalHiddenEvents? hiddenEvents;
   final Set<String> _openNotificationRooms = {};
@@ -1643,14 +1663,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     final lease = widget.roomLease;
+    final generation = ++_loadGeneration;
+    final owner = lease.owner;
+    final identity = owner.sendPreparationIdentity;
+    final accountId = roomInfo.currentUserId;
+    final api = widget.api;
+    final businessEpoch = api.sessionEpoch;
     bool sourceActive() =>
         mounted &&
         !_disposing &&
+        generation == _loadGeneration &&
         identical(widget.roomLease, lease) &&
-        !lease.canceled;
+        lease.isCurrentLocalOwner &&
+        identical(lease.owner, owner) &&
+        owner.sendPreparationIdentity == identity &&
+        owner.userId == accountId &&
+        identical(widget.api, api) &&
+        api.sessionEpoch == businessEpoch;
     try {
       widget.performanceTrace?.mark(PerformanceStage.timelineLocalStarted);
-      final accountId = roomInfo.currentUserId;
       if (accountId == null) throw StateError('Matrix 账号尚未登录');
       void onTimelineUpdate() {
         if (!sourceActive()) return;
@@ -1666,9 +1697,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         hiddenEvents = prepared.hiddenEvents;
         timeline = prepared.adopt(lease, onTimelineUpdate);
       } else {
+        final preferences = await SharedPreferences.getInstance();
+        if (!sourceActive()) return;
         hiddenEvents = SharedPreferencesLocalHiddenEvents(
-          mutationGuard: widget.roomLease.runLocalHistoryMutation,
-          preferences: await SharedPreferences.getInstance(),
+          mutationGuard: lease.runLocalHistoryMutation,
+          preferences: preferences,
           accountId: accountId,
         );
         timeline =
@@ -1676,7 +1709,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             // （不等待服务器）；历史分页 requestHistory 默认 30 条/页
             // （Room.defaultHistoryCount，处于 30~50 规范区间），
             // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
-            await widget.roomLease.openLogicalRoomTimeline(
+            await lease.openLogicalRoomTimeline(
           cachedFirst: true,
           anchorRoomId: widget.navigationRequests?.value.anchorRoomId ??
               widget.initialAnchorRoomId,
@@ -1685,12 +1718,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           onUpdate: onTimelineUpdate,
         );
       }
-      if (!mounted || _disposing || widget.roomLease.canceled) {
+      if (!sourceActive()) {
         timeline.dispose();
         return;
       }
       _logicalTimeline = timeline;
-      controller = RoomTimelineController(
+      final loadedController = RoomTimelineController(
         onSourceRefreshed: _recordGlobalSearchIndex,
         isSourceActive: sourceActive,
         windowed: true,
@@ -1699,6 +1732,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         // 投影（GET /blocks + 本地立即更新），不做写死放行。
         canSendNow: () =>
             !widget.readOnly &&
+            sourceActive() &&
             _queueReady &&
             widget.roomLease.canQueueLocalText &&
             InteractionPermission.resolve(
@@ -1706,13 +1740,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               isBlocked: blockedContacts.isBlocked(_peerUserId()),
             ).canSendMessage(),
         // Offline First：发送前先落盘；重试/重启复用同一 txid。
-        canDispatchNow: () => _canDispatch,
+        canDispatchNow: () => sourceActive() && _canDispatch,
         outboxJournal: _outboxJournal,
         outboxRoomId: roomInfo.id,
         onOutboxCorrelation: widget.onOutboxCorrelation,
         outboxCorrelationFor: widget.outboxCorrelationFor,
         MatrixRoomTimelineAdapter(timeline),
-      )..addListener(_changed);
+      );
+      loadedController.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+      loadedController.addListener(_changed);
+      controller = loadedController;
       _bindMediaTimeline();
       _observedOutbox = _outbox;
       _observedOutbox?.addListener(_outboxChanged);
@@ -1721,16 +1758,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         final owner = widget.roomLease.owner.sendPreparationIdentity;
         final businessEpoch = widget.api.sessionEpoch;
         unawaited(pendingOutbox.then((manager) async {
-          if (!mounted ||
-              _disposing ||
-              widget.roomLease.canceled ||
+          if (!sourceActive() ||
               owner != widget.roomLease.owner.sendPreparationIdentity ||
               businessEpoch != widget.api.sessionEpoch ||
               manager == null ||
               manager.isDisposed ||
               !identical(manager, PersistentOutboxManager.shared) ||
               manager.accountId != roomInfo.currentUserId ||
-              controller == null) {
+              !identical(controller, loadedController)) {
             return;
           }
           _readyOutbox = manager;
@@ -1743,39 +1778,55 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           _outboxJournal = journal;
           _observedOutbox = manager;
           manager.addListener(_outboxChanged);
-          await controller!.reconcileOutboxStatuses();
-          if (mounted && !_disposing) setState(() {});
+          await loadedController.reconcileOutboxStatuses();
+          if (sourceActive() && identical(controller, loadedController)) {
+            setState(() {});
+          }
         }).catchError((Object _) {}));
       }
-      // 调度器只有在房间已打开时才允许派发持久化行；句柄随页面销毁注销。
+      final revisionBeforeInitialRefresh = _timelineRevision.value;
+      await loadedController.refresh();
+      if (!sourceActive()) {
+        if (mounted && !_disposing && identical(controller, loadedController)) {
+          _observedOutbox?.removeListener(_outboxChanged);
+          _observedOutbox = null;
+          _mediaTimeline?.dispose();
+          _mediaTimeline = null;
+          loadedController.removeListener(_changed);
+          loadedController.dispose();
+          controller = null;
+          _logicalTimeline = null;
+          timeline.dispose();
+        }
+        return;
+      }
+      // No sender is registered until the first async refresh still belongs
+      // to this exact lease, account and business epoch.
       final sender = RoomOutboxSender(
         roomId: roomInfo.id,
         controller: () => controller,
         canSend: () =>
             !widget.readOnly &&
             _canDispatch &&
-            mounted &&
-            !_disposing &&
-            !widget.roomLease.canceled &&
-            controller != null,
+            sourceActive() &&
+            identical(controller, loadedController),
       );
       _outboxSender = sender;
       OutboxRoomSenderRegistry.shared.register(sender);
-      controller!.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
       replyResolver?.dispose();
       replyResolver = ReplyMessageResolver(
         lookup: (eventId) =>
             controller?.lookupReplyMessage(eventId) ?? Future.value(null),
         onChanged: _replyResolutionChanged,
       );
-      final revisionBeforeInitialRefresh = _timelineRevision.value;
-      await controller!.refresh();
-      if (!mounted || _disposing || widget.roomLease.canceled) return;
       // The constructor already owns its initial snapshot. An unchanged first
       // refresh need not publish, but the page must replace its empty subtree.
       if (_timelineRevision.value == revisionBeforeInitialRefresh) {
         _timelineRevision.value++;
       }
+      // The route may already have painted with no controller. Publish local
+      // readiness even for genuinely empty history, enabling its composer.
+      setState(() {});
       // A cached initial snapshot may not emit a controller change.
       // Apply the route anchor once the first projection is ready.
       _applyInitialAnchorIfNeeded();
@@ -1793,12 +1844,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         },
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!sourceActive()) return;
         _warmVisibleMediaPreviews();
         _prefetchHistory();
       });
     } catch (_) {
-      if (!mounted || _disposing || widget.roomLease.canceled) return;
+      if (!sourceActive()) return;
       widget.performanceTrace?.finish(result: PerformanceResult.failed);
       if (mounted) {
         setState(() {
@@ -1809,7 +1860,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     // The SDK's local timeline and privacy gates are ready. Optional network
     // work must neither hide that history nor serialize unrelated features.
-    if (!mounted || widget.roomLease.canceled) return;
+    if (!sourceActive()) return;
     _startLiveRoomWork();
     unawaited(_flushInitialOutbox());
   }
@@ -2327,7 +2378,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _send() async {
     final text = input.text.trim();
-    if (text.isEmpty || controller == null) return;
+    if (text.isEmpty || controller == null || !_queueReady) return;
     // R2 修复：先取得正文/回复关系/收件人的**不可变快照**，再清空输入。
     // （input.clear() 同步触发监听器→applyEdit 移除全部 token→
     // recipientUserIds 已空——旧顺序丢失 m.mentions。）
@@ -6557,7 +6608,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     child: const Text('重试读取')),
             ]))
           : messages.isEmpty
-              ? Center(child: Text(controller == null ? '正在读取本机消息…' : '暂无消息'))
+              ? (controller == null
+                  ? const SizedBox.expand(key: Key('room-history-pending'))
+                  : const Center(child: Text('暂无消息')))
               : NotificationListener<ScrollNotification>(
                   onNotification: _onTimelineScrollNotification,
                   child: AnchoredTimelineList(
@@ -6792,7 +6845,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                       onMore: () => _togglePanel(ComposerPanel.more),
                       onVoice: _toggleVoice,
                       onEmoji: () => _togglePanel(ComposerPanel.emoji),
-                      onSend: () => _trackAction(_send),
+                      onSend: controller == null || !_queueReady
+                          ? null
+                          : () => _trackAction(_send),
                       onSubmitted: (_) => _send(),
                       voiceField: WeChatHoldToTalk(
                         controller: voiceRecording,

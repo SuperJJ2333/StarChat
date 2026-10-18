@@ -434,8 +434,10 @@ final class MatrixClientFactory {
     var missReason = StartupProjectionReason.markerAbsent;
     if (installation != null) {
       missReason = StartupProjectionReason.admissionRejected;
-      final admission =
-          await sessionStore.readStartupProjectionAdmission(installation);
+      final admission = await sessionStore.readStartupProjectionAdmission(
+          installation,
+          onRejected: (reason) =>
+              markStartupAdmissionRejection(reason, startupClock));
       checkCurrent?.call();
       if (admission != null && admission.homeserver == homeserver.toString()) {
         final projection = await cache.read(admission);

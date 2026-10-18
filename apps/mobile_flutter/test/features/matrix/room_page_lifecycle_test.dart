@@ -368,12 +368,14 @@ void main() {
   });
 
   testWidgets(
-      'pending local history explains wait then paints bounded recent rows',
+      'pending local history keeps room canvas then paints bounded recent rows',
       (tester) async {
     final client = _LifecycleClient();
     client.localRoom.heldTimeline = Completer<Timeline>();
     final lease = await _mountLifecycleRoom(tester, client);
-    expect(find.text('正在读取本机消息…'), findsOneWidget);
+    expect(find.byKey(const Key('room-history-pending')), findsOneWidget);
+    expect(find.text('正在读取本机消息…'), findsNothing);
+    expect(find.text('暂无消息'), findsNothing);
     client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));

@@ -113,7 +113,8 @@ abstract interface class MatrixPlaintextIdentityProbe {
 /// invokes SDK migrations, or creates a database file.
 final class ReadOnlySqlCipherIdentityReader
     implements MatrixLocalIdentityReader, MatrixPlaintextIdentityProbe {
-  const ReadOnlySqlCipherIdentityReader({this.io = const IdentitySnapshotIo()});
+  const ReadOnlySqlCipherIdentityReader(
+      {this.io = const OffloadedIdentitySnapshotIo()});
   final IdentitySnapshotIo io;
 
   static const _sqliteHeader = <int>[

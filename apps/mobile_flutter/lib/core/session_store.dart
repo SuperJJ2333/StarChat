@@ -387,22 +387,45 @@ final class SecureSessionStore {
   }
 
   Future<StartupProjectionAdmission?> readStartupProjectionAdmission(
-      String installationId) async {
+      String installationId,
+      {void Function(StartupAdmissionRejection)? onRejected}) async {
     try {
-      return await _runMatrixIdentityOperation(
-          () => _projectionAdmissionUnlocked(installationId));
-    } catch (_) {
+      return await _runMatrixIdentityOperation(() =>
+          _projectionAdmissionUnlocked(installationId, onRejected: onRejected));
+    } on MatrixArchiveRecoveryPending {
+      _notifyAdmissionRejected(
+          onRejected, StartupAdmissionRejection.archivePending);
       return null;
+    } catch (_) {
+      _notifyAdmissionRejected(
+          onRejected, StartupAdmissionRejection.malformedOrUnavailable);
+      return null;
+    }
+  }
+
+  static void _notifyAdmissionRejected(
+      void Function(StartupAdmissionRejection)? observer,
+      StartupAdmissionRejection reason) {
+    try {
+      observer?.call(reason);
+    } catch (_) {
+      // Diagnostics must never change the identity/privacy verdict.
     }
   }
 
   Future<StartupProjectionAdmission?> _projectionAdmissionUnlocked(
       String installationId,
       {bool priming = false,
-      bool existingDisplay = false}) async {
+      bool existingDisplay = false,
+      void Function(StartupAdmissionRejection)? onRejected}) async {
+    StartupProjectionAdmission? reject(StartupAdmissionRejection reason) {
+      _notifyAdmissionRejected(onRejected, reason);
+      return null;
+    }
+
     projectionEpoch(installationId);
     if (await _boundedPeek(_matrixArchiveJournalKey, 65536) != null) {
-      return null;
+      return reject(StartupAdmissionRejection.archivePending);
     }
     final registryText =
         await _boundedPeek(_AccountScopedSecureStore.registryKey, 65536);
@@ -417,7 +440,7 @@ final class SecureSessionStore {
                 !_AccountScopedSecureStore._hash
                     .hasMatch(e.value as String))) ||
         registry.values.toSet().length != registry.length) {
-      return null;
+      return reject(StartupAdmissionRejection.registryInvalid);
     }
     final active =
         await _boundedPeek(_AccountScopedSecureStore.activeKey, 2048);
@@ -426,11 +449,11 @@ final class SecureSessionStore {
         (!registry.containsValue(scope) ||
             (scope.isNotEmpty &&
                 !_AccountScopedSecureStore._hash.hasMatch(scope)))) {
-      return null;
+      return reject(StartupAdmissionRejection.activeScopeInvalid);
     }
     String scoped(String key) => scope.isEmpty ? key : '$key.$scope';
     if (await _boundedPeek(scoped(_matrixClearTombstoneKey), 2048) != null) {
-      return null;
+      return reject(StartupAdmissionRejection.clearPending);
     }
     final archives = await _boundedPeek(_matrixArchiveIndexKey, 65536);
     if (archives != null) {
@@ -438,15 +461,17 @@ final class SecureSessionStore {
       if (parsed is! Map<String, dynamic> ||
           parsed['entries'] is! List ||
           (parsed['entries'] as List).length > 128) {
-        return null;
+        return reject(StartupAdmissionRejection.archiveIndexInvalid);
       }
-      if (parsed.length != 2 || parsed['version'] != 1) return null;
+      if (parsed.length != 2 || parsed['version'] != 1) {
+        return reject(StartupAdmissionRejection.archiveIndexInvalid);
+      }
       final entries =
           (parsed['entries'] as List).map(_MatrixArchiveEntry.parse).toList();
       if (entries.toSet().length != entries.length ||
           entries.map((entry) => entry.newScope).toSet().length !=
               entries.length) {
-        return null;
+        return reject(StartupAdmissionRejection.archiveIndexInvalid);
       }
     }
     final bindingText = await _boundedPeek(scoped(_matrixBindingKey), 8192);
@@ -458,7 +483,7 @@ final class SecureSessionStore {
         businessText == null ||
         registration == null ||
         registration.isEmpty) {
-      return null;
+      return reject(StartupAdmissionRejection.identityIncomplete);
     }
     final binding = _decodeMatrixBinding(bindingText);
     final business = jsonDecode(businessText);
@@ -471,14 +496,16 @@ final class SecureSessionStore {
         business['access_token'] is! String ||
         business['refresh_token'] is! String ||
         (business['pending_refresh_operation'] != null &&
-            !_validRefreshOperation(business['pending_refresh_operation'])) ||
-        (!existingDisplay && business['pending_refresh_operation'] != null)) {
-      return null;
+            !_validRefreshOperation(business['pending_refresh_operation']))) {
+      return reject(StartupAdmissionRejection.identityInvalid);
+    }
+    if (!existingDisplay && business['pending_refresh_operation'] != null) {
+      return reject(StartupAdmissionRejection.businessRefreshPending);
     }
     final account = _AccountScopedSecureStore.identity(
         binding.homeserver, binding.matrixUserId);
     if (registry.containsKey(account) && registry[account] != scope) {
-      return null;
+      return reject(StartupAdmissionRejection.accountScopeMismatch);
     }
     final text = await _boundedPeek(scoped(_projectionHeadKey), 4096);
     final head = text == null ? null : jsonDecode(text);
@@ -488,24 +515,29 @@ final class SecureSessionStore {
         (head['blocked'] == true ||
             (head['pending'] is List &&
                 (head['pending'] as List).isNotEmpty))) {
-      return null;
+      return reject(StartupAdmissionRejection.privacyPending);
     }
     if (head != null &&
         (head is! Map<String, dynamic> ||
             head['version'] != 1 ||
             head['installation'] != installationId ||
             !['invalid', 'committed'].contains(head['state']))) {
-      return null;
+      return reject(StartupAdmissionRejection.headInvalid);
     }
     if (head != null) {
       final keys = head['state'] == 'committed'
           ? {'version', 'installation', 'epoch', 'state', 'digest', 'length'}
           : {'version', 'installation', 'epoch', 'state'};
       if (head.length != keys.length || !head.keys.every(keys.contains)) {
-        return null;
+        return reject(StartupAdmissionRejection.headInvalid);
       }
     }
-    if (!priming && (head == null || head['state'] != 'committed')) return null;
+    if (!priming && head == null) {
+      return reject(StartupAdmissionRejection.headAbsent);
+    }
+    if (!priming && head['state'] != 'committed') {
+      return reject(StartupAdmissionRejection.headUncommitted);
+    }
     final epoch =
         head == null ? newRefreshOperation() : projectionEpoch(head['epoch']);
     String? hash;
@@ -516,7 +548,7 @@ final class SecureSessionStore {
           head['length'] is! int ||
           (head['length'] as int) < 38 ||
           (head['length'] as int) > startupProjectionMaxEnvelope) {
-        return null;
+        return reject(StartupAdmissionRejection.headDigestInvalid);
       }
       hash = head['digest'] as String;
       length = head['length'] as int;

@@ -87,19 +87,14 @@ final class PerformanceTraceObservation extends PerformanceDiagnosticOperation {
         if (attemptIndex != null) 'attempt_index': attemptIndex!.clamp(0, 20),
         if (windowIndex != null) 'window_index': windowIndex!.clamp(0, 1000000),
         'observed_elapsed_ms': (observedUs ~/ 1000).clamp(0, 3600000),
-        'stages': [
-          for (final entry in stagesUs.entries)
-            {
-              'stage': entry.key.wireName,
-              'elapsed_ms': (entry.value ~/ 1000).clamp(0, 3600000),
-            },
-        ],
+        'stages': _performanceStagesJson(stagesUs),
         'lifecycle': lifecycle.wireName,
         'frame_attribution_complete': false,
       };
 
   Map<String, Object?> toLocalDiagnosticJson() => {
         ...toJson(),
+        'stages': _performanceStagesJson(stagesUs, local: true),
         'observed_idle_ms': (idleUs ~/ 1000).clamp(0, 3600000),
         if (stagesUs.isNotEmpty) 'last_stage': stagesUs.keys.last.wireName,
       };
@@ -132,6 +127,11 @@ enum PerformanceOperationType {
 
 enum PerformanceStage {
   userAction,
+  associationPreparationStarted,
+  associationPreparationDone,
+  outboxPreparationStarted,
+  outboxPreparationDone,
+  identityLookupStarted,
   identityLookupDone,
   localRoomLookupDone,
   routeEnter,
@@ -139,6 +139,12 @@ enum PerformanceStage {
   firstFrameRendered,
   roomAttachStarted,
   roomAttachDone,
+  roomDisplayCacheHit,
+  roomDisplayCacheMiss,
+  localTimelineSqlStarted,
+  localTimelineSqlDone,
+  roomPreparationStarted,
+  roomPreparationDone,
   timelineLocalStarted,
   localTimelineReady,
   remoteSyncReady,
@@ -209,6 +215,34 @@ enum PerformanceStage {
   fragmentWriteStarted,
   fragmentWriteDone,
 }
+
+// These additional navigation probes have no server-schema rollout. Keep
+// both final and checkpoint uploads compatible with the existing contract.
+const _localRoomEntryStages = {
+  PerformanceStage.associationPreparationStarted,
+  PerformanceStage.associationPreparationDone,
+  PerformanceStage.outboxPreparationStarted,
+  PerformanceStage.outboxPreparationDone,
+  PerformanceStage.identityLookupStarted,
+  PerformanceStage.roomDisplayCacheHit,
+  PerformanceStage.roomDisplayCacheMiss,
+  PerformanceStage.localTimelineSqlStarted,
+  PerformanceStage.localTimelineSqlDone,
+  PerformanceStage.roomPreparationStarted,
+  PerformanceStage.roomPreparationDone,
+};
+
+List<Map<String, Object>> _performanceStagesJson(
+        Map<PerformanceStage, int> stages,
+        {bool local = false}) =>
+    [
+      for (final entry in stages.entries)
+        if (local || !_localRoomEntryStages.contains(entry.key))
+          {
+            'stage': entry.key.wireName,
+            'elapsed_ms': (entry.value ~/ 1000).clamp(0, 3600000),
+          },
+    ];
 
 enum PerformanceResult {
   success,
@@ -760,6 +794,7 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
 
   Map<String, Object?> toLocalDiagnosticJson() => {
         ...toJson(),
+        'stages': _performanceStagesJson(stagesUs, local: true),
         if (timingSummaryMs.isNotEmpty) 'timings_ms': timingSummaryMs,
         if (videoTranscodeAttempts.isNotEmpty)
           'video_transcode_attempts': [
@@ -790,13 +825,7 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
         'operation': operation.wireName,
         'result': result.wireName,
         'total_ms': totalMs.clamp(0, 3600000),
-        'stages': [
-          for (final entry in stagesUs.entries)
-            {
-              'stage': entry.key.wireName,
-              'elapsed_ms': (entry.value ~/ 1000).clamp(0, 3600000),
-            },
-        ],
+        'stages': _performanceStagesJson(stagesUs),
         'lifecycle': lifecycle.wireName,
         'frame_attribution_complete': frameAttributionComplete,
         if (frameAttributionComplete) 'slow_frame_count': slowFrameCount,

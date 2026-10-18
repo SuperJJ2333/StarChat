@@ -1,0 +1,39 @@
+# All-room cold entry and background identity work
+
+## Current authorization and ownership
+
+User explicitly requests: locate the cache-admission rejection slow path, determine whether all rooms share its cause, put minimum identity binding before display and continue full checking in background without blocking cached room entry. Continues approved2026-10-17 startup projection spec/plan; no renewed permission loop. Root is sole writer in existing clean interactive-cache-startup worktree, baseline12894c45 (product84152b0f). Installed normal Android0.4.56+2225 SHAe992a257…e9ba8, UID10090/firstInstall2026-09-26 retained. No production publication authorization.
+
+Root owns targeted session-store diagnostic enums/observers, performance enums, AppHome/RoomPage readiness correction, composer nullable send action, identity snapshot I/O worker and tests, related plan/ADR/task/report. No financial changes or removal of privacy/account/key checks. Artifacts only docs/verification/artifacts/2026-10-18/room-entry-readiness/.
+
+## Acceptance ledger
+
+| ID | Requirement | Status |
+| --- | --- | --- |
+| RE1 | Enumerate all current visible room entries, per-room cold path and split timings, no bodies/IDs retained | pending |
+| RE2 | Closed rejection reasons distinguish absent/invalid head, refresh pending, privacy, identity/key mismatch; no changed admission verdict | pending |
+| RE3 | Valid cached rooms show real bubbles/scroll/queue while whole preflight and SDK held; full checks still gate transport | prior limited fixture proof exists; expand actual acceptance |
+| RE4 | After legal lease, local timeline read does not delay route visibility; truthful pending canvas, no fake empty/full page loading; no upstream no-cache SDK bypass | RED reproduced, green entry +5 late-result boundaries pass; expanded regression pending |
+| RE5 | Expensive snapshot I/O/hash runs outside UI isolate, identical copy/hash/recheck semantics and exceptions | RED pending |
+| RE6 | SPEC then independent QUALITY, final gates, fixed-signer Debug install-r and all-room comparison | pending |
+
+Known2225 reproduction: cacheAdmissionMiss/admissionRejected; SDK ready before click, lease11ms→push1446ms→content1817ms. The1435ms interval is PreparedRoomPageEntry.prepare plus scheduling, not proven pure SQL. Existing valid cached path already skips SDK wait; reject branch currently waits timeline before push. Full preflight copying/hash streams still consume caller-isolate CPU. Unknown why actual admission rejected and whether timing applies to every room; do not generalize one sample.
+
+Next executable step: baseline all visible rooms on installed2225 without host builds/tests, design/ADR review, failing tests for diagnostic rejection and deferred page/worker semantics before product edits. Phase timings and original failures retained in artifact receipts. No .codegraph; missing.env still blocks aggregate verify. Native DLL/tool identities reused only after recheck before long gate.
+
+## Progress / evidence identity
+
+- Baseline2225 `baseline-2225-r2`:15 current UI entries enumerated to stable bottom,15 cold attempts,13 completed traces. Ordinal1 no completed trace,8 target not found/ambiguous; do not claim15/15 timed.13 observations lease→push305–3201ms (12/13 at1865–3201ms), identity lookup10–18ms. Startup HIT can later lose room head during canonical mutation; HIT itself does not imply room-level hit at click. All no-send. Original helper/r1 PID race retained, fixed bounded PID polling in r2. Host builds/tests were not concurrent with baseline.
+- `red-entry`: held room timeline keeps RoomPage absent, intended regression failure. Diagnostic/worker RED compile failures verify missing API/default worker. `green-entry-r3`: route appears/controller pending, draft survives button+keyboard, durable queue after ready; PASS. `green-lifecycle-worker`:6 entry tests including back/reentry/account/epoch/error PASS, existing local identity24 PASS; worker fixtures relative path failed14 tests and old loading-string assertion failed1; fixed absolute fixture path and updated explicit authorized pending-canvas expectation, not a product bypass.
+- Default worker byte/independent isolate/missing-file tests PASS in green-readiness-r2;25 admission/store tests PASS including14 rejection branches and observer throwing. Worker tamper/default real encrypted identity regression being expanded.
+- Domain review caught hidden filter ordering; restored filter before assigning controller/first refresh. Read-only ownership predicate avoids throwing roomInfo in stale checks. Added explicit readiness rebuild after empty timeline (earlier green-entry-r2 showed stale disabled send action).
+- Native Olm and SQLCipher SHA rechecked against prior verified runtime (3a6106…46c73 and7a1c97…f1da); pub locka43833…ecc5d. `.env` absent; aggregate verify preflight remains blocked, do not synthesize secrets. First DLL filename guess failed (actual libolm.dll/libsqlcipher.dll); corrected paths/hash before tests.
+- Current actual UTC2026-10-18 13:14:39 / HK21:14:39 checkpoint. Stage exact intervals come from helper receipts; undocumented active planning time unknown. No APK built or installed for this task yet; emulator still2225 normal main. Next: finish focused worker/room regressions, actual-main held whole checks, analyzer, final reviews; then instrumented fixed-signer candidate and all-room diagnostics before making root-cause claims.
+
+## Freeze checkpoint
+
+Domain/SPEC final implementation review PASS, followed by independent QUALITY/security PASS (existing read-only review agents). New11 stage probes are local-only for both final and checkpoint serialization; RED `red-local-diagnostics` then23PASS including upload/composer tests. Additional focused148PASS with1 invalid test path retained as exit1; corrected composer file covered separately. Actual-main5PASS/65s, real worker+room lifecycle30PASS/13s, entry6PASS and identity24PASS. Analyzer first10 brace infos fixed; final0issues/37.8s. Python relevant platform28PASS, UI contract34components/540screens PASS. Broad tests/mobile stopped after several minutes without progress beyond18percent; cancelled run is not a pass. Version contract RED exposed preexisting compiled0.4.53/2222 fallback behind pub2225; paired bump script now0.4.57/2226,3contractPASS. Version-only declarations changed after analyzer; no functional source changed.
+
+14 synthetic encrypted worker fixtures from failed relative-path setup remain in apps/mobile_flutter/.dart_tool/docs/verification/artifacts/2026-10-18/room-entry-readiness/fixtures. Automatic approval rejected both verified recursive cleanup and narrower exact-leaf nonrecursive cleanup with only 'blocked by policy'; no deletion executed, no more attempts. They contain synthetic fixtures only, are ignored, and do not enter APK. New fixtures use absolute task-artifact paths and clean normally. See fixture-cleanup.json. This hygiene limitation must be disclosed separately.
+
+Next executable step: freeze2226 candidate, fixed-signer rebuilt normal main Debug for diagnostic runtime acceptance. Full shared gate remains pending; APK verification receipt is packaging evidence, not a claim all runtime/root-cause acceptance complete. No production update settings/downloads are changed.

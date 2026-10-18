@@ -1922,6 +1922,19 @@ final class MatrixRoomLease
   @override
   bool canceled = false;
 
+  /// Safe ownership predicate; unlike roomInfo it never dereferences a retired
+  /// room, and it does not grant queueing or transport permission.
+  bool get isCurrentLocalOwner {
+    final room = _room;
+    final client = owner._client;
+    return !canceled &&
+        !owner._accessRevoked &&
+        room != null &&
+        client != null &&
+        identical(room.client, client) &&
+        identical(client.getRoomById(roomId), room);
+  }
+
   bool get canQueueLocalText {
     final room = _room;
     final client = owner._client;
@@ -2220,7 +2233,10 @@ final class MatrixRoomLease
         final identity = (client.userID, client.deviceID, client.homeserver);
         final displayCapture =
             owner._projectionCoordinator?.beginDisplayCapture();
+        final trace = PerformanceTrace.currentOperation;
+        trace?.mark(PerformanceStage.localTimelineSqlStarted);
         final events = await client.database!.getEventList(room, limit: 40);
+        trace?.mark(PerformanceStage.localTimelineSqlDone);
         if (canceled ||
             owner._accessRevoked ||
             !identical(owner._client, client) ||

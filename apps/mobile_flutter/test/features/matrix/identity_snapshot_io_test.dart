@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,6 +81,38 @@ class _MidCopyIo extends _AdversarialIo {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('production default copy/hash run on a worker and preserve bytes',
+      () async {
+    expect(const ReadOnlySqlCipherIdentityReader().io,
+        isA<OffloadedIdentitySnapshotIo>());
+    final directory = await Directory.systemTemp.createTemp('identity_worker_');
+    final workerNames = <String?>[];
+    try {
+      final source = File('${directory.path}/source');
+      final target = File('${directory.path}/copy');
+      final bytes = List<int>.generate(1024 * 1024, (i) => i % 251);
+      await source.writeAsBytes(bytes);
+      final io =
+          OffloadedIdentitySnapshotIo(onWorkerCompleted: workerNames.add);
+      final copied = await io.copyAndHash(source, target);
+      expect(copied, sha256.convert(bytes).toString());
+      expect(await io.digest(target), copied);
+      expect(await io.digest(source), copied);
+      expect(await source.readAsBytes(), bytes);
+      expect(await target.readAsBytes(), bytes);
+      expect(workerNames, hasLength(3));
+      expect(workerNames, everyElement(isNot(Isolate.current.debugName)));
+      expect(workerNames, everyElement(startsWith('matrix-identity-')));
+      await expectLater(
+          io.copyAndHash(File('${directory.path}/missing'), target),
+          throwsA(isA<FileSystemException>()));
+      await expectLater(io.digest(File('${directory.path}/missing')),
+          throwsA(isA<FileSystemException>()));
+      await target.delete(); // No worker keeps an output handle alive.
+    } finally {
+      await directory.delete(recursive: true);
+    }
+  });
   for (final fail in [false, true]) {
     test(
         'real mid-copy ${fail ? 'read exception' : 'source mutation'} fails closed and closes output',

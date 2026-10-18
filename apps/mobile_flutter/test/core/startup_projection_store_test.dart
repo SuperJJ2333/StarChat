@@ -172,6 +172,92 @@ void main() {
     expect(await secure.readStartupProjectionAdmission(install), isNull);
     expect(raw.writes, before);
   });
+  for (final scenario in [
+    'archivePending',
+    'registryInvalid',
+    'activeScopeInvalid',
+    'clearPending',
+    'archiveIndexInvalid',
+    'identityIncomplete',
+    'identityInvalid',
+    'businessRefreshPending',
+    'privacyPending',
+    'headInvalid',
+    'headAbsent',
+    'headUncommitted',
+    'headDigestInvalid',
+    'malformedOrUnavailable',
+  ]) {
+    test('admission rejection is closed, readonly and observer safe: $scenario',
+        () async {
+      final (secure, raw, install) = await secureFixture();
+      void change(String key, void Function(Map<String, dynamic>) mutate) {
+        final map = jsonDecode(raw.values[key]!) as Map<String, dynamic>;
+        mutate(map);
+        raw.values[key] = jsonEncode(map);
+      }
+
+      const head = 'liuhetong.startup_projection_head.v1';
+      switch (scenario) {
+        case 'archivePending':
+          raw.values['liuhetong.matrix_archive_journal.v1'] = '{}';
+        case 'registryInvalid':
+          raw.values['liuhetong.matrix_account_slots.v1'] = '[]';
+        case 'activeScopeInvalid':
+          raw.values['liuhetong.active_matrix_scope.v1'] = 'invalid';
+        case 'clearPending':
+          raw.values['liuhetong.matrix_clear_tombstone.v1'] = '{}';
+        case 'archiveIndexInvalid':
+          raw.values['liuhetong.matrix_archives.v1'] = '{}';
+        case 'identityIncomplete':
+          raw.values.remove('liuhetong.matrix_database_key.v1');
+        case 'identityInvalid':
+          change('liuhetong.business_session.v1',
+              (v) => v['matrix_user_id'] = '@other:test');
+        case 'businessRefreshPending':
+          change(
+              'liuhetong.business_session.v1',
+              (v) => v['pending_refresh_operation'] =
+                  SecureSessionStore.newRefreshOperation());
+        case 'privacyPending':
+          await secure.fenceStartupProjectionPrivacy(roomId: '!synthetic:test');
+        case 'headInvalid':
+          change(head, (v) => v['version'] = 9);
+        case 'headAbsent':
+          raw.values.remove(head);
+        case 'headUncommitted':
+          change(head, (v) {
+            v['state'] = 'invalid';
+            v.remove('digest');
+            v.remove('length');
+          });
+        case 'headDigestInvalid':
+          change(head, (v) => v['digest'] = 'invalid');
+        case 'malformedOrUnavailable':
+          raw.values['liuhetong.matrix_account_slots.v1'] = ' ' * 65537;
+      }
+      final before = raw.writes;
+      final reasons = <StartupAdmissionRejection>[];
+      expect(
+          await secure.readStartupProjectionAdmission(install,
+              onRejected: reasons.add),
+          isNull);
+      expect(reasons.map((r) => r.name), [scenario]);
+      expect(
+          await secure.readStartupProjectionAdmission(install,
+              onRejected: (_) => throw StateError('synthetic observer')),
+          isNull);
+      expect(raw.writes, before);
+      expect(await secure.readStartupProjectionAdmission(install), isNull);
+    });
+  }
+  test('admitted startup emits no rejection and ignores observer', () async {
+    final (secure, _, install) = await secureFixture();
+    expect(
+        await secure.readStartupProjectionAdmission(install,
+            onRejected: (_) => fail('valid admission')),
+        isNotNull);
+  });
   test(
       'offline display admission is readonly and preserves persistent privacy fences',
       () async {

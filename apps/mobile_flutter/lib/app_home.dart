@@ -2702,9 +2702,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       await _roomOpening.openPrepared(
         request,
         prepare: () async {
+          final trace = PerformanceTrace.currentOperation;
+          trace?.mark(PerformanceStage.associationPreparationStarted);
           if (!matrixOwner.hasCachedRoomDisplay(request.roomId)) {
             await matrixOwner.prepareConversationAssociations();
           }
+          trace?.mark(PerformanceStage.associationPreparationDone);
           if (!current()) throw StateError('ROOM_OPEN_INTENT_RETIRED');
         },
         normalize: (traced) => normalizeDuplicateRoomOpen(traced,
@@ -2826,7 +2829,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
     try {
       final cachedEntry = widget.matrix.hasCachedRoomDisplay(roomId);
+      trace.mark(cachedEntry
+          ? PerformanceStage.roomDisplayCacheHit
+          : PerformanceStage.roomDisplayCacheMiss);
       Future<PersistentOutboxManager?>? pendingOutbox;
+      trace.mark(PerformanceStage.outboxPreparationStarted);
       if (widget.localOnly || _localOutboxFlight != null) {
         final ready = _prepareLocalOutbox();
         if (cachedEntry) {
@@ -2836,6 +2843,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           await ready;
         }
       }
+      trace.mark(PerformanceStage.outboxPreparationDone);
+      trace.mark(PerformanceStage.identityLookupStarted);
       final identityCache =
           cachedEntry ? _chatIdentityCache : await _identityCache();
       trace.mark(PerformanceStage.identityLookupDone);
@@ -2853,9 +2862,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final account = matrixOwner.userId;
       final businessEpoch = widget.api.sessionEpoch;
       stage = 'local-timeline';
-      preparedEntry = await PreparedRoomPageEntry.prepare(lease,
-          anchorRoomId: request.anchorRoomId,
-          anchorEventId: request.anchorEventId);
+      // An admitted head is bounded memory and can be adopted without SQL.
+      // Canonical local history belongs to the already-visible room's _load;
+      // it must not hold the previous page until a DB/SDK queue drains.
+      if (cachedEntry &&
+          (request.anchorRoomId == null || request.anchorRoomId == roomId)) {
+        trace.mark(PerformanceStage.roomPreparationStarted);
+        preparedEntry = await PreparedRoomPageEntry.prepareCached(lease,
+            anchorRoomId: request.anchorRoomId,
+            anchorEventId: request.anchorEventId);
+        trace.mark(PerformanceStage.roomPreparationDone);
+      }
       if (!mounted ||
           _disposed ||
           originatingRoute?.isCurrent != true ||
