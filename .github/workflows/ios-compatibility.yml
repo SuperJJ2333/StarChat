@@ -1,73 +1,10 @@
-name: iPhone 15 native compatibility
+name: Account-switch native evidence (host failures retained)
 on:
-  push:
-    branches: [main, codex/ios-compatibility, codex/mobile-parity-20260909]
-    paths:
-      - 'apps/mobile_flutter/**'
-      - '.github/workflows/ios-compatibility.yml'
-      - 'scripts/generate_ios_compatibility_fixtures.py'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'apps/mobile_flutter/**'
-      - '.github/workflows/ios-compatibility.yml'
-      - 'scripts/generate_ios_compatibility_fixtures.py'
   workflow_dispatch:
+
 permissions:
   contents: read
 jobs:
-  production-compile:
-    name: Complete production iOS native compile
-    runs-on: macos-15
-    timeout-minutes: 40
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.44.9'
-          channel: stable
-          cache: true
-      - name: Compile complete device app without signing
-        working-directory: apps/mobile_flutter
-        run: |
-          set -o pipefail
-          mkdir -p "$RUNNER_TEMP/production-compile"
-          xcodebuild -version | tee "$RUNNER_TEMP/production-compile/toolchain.txt"
-          flutter --version >> "$RUNNER_TEMP/production-compile/toolchain.txt"
-          flutter config --no-enable-swift-package-manager
-          flutter pub get
-
-          # CocoaPods downloads binary pods (notably OpenSSL-Universal) from
-          # GitHub release assets, which intermittently answer 504/502. A single
-          # attempt therefore fails for reasons unrelated to our code or Xcode,
-          # so retry the whole dependency-install + build operation with backoff.
-          # Each attempt keeps its own log; the artifact upload below uses
-          # `if: always()` so failed attempts stay available for diagnosis.
-          for attempt in 1 2 3; do
-            echo "iOS build attempt ${attempt}/3"
-            if flutter build ios --release --no-codesign 2>&1 \
-                | tee "$RUNNER_TEMP/production-compile/production-compile-attempt-${attempt}.log"; then
-              echo "iOS build succeeded on attempt ${attempt}/3"
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              delay=$((attempt * 20))
-              echo "Build attempt ${attempt} failed; retrying in ${delay}s..."
-              sleep "$delay"
-            fi
-          done
-
-          echo "All iOS build attempts failed"
-          exit 1
-      - name: Preserve full production compilation evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: complete-production-ios-compile
-          path: ${{ runner.temp }}/production-compile/
-          retention-days: 14
   simulator:
     name: iPhone 15 iOS ${{ matrix.ios }}
     runs-on: macos-15
@@ -84,6 +21,11 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Bind unchanged frozen application tree
+        run: |
+          test "$(git rev-parse HEAD:apps)" = "$(git rev-parse 11b72ec7754179370926377ade0a16e578801349:apps)"
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.9'
@@ -116,6 +58,8 @@ jobs:
         working-directory: apps/mobile_flutter
         run: flutter pub get
       - name: Test corrected media and direct-room paths
+        id: host_shared
+        continue-on-error: true
         working-directory: apps/mobile_flutter
         run: flutter test --no-pub test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart test/features/matrix/direct_chat_sync_failure_test.dart test/features/matrix/canonical_direct_chat_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/video_viewer_cache_test.dart test/features/matrix/group_announcement_sdk_recovery_test.dart test/features/matrix/search_media_resolver_test.dart test/features/matrix/room_search_media_grid_test.dart test/features/matrix/room_search_context_test.dart test/features/matrix/matrix_room_history_date_capability_test.dart test/features/matrix/room_offline_loading_test.dart test/features/matrix/matrix_room_timeline_adapter_test.dart test/features/matrix/global_search_room_anchor_integration_test.dart test/features/auth
       - name: Configure simulator-only dependencies
@@ -311,4 +255,83 @@ jobs:
         with:
           name: iphone15-ios${{ matrix.ios }}-compatibility
           path: ${{ runner.temp }}/compatibility/
+          retention-days: 14
+
+      - name: Preserve the original host failure as a failing gate
+        if: always()
+        env:
+          HOST_OUTCOME: ${{ steps.host_shared.outcome }}
+        run: test "$HOST_OUTCOME" = "success"
+  unchanged-host-baseline:
+    name: Compare unchanged video host failure against 16905e7f
+    runs-on: macos-15
+    timeout-minutes: 18
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      PUB_HOSTED_URL: https://pub.dev
+      FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Capture identical inputs and run original baseline assertions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/host-baseline"
+          xcodebuild -version > "$RUNNER_TEMP/host-baseline/toolchain.txt"
+          flutter --version >> "$RUNNER_TEMP/host-baseline/toolchain.txt"
+          sw_vers >> "$RUNNER_TEMP/host-baseline/toolchain.txt"
+          printf '%s\n' "$ImageVersion" >> "$RUNNER_TEMP/host-baseline/toolchain.txt"
+          git diff --exit-code 16905e7fa81a5d7a7595bd89020e30c594ae2b53 11b72ec7754179370926377ade0a16e578801349 -- apps/mobile_flutter/test/features/matrix/video_playback_extension_test.dart apps/mobile_flutter/lib/features/matrix/media_cache.dart apps/mobile_flutter/lib/features/matrix/media_index.dart apps/mobile_flutter/lib/features/matrix/media_disk_quota_index.dart apps/mobile_flutter/lib/core/local_database_factory.dart apps/mobile_flutter/third_party/matrix/lib/src/database/sqflite_encryption_helper/io.dart apps/mobile_flutter/pubspec.lock
+          git worktree add --detach "$RUNNER_TEMP/baseline-source" 16905e7fa81a5d7a7595bd89020e30c594ae2b53
+          cd "$RUNNER_TEMP/baseline-source/apps/mobile_flutter"
+          flutter pub get --enforce-lockfile
+          shasum -a 256 pubspec.lock > "$RUNNER_TEMP/host-baseline/lock.sha256"
+          cat > "$RUNNER_TEMP/host-baseline/loader-probe.dart" <<'DART'
+          import 'dart:convert';
+          import 'dart:ffi';
+          void main() {
+            try {
+              DynamicLibrary.open('sqlcipher_flutter_libs.framework/Versions/Current/sqlcipher_flutter_libs');
+              print(jsonEncode({'library_loaded':true}));
+            } catch (e) {
+              print(jsonEncode({'library_loaded':false,'error_type':e.runtimeType.toString()}));
+            }
+          }
+          DART
+          dart "$RUNNER_TEMP/host-baseline/loader-probe.dart" > "$RUNNER_TEMP/host-baseline/loader.json"
+          set +e
+          flutter test --no-pub --concurrency=1 --reporter=json test/features/matrix/video_playback_extension_test.dart > "$RUNNER_TEMP/host-baseline/baseline.jsonl" 2>&1
+          result=$?
+          set -e
+          RESULT="$result" python3 <<'PY'
+          import json,os,pathlib
+          folder=pathlib.Path(os.environ['RUNNER_TEMP'])/'host-baseline'
+          names={};failed=[];counts={}
+          for line in (folder/'baseline.jsonl').read_text().splitlines():
+              try:event=json.loads(line)
+              except ValueError:continue
+              if event.get('type')=='testStart':names[event['test']['id']]=event['test']['name']
+              if event.get('type')=='testDone' and not event.get('hidden'):
+                  result='skipped' if event.get('skipped') else event.get('result')
+                  counts[result]=counts.get(result,0)+1
+                  if result not in ('success','skipped'):failed.append(names.get(event['testID'],'unknown'))
+          expected={'MP4 playback receives container suffix and keeps one governed file','store after migration reuses typed file and its integrity metadata','concurrent migration and store complete with one usable cache file'}
+          report={'baseline':'16905e7fa81a5d7a7595bd89020e30c594ae2b53','candidate_mobile':'11b72ec7754179370926377ade0a16e578801349','exit':int(os.environ['RESULT']),'counts':counts,'failed_names':failed,'scope':'Comparison proves only the exact old host failures. Original host gate remains FAIL; no assertion removed. Loader probe is separate evidence, not assumed sole cause.'}
+          (folder/'comparison.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
+          assert int(os.environ['RESULT'])==1 and set(failed)==expected and len(failed)==3
+          PY
+      - name: Preserve unmodified baseline failures and toolchain
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unchanged-host-baseline-${{ github.run_id }}
+          path: ${{ runner.temp }}/host-baseline/
+          if-no-files-found: error
           retention-days: 14
