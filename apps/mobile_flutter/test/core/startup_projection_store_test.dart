@@ -172,85 +172,132 @@ void main() {
     expect(await secure.readStartupProjectionAdmission(install), isNull);
     expect(raw.writes, before);
   });
-  for (final scenario in [
-    'archivePending',
-    'registryInvalid',
-    'activeScopeInvalid',
-    'clearPending',
-    'archiveIndexInvalid',
-    'identityIncomplete',
-    'identityInvalid',
-    'businessRefreshPending',
-    'privacyPending',
-    'headInvalid',
-    'headAbsent',
-    'headUncommitted',
-    'headDigestInvalid',
-    'malformedOrUnavailable',
-  ]) {
-    test('admission rejection is closed, readonly and observer safe: $scenario',
-        () async {
-      final (secure, raw, install) = await secureFixture();
-      void change(String key, void Function(Map<String, dynamic>) mutate) {
-        final map = jsonDecode(raw.values[key]!) as Map<String, dynamic>;
-        mutate(map);
-        raw.values[key] = jsonEncode(map);
-      }
+  for (final pendingRefresh in [false, true]) {
+    for (final scenario in [
+      'archivePending',
+      'registryInvalid',
+      'activeScopeInvalid',
+      'clearPending',
+      'archiveIndexInvalid',
+      'identityIncomplete',
+      'identityInvalid',
+      'privacyPending',
+      'headInvalid',
+      'headAbsent',
+      'headUncommitted',
+      'headDigestInvalid',
+      'malformedOrUnavailable',
+    ]) {
+      test(
+          'admission rejection is closed, readonly and observer safe: $scenario pending=$pendingRefresh',
+          () async {
+        final (secure, raw, install) = await secureFixture();
+        if (pendingRefresh) {
+          final session =
+              jsonDecode(raw.values['liuhetong.business_session.v1']!)
+                  as Map<String, dynamic>;
+          session['pending_refresh_operation'] =
+              SecureSessionStore.newRefreshOperation();
+          raw.values['liuhetong.business_session.v1'] = jsonEncode(session);
+        }
+        void change(String key, void Function(Map<String, dynamic>) mutate) {
+          final map = jsonDecode(raw.values[key]!) as Map<String, dynamic>;
+          mutate(map);
+          raw.values[key] = jsonEncode(map);
+        }
 
-      const head = 'liuhetong.startup_projection_head.v1';
-      switch (scenario) {
-        case 'archivePending':
-          raw.values['liuhetong.matrix_archive_journal.v1'] = '{}';
-        case 'registryInvalid':
-          raw.values['liuhetong.matrix_account_slots.v1'] = '[]';
-        case 'activeScopeInvalid':
-          raw.values['liuhetong.active_matrix_scope.v1'] = 'invalid';
-        case 'clearPending':
-          raw.values['liuhetong.matrix_clear_tombstone.v1'] = '{}';
-        case 'archiveIndexInvalid':
-          raw.values['liuhetong.matrix_archives.v1'] = '{}';
-        case 'identityIncomplete':
-          raw.values.remove('liuhetong.matrix_database_key.v1');
-        case 'identityInvalid':
-          change('liuhetong.business_session.v1',
-              (v) => v['matrix_user_id'] = '@other:test');
-        case 'businessRefreshPending':
-          change(
-              'liuhetong.business_session.v1',
-              (v) => v['pending_refresh_operation'] =
-                  SecureSessionStore.newRefreshOperation());
-        case 'privacyPending':
-          await secure.fenceStartupProjectionPrivacy(roomId: '!synthetic:test');
-        case 'headInvalid':
-          change(head, (v) => v['version'] = 9);
-        case 'headAbsent':
-          raw.values.remove(head);
-        case 'headUncommitted':
-          change(head, (v) {
-            v['state'] = 'invalid';
-            v.remove('digest');
-            v.remove('length');
-          });
-        case 'headDigestInvalid':
-          change(head, (v) => v['digest'] = 'invalid');
-        case 'malformedOrUnavailable':
-          raw.values['liuhetong.matrix_account_slots.v1'] = ' ' * 65537;
-      }
-      final before = raw.writes;
-      final reasons = <StartupAdmissionRejection>[];
-      expect(
-          await secure.readStartupProjectionAdmission(install,
-              onRejected: reasons.add),
-          isNull);
-      expect(reasons.map((r) => r.name), [scenario]);
-      expect(
-          await secure.readStartupProjectionAdmission(install,
-              onRejected: (_) => throw StateError('synthetic observer')),
-          isNull);
-      expect(raw.writes, before);
-      expect(await secure.readStartupProjectionAdmission(install), isNull);
-    });
+        const head = 'liuhetong.startup_projection_head.v1';
+        switch (scenario) {
+          case 'archivePending':
+            raw.values['liuhetong.matrix_archive_journal.v1'] = '{}';
+          case 'registryInvalid':
+            raw.values['liuhetong.matrix_account_slots.v1'] = '[]';
+          case 'activeScopeInvalid':
+            raw.values['liuhetong.active_matrix_scope.v1'] = 'invalid';
+          case 'clearPending':
+            raw.values['liuhetong.matrix_clear_tombstone.v1'] = '{}';
+          case 'archiveIndexInvalid':
+            raw.values['liuhetong.matrix_archives.v1'] = '{}';
+          case 'identityIncomplete':
+            raw.values.remove('liuhetong.matrix_database_key.v1');
+          case 'identityInvalid':
+            change('liuhetong.business_session.v1',
+                (v) => v['matrix_user_id'] = '@other:test');
+          case 'privacyPending':
+            await secure.fenceStartupProjectionPrivacy(
+                roomId: '!synthetic:test');
+          case 'headInvalid':
+            change(head, (v) => v['version'] = 9);
+          case 'headAbsent':
+            raw.values.remove(head);
+          case 'headUncommitted':
+            change(head, (v) {
+              v['state'] = 'invalid';
+              v.remove('digest');
+              v.remove('length');
+            });
+          case 'headDigestInvalid':
+            change(head, (v) => v['digest'] = 'invalid');
+          case 'malformedOrUnavailable':
+            raw.values['liuhetong.matrix_account_slots.v1'] = ' ' * 65537;
+        }
+        final before = raw.writes;
+        final reasons = <StartupAdmissionRejection>[];
+        expect(
+            await secure.readStartupProjectionAdmission(install,
+                onRejected: reasons.add),
+            isNull);
+        expect(reasons.map((r) => r.name), [scenario]);
+        expect(
+            await secure.readStartupProjectionAdmission(install,
+                onRejected: (_) => throw StateError('synthetic observer')),
+            isNull);
+        expect(raw.writes, before);
+        expect(await secure.readStartupProjectionAdmission(install), isNull);
+      });
+    }
   }
+  test(
+      'cold committed display survives valid refresh but never grants a writer',
+      () async {
+    final (secure, raw, install) = await secureFixture();
+    final oldPermit = (await secure.prepareStartupProjectionHead(install))!;
+    final candidate = await store.prepare(oldPermit, StartupProjection([]));
+    final session = jsonDecode(raw.values['liuhetong.business_session.v1']!)
+        as Map<String, dynamic>;
+    session['pending_refresh_operation'] =
+        SecureSessionStore.newRefreshOperation();
+    raw.values['liuhetong.business_session.v1'] = jsonEncode(session);
+    final before = raw.writes;
+    final reopened = SecureSessionStore(raw);
+    final admitted = await reopened.readStartupProjectionAdmission(install);
+    expect(admitted, isNotNull,
+        reason: 'pending business refresh is not a display identity mismatch');
+    expect(await store.read(admitted!), isNotNull);
+    expect(await reopened.prepareStartupProjectionHead(install), isNull);
+    expect(
+        await reopened.commitStartupProjectionHead(
+            oldPermit, candidate.digest, candidate.length),
+        isFalse);
+    expect(raw.writes, before, reason: 'display admission is read only');
+    for (final key in [
+      'liuhetong.matrix_database_key.v1',
+    ]) {
+      final original = raw.values[key]!;
+      raw.values[key] = 'changed-synthetic-key';
+      final changed = await reopened.readStartupProjectionAdmission(install);
+      expect(changed == null || await store.read(changed) == null, isTrue,
+          reason: key);
+      raw.values[key] = original;
+    }
+    final registration =
+        raw.values.remove('liuhetong.registration_device_key.v1')!;
+    expect(await reopened.readStartupProjectionAdmission(install), isNull);
+    raw.values['liuhetong.registration_device_key.v1'] = registration;
+    session['pending_refresh_operation'] = 'malformed';
+    raw.values['liuhetong.business_session.v1'] = jsonEncode(session);
+    expect(await reopened.readStartupProjectionAdmission(install), isNull);
+  });
   test('admitted startup emits no rejection and ignores observer', () async {
     final (secure, _, install) = await secureFixture();
     expect(

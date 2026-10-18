@@ -7634,6 +7634,20 @@ final class MatrixSdkE2eeClient
             !coordinator.isCurrent(permit)) {
           return;
         }
+        final database = active.database;
+        final account = active.userID;
+        final device = active.deviceID;
+        final capturedRooms = <Room, int>{};
+        bool captureCurrent() =>
+            !_accessRevoked &&
+            identical(active, _client) &&
+            identical(active.database, database) &&
+            active.userID == account &&
+            active.deviceID == device &&
+            coordinator.isCurrent(permit) &&
+            capturedRooms.entries.every((entry) =>
+                identical(active.getRoomById(entry.key.id), entry.key) &&
+                entry.key.historyGeneration == entry.value);
         final snapshot = await conversations.snapshot();
         final history = await _loadLocalHistory(active);
         final rows = <StartupProjectionRoom>[];
@@ -7660,15 +7674,27 @@ final class MatrixSdkE2eeClient
           final room = active.getRoomById(row.id);
           if (room == null) continue;
           final historyGeneration = room.historyGeneration;
+          capturedRooms[room] = historyGeneration;
+          if (!captureCurrent()) return;
           final filter = history.readFilter(room.id);
-          final timeline = await room.getTimeline();
+          // Display capture needs persisted bounded events, not complete lazy
+          // room state, sender loading or full timeline authority preparation.
+          final source = await database?.getEventList(room, limit: 40);
+          if (!captureCurrent()) return;
+          final timeline = source == null
+              ? await room.getTimeline()
+              : Timeline(
+                  room: room,
+                  chunk: TimelineChunk(events: source),
+                  persistedInitialIds: source
+                      .where((e) => e.status.isSynced)
+                      .map((e) => e.eventId));
           final events = <StartupProjectionEvent>[];
           try {
             await timeline.hydrateCachedEvents(
                 timeline.events.take(40).toList(),
-                isActive: () =>
-                    coordinator.isCurrent(permit) &&
-                    identical(active, _client));
+                isActive: captureCurrent);
+            if (!captureCurrent()) return;
             for (final event in timeline.events.take(40)) {
               if (event.redacted ||
                   filter(event.eventId, event.originServerTs)) {
@@ -7756,6 +7782,7 @@ final class MatrixSdkE2eeClient
                 members.removeLast();
               }
             }
+            if (!captureCurrent()) return;
             rows.add(projected);
             if (coordinator.isCurrent(permit) &&
                 identical(active, _client) &&
@@ -7790,7 +7817,7 @@ final class MatrixSdkE2eeClient
             /* Oversized metadata cannot enter the projection. */
           }
         }
-        if (!coordinator.isCurrent(permit)) return;
+        if (!captureCurrent()) return;
         // Keep metadata for every admitted row; add newest heads round-robin.
         final selected = <StartupProjectionRoom>[];
         StartupProjectionRoom withEvents(
@@ -7833,12 +7860,17 @@ final class MatrixSdkE2eeClient
         }
         final prepared =
             await cache.prepare(admission, StartupProjection(selected));
-        if (!coordinator.isCurrent(permit)) return;
+        if (!captureCurrent()) return;
         var committed = false;
         final published = await coordinator.commit(permit, () async {
+          if (!captureCurrent()) return;
           committed = await secure.commitStartupProjectionHead(
               admission, prepared.digest, prepared.length);
         });
+        if (committed && !captureCurrent()) {
+          await secure.invalidateStartupProjection();
+          return;
+        }
         if (published && committed) {
           markStartupProjection(
               StartupProjectionPhase.projectionCommitSuccess, startupClock,

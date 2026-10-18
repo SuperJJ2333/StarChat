@@ -10,3 +10,11 @@ Execute inline, root sole writer. User explicitly approved minimum-bound cache f
 6. Domain/SPEC then independent QUALITY/security review. Final candidate focused/analyze/shared gate once with native environment preflight, build/rebuild/fixed signer, preserved-data install and all-room comparison. Reserve version only before freeze; no production publish.
 
 Details may tighten based on observed cause. If minimal display identity is unavailable or persistent privacy fence rejects snapshot, do not resurrect that snapshot. Early route visibility alone is not claimed as real cached bubbles. SDK transport continues to require full checks.
+
+## Second stage from measured rejection causes
+
+Measured businessRefreshPending and headUncommitted are distinct; do not claim every room has the same admission cause. Approved ADR above governs the new cold-display exception.
+
+7. RED/GREEN real committed snapshot with valid pending refresh permits read-only display but not prepare/commit; malformed pending and all binding/privacy denial dimensions remain closed. Extend actual-main held restore with this state, zero sends before authorization; verify failure/revocation.
+8. RED hold postLoad while real canonical database contains encrypted nonempty messages. primeStartupProjection must commit bounded detached timeline data without full postLoad. Assert budget40/40, filtering, exact ownership/generation/permit revalidation and no-DB fallback.
+9. Review Domain/SPEC then QUALITY implementation, rerun affected/final gates and compare normal-main all-room cold launches. A route-only blank is not cache-first success.

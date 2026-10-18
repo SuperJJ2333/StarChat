@@ -391,7 +391,8 @@ final class SecureSessionStore {
       {void Function(StartupAdmissionRejection)? onRejected}) async {
     try {
       return await _runMatrixIdentityOperation(() =>
-          _projectionAdmissionUnlocked(installationId, onRejected: onRejected));
+          _projectionAdmissionUnlocked(installationId,
+              existingDisplay: true, onRejected: onRejected));
     } on MatrixArchiveRecoveryPending {
       _notifyAdmissionRejected(
           onRejected, StartupAdmissionRejection.archivePending);
@@ -597,8 +598,8 @@ final class SecureSessionStore {
             existing.installationId,
             priming: true,
             existingDisplay: true);
-        // A pending business refresh cannot admit a new startup or authorize a
-        // writer. Only this already-admitted in-memory owner may continue.
+        // Display may survive a valid pending business refresh. This does not
+        // authorize a writer or mark the business session verified.
         return current != null &&
             current.scope == existing.scope &&
             current.homeserver == existing.homeserver &&

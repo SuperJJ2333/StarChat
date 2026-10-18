@@ -102,8 +102,31 @@ class _HeldDatabase extends MatrixSdkDatabase {
       await warmRoomRead!.future;
     }
     readRoomIds.add(room.id);
-    return super.getEventList(room,
+    if (postLoadHold != null) boundedReads.add((room.id, limit));
+    final result = await super.getEventList(room,
         start: start, onlySending: onlySending, limit: limit);
+    if (room.id == '!room-64:synthetic.test') {
+      await afterBoundedRead?.call(room);
+    }
+    return result;
+  }
+
+  Future<void> Function(Room)? afterBoundedRead;
+  Completer<void>? postLoadHold;
+  var postLoadEntered = false;
+  final postLoadEnteredSignal = Completer<void>();
+  final boundedReads = <(String, int?)>[];
+  @override
+  Future<List<Event>> getUnimportantRoomEventStatesForRoom(
+      List<String> events, Room room) async {
+    if (postLoadHold != null && room.id == '!room-64:synthetic.test') {
+      postLoadEntered = true;
+      if (!postLoadEnteredSignal.isCompleted) {
+        postLoadEnteredSignal.complete();
+      }
+      await postLoadHold!.future;
+    }
+    return super.getUnimportantRoomEventStatesForRoom(events, room);
   }
 
   final previewSettled = Completer<void>();
@@ -234,23 +257,27 @@ void registerStartupProjectionEntryTests(
     channels.clear();
   });
   for (final scenario in [
-    (hidden: false, independent: true, avatarHandoff: false),
-    (hidden: false, independent: false, avatarHandoff: false),
-    (hidden: true, independent: false, avatarHandoff: false),
-    (hidden: true, independent: true, avatarHandoff: false),
-    (hidden: false, independent: true, avatarHandoff: true)
+    (hidden: false, independent: true, avatarHandoff: false, terminal: false),
+    (hidden: false, independent: false, avatarHandoff: false, terminal: false),
+    (hidden: true, independent: false, avatarHandoff: false, terminal: false),
+    (hidden: true, independent: true, avatarHandoff: false, terminal: false),
+    (hidden: false, independent: true, avatarHandoff: true, terminal: false),
+    (hidden: false, independent: true, avatarHandoff: false, terminal: true),
   ]) {
+    final terminal = scenario.terminal;
     final avatarHandoff = scenario.avatarHandoff;
     final allHidden = scenario.hidden;
     final independent = scenario.independent;
     testWidgets(
-        avatarHandoff
-            ? 'actual main visible avatar remains painted through canonical handoff'
-            : independent
-                ? (allHidden
-                    ? 'actual main valid empty independent projection releases content frame'
-                    : 'actual main independent projection precedes held whole-store preflight')
-                : 'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
+        terminal
+            ? 'actual main pending refresh failure revokes cached room and queued send'
+            : avatarHandoff
+                ? 'actual main visible avatar remains painted through canonical handoff'
+                : independent
+                    ? (allHidden
+                        ? 'actual main valid empty independent projection releases content frame'
+                        : 'actual main independent projection precedes held whole-store preflight')
+                    : 'actual main cached rows and room interact while SDK recovery stays held; hidden=$allHidden',
         (tester) async {
       final oldPaths = PathProviderPlatform.instance;
       late Directory directory;
@@ -264,7 +291,7 @@ void registerStartupProjectionEntryTests(
       if (!independent || allHidden || avatarHandoff) outboxOpen.complete();
       final host = Uri.parse(AppConfig.matrixHomeserver);
       final user =
-          '@startup-${independent ? 'projection' : 'legacy'}-${allHidden ? 'empty' : 'rows'}:synthetic.test';
+          '@startup-${independent ? 'projection' : 'legacy'}-${allHidden ? 'empty' : 'rows'}${terminal ? '-terminal' : ''}:synthetic.test';
       final clock = Stopwatch()..start();
       await tester.runAsync(() async {
         await olm.init();
@@ -512,10 +539,19 @@ void registerStartupProjectionEntryTests(
                   MatrixClientFactory.initializeStartupClient(
                       buildClient(clientName: clientName, databasePath: databasePath, cipher: cipher),
                       resumeBackground: resumeBackground));
+      final businessRefreshRelease = Completer<void>();
       final api = BusinessApiClient(
           baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
           sessionStore: store,
-          client: MockClient((_) async => http.Response('{}', 503)));
+          client: MockClient((request) async {
+            if (terminal && request.url.path.endsWith('/auth/refresh')) {
+              await businessRefreshRelease.future;
+              return http.Response(
+                  '{"error":{"code":"REFRESH_TOKEN_EXPIRED","message":"synthetic"}}',
+                  401);
+            }
+            return http.Response('{}', 503);
+          }));
       var auditVisibleFrames = false;
       var firstVisibleContent = false;
       var firstRoomContent = false;
@@ -745,7 +781,79 @@ void registerStartupProjectionEntryTests(
           final cache = StartupProjectionStore(
               Directory('${directory.path}/startup_projection_v1'));
           // Synthetic fully restored owner, admitted by the fixture's Business authority.
-          await owner.primeStartupProjection(cache);
+          if (!allHidden && !avatarHandoff && !terminal) {
+            for (final mutation in [
+              'generation',
+              'room',
+              'coordinator',
+              'read-error'
+            ]) {
+              await store.invalidateStartupProjection();
+              final target = full.getRoomById('!room-64:synthetic.test')!;
+              final index = full.rooms.indexOf(target);
+              var mutated = false;
+              held.afterBoundedRead = (room) async {
+                if (mutated) return;
+                mutated = true;
+                switch (mutation) {
+                  case 'generation':
+                    room.invalidateHistoryFragment();
+                  case 'room':
+                    full.rooms[index] = Room.fromJson(room.toJson(), full);
+                  case 'coordinator':
+                    await store.startupProjectionCoordinator!
+                        .runMutation('synthetic-local', () async {});
+                  case 'read-error':
+                    throw StateError('synthetic bounded read failure');
+                }
+              };
+              try {
+                if (mutation == 'read-error') {
+                  await expectLater(
+                      owner.primeStartupProjection(cache), throwsStateError);
+                } else {
+                  await owner.primeStartupProjection(cache);
+                }
+                expect(mutated, isTrue,
+                    reason: 'mutation must occur after real SQL read');
+                final install = (await cache.readInstallation())!;
+                expect(
+                    await store.readStartupProjectionAdmission(install), isNull,
+                    reason: 'stale $mutation capture cannot commit a head');
+              } finally {
+                held.afterBoundedRead = null;
+                full.rooms[index] = target;
+              }
+            }
+          }
+          if (!allHidden) {
+            held.postLoadHold = Completer<void>();
+            full.getRoomById('!room-64:synthetic.test')!.partial = true;
+            held.boundedReads.clear();
+          }
+          final capture = owner.primeStartupProjection(cache);
+          var capturedWhilePostLoadHeld = false;
+          try {
+            capturedWhilePostLoadHeld = await Future.any([
+              capture.then((_) => true),
+              held.postLoadEnteredSignal.future.then((_) => false),
+            ]).timeout(const Duration(seconds: 30), onTimeout: () => false);
+          } finally {
+            held.postLoadHold?.complete();
+            await capture;
+          }
+          if (!allHidden) {
+            expect(capturedWhilePostLoadHeld, isTrue,
+                reason:
+                    'bounded display capture must not await complete room postLoad');
+            expect(held.postLoadEntered, isFalse);
+            expect(full.getRoomById('!room-64:synthetic.test')!.partial, isTrue,
+                reason:
+                    'display capture must not mark canonical room complete');
+            expect(held.boundedReads, hasLength(40));
+            expect(held.boundedReads.every((read) => read.$2 == 40), isTrue);
+            held.postLoadHold = null;
+          }
           final installation = await cache.readInstallation();
           expect(installation, isNotNull);
           final admitted =
@@ -825,6 +933,15 @@ void registerStartupProjectionEntryTests(
           priming = false;
           opened = false;
           databaseOpens = 0;
+          if (!allHidden && !avatarHandoff) {
+            final session =
+                jsonDecode(rawSecure.values['liuhetong.business_session.v1']!)
+                    as Map<String, dynamic>;
+            session['pending_refresh_operation'] =
+                SecureSessionStore.newRefreshOperation();
+            rawSecure.values['liuhetong.business_session.v1'] =
+                jsonEncode(session);
+          }
           if (const bool.fromEnvironment('STARTUP_PROJECTION_BASELINE')) {
             // Safe baseline adapter: cache miss follows the prior full-preflight path.
             await File('${directory.path}/startup_projection_v1/installation')
@@ -1173,6 +1290,7 @@ void registerStartupProjectionEntryTests(
         final anchor =
             find.descendant(of: viewport, matching: find.text(anchorText));
         final anchorY = tester.getTopLeft(anchor).dy - viewportBounds.top;
+        if (terminal) auditVisibleFrames = false;
         if (independent) {
           preflight.release.complete();
         } else {
@@ -1185,6 +1303,32 @@ void registerStartupProjectionEntryTests(
         }
         expect(sdkReady, isTrue, reason: 'full SDK continuation must settle');
         await flush(100);
+        if (terminal) {
+          expect(transportSends, 0);
+          expect(find.byType(RoomPage), findsOneWidget,
+              reason:
+                  'pending business verification retains local cached room');
+          businessRefreshRelease.complete();
+          auditVisibleFrames = false;
+          await flush(100);
+          expect(find.byType(RoomPage), findsNothing);
+          expect(find.byType(AppHome), findsNothing);
+          expect(transportSends, 0,
+              reason:
+                  'cached display never authorizes a terminally revoked session');
+          await flush(80);
+          expect(transportSends, 0,
+              reason: 'late work must not dispatch the old queued owner');
+          report?.call({
+            'scenario': 'actual-main-pending-refresh-revoked',
+            'cached_bubbles_before_verification': true,
+            'durable_queue_before_verification': true,
+            'room_revoked_after_refresh_failure': true,
+            'network_sends_while_held': 0,
+            'network_sends_after_recovery': 0
+          });
+          return;
+        }
         expect(anchor, findsOneWidget);
         final restoredViewport = tester.getRect(viewport);
         expect(restoredViewport.overlaps(tester.getRect(anchor)), isTrue);
@@ -1455,6 +1599,9 @@ void registerStartupProjectionEntryTests(
           'network_sends_after_recovery': transportSends
         });
       } finally {
+        if (!businessRefreshRelease.isCompleted) {
+          businessRefreshRelease.complete();
+        }
         if (!outboxOpen.isCompleted) outboxOpen.complete();
         if (originalDisplaySettled != null) {
           client.onLocalDisplayApplySettled = originalDisplaySettled;
