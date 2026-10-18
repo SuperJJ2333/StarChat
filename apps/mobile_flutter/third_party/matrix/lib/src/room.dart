@@ -927,24 +927,28 @@ class Room {
     String type,
     Map<String, dynamic> content, {
     String? txid,
+    MatrixSendTimingObserver? onTiming,
   }) async {
     txid ??= client.generateUniqueTransactionId();
 
     final mustEncrypt = encrypted && client.encryptionEnabled;
 
     final sendMessageContent = mustEncrypt
-        ? await client.encryption!
-            .encryptGroupMessagePayload(id, content, type: type)
+        ? await client.encryption!.encryptGroupMessagePayload(id, content,
+            type: type, onTiming: onTiming)
         : content;
 
-    return await client.sendMessage(
-      id,
-      sendMessageContent.containsKey('ciphertext')
-          ? EventTypes.Encrypted
-          : type,
-      txid,
-      sendMessageContent,
-    );
+    return await measureMatrixSend(
+        MatrixSendTiming.http,
+        () => client.sendMessage(
+              id,
+              sendMessageContent.containsKey('ciphertext')
+                  ? EventTypes.Encrypted
+                  : type,
+              txid!,
+              sendMessageContent,
+            ),
+        onTiming);
   }
 
   String _stripBodyFallback(String body) {
@@ -977,6 +981,7 @@ class Room {
     String? editEventId,
     String? threadRootEventId,
     String? threadLastEventId,
+    MatrixSendTimingObserver? onTiming,
   }) async {
     // Create new transaction id
     final String messageID;
@@ -1073,13 +1078,16 @@ class Room {
         },
       ),
     );
-    await _handleFakeSync(syncUpdate);
+    await measureMatrixSend(MatrixSendTiming.localEcho,
+        () => _handleFakeSync(syncUpdate), onTiming);
     final completer = Completer();
     _sendingQueue.add(completer);
     try {
-      while (_sendingQueue.first != completer) {
-        await _sendingQueue.first.future;
-      }
+      await measureMatrixSend(MatrixSendTiming.queueWait, () async {
+        while (_sendingQueue.first != completer) {
+          await _sendingQueue.first.future;
+        }
+      }, onTiming);
 
       final timeoutDate = DateTime.now().add(client.sendTimelineEventTimeout);
       // Send the text and on success, store and display a *sent* event.
@@ -1091,6 +1099,7 @@ class Room {
             type,
             content,
             txid: messageID,
+            onTiming: onTiming,
           );
         } catch (e, s) {
           if (e is MatrixException &&
@@ -1128,7 +1137,8 @@ class Room {
           .unsigned![messageSendingStatusKey] = EventStatus.sent.intValue;
       syncUpdate.rooms!.join!.values.first.timeline!.events!.first.eventId =
           res;
-      await _handleFakeSync(syncUpdate);
+      await measureMatrixSend(MatrixSendTiming.acknowledgement,
+          () => _handleFakeSync(syncUpdate), onTiming);
       return res;
     } finally {
       // Local echo persistence can fail as well as transport. Neither may

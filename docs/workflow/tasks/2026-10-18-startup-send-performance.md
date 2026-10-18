@@ -1,0 +1,31 @@
+# Startup/send performance execution ledger
+
+User explicitly approved four work items after the2222 timing explanation: finer timings, fewer full DB reads, scoped/coalesced ordinary-send cache work, prioritized post-verification outbound session preload. Standing authorization permits real messages in emulator “测试群”. No production update or download publication.
+
+Root sole writer; worktree C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat, branch codex/interactive-cache-startup-20261016, baseline1c403352. Existing installed normal Debug0.4.54+2223 SHA d91510a4915787081a9dfce4409d08b95c27975bce6dd02f2abbee73f0fed716, UID10090/firstInstall2026-09-26. Formal2216 preserved. No .codegraph.
+
+Plan: docs/superpowers/plans/2026-10-18-startup-send-performance.md. ADR: docs/adr/2026-10-18-startup-send-io-performance.md. Evidence: docs/verification/artifacts/2026-10-18/startup-send-performance/. Reuse verified runtime/build harness inputs from prior task; new source needs final gates, not repeated unchanged rounds per edit.
+
+| ID | acceptance | state |
+| --- | --- | --- |
+| SP1 | closed copy/hash/open/local-sync/queue/crypto/session-persist timings | implemented, unit and actual SDK send boundaries PASS |
+| SP2 | 4→3 full file reads, snapshot and final source hash still checked | implemented, 13 I/O tests including real midstream mutation/exception PASS |
+| SP3 | same invalid-head reuse and coalesced optional refresh, privacy stays synchronous | implemented; SPEC corrected global-permit/coverage/capture-failure paths; 5 optional +4 coordinator PASS |
+| SP4 | current/pinned/recent existing sessions preload max8, coalesced race-safe load | implemented; actual wrapper revoke/eligibility and loader races15 PASS, scheduler3 PASS |
+| SP5 | frozen tests/reviews, fixed signer/new Debug/device and measured comparison | not started |
+
+Ruling: user already approved the four concrete directions; extend existing approved bounded flow rather than ask again. Protected identity/E2EE boundaries receive explicit ADR plus internal domain and QUALITY/security review before release. Prewarm uncovered existing early-loaded-marker race: fix flight joining before adding new concurrent consumers. Exact implementation limits may tighten based on evidence; no skipped per-message persistence or reduced key derivation.
+
+Implementation in progress: diagnostic observer RED2/GREEN3; source I/O first metering fixture incorrectly passed because native File.copy escaped its meter (retained as identity-io-red receipt); corrected stream-only source fixture RED then streaming implementation GREEN. Coordinator RED1/GREEN4; existing identity suite plus I/O/head33 PASS. Session-flight RED8/GREEN8 includes clear/dispose/identity/device/DB/room-wipe. Warmup RED3/GREEN3 plus existing identity28 PASS. Optional refresh RED3; cached-entry integration validation running. All receipts under task evidence. No source build/install/publication yet. Root remains sole writer. Domain and QUALITY design conditions recorded in ADR; implementation SPEC requested after initial changes, QUALITY follows SPEC repairs.
+
+Next executable action: complete I/O tamper, late-flight/new-session, actual SDK timing, and coalesced-entry regressions; resolve SPEC findings, then independent QUALITY review before freeze. V mapping may be owned by the focused harness while running. Existing installed Debug2223 remains unchanged.
+
+## 2026-10-18 12:33+08 candidate status (execution timestamps use exact receipts)
+
+SPEC implementation review passed after repairs: synchronous encryption timer; post-await optional publication predicate; per-room replacement/old-flight safety; original bounded40 coverage; optional capture failure still repairs display behind existing permits. Independent QUALITY's room-eligibility late-read finding was reproduced RED3 and fixed; real wrapper left/hidden/unencrypted/revoke paths now pass. Added actual midstream mutation and read-error tests. I/O fixture initially used unsupported List<int> SQL argument (synthetic zeros only; retained failed log); fixed to SQLite zeroblob, no product change. quality-fixes-green-r2:28 PASS. Earlier final-focused:74 PASS, capture-repair GREEN5, real-entry+I/O16 PASS; these are overlapping runs, not a unique-test total. Existing HTTP-error test traces are intentional synthetic rejection/offline assertions, not unexplained gate warnings.
+
+Pre-reserved next unused local Android Debug0.4.55+2224 after current worktree/primary workflow/version search; installed package still2223, UID10090/firstInstall preserved. No production metadata or public artifact touched. Adapted old verified harnesses under this task's artifact folder. `.env` absent: aggregate verify.ps1 render/config stages cannot execute; do not import production secrets. Final full/analyze plus actual Android native gates remain required.
+
+Scope ruling: changing only one room still invalidates the global encrypted snapshot permit. To preserve other priority rooms' instant-entry caches, optional worker retains one bounded global snapshot rebuild, reuses heads built by that capture, and falls back to full repair if capture is absent/fails. Changed IDs reorder work only within current/top40, never change coverage. This removes duplicate full passes and triggers, but is not claimed as fully incremental on-disk envelope persistence.
+
+Independent QUALITY/security re-review PASS after SPEC: no remaining code blockers, confirmed quality-fixes-green-r2 28PASS/exit0. Next executable action: freeze mobile source once, run full/analyze with verified native libraries and owned V mapping, then fixed-signature native/main2224 builds and preserved-data install. User has authorized test-group messages; measure two cold sends with new phases and compare only equivalent clocks to2222. Runtime/build/performance acceptance remains open.

@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:matrix/matrix.dart';
 import 'package:olm/olm.dart' as olm;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../core/matrix_local_binding.dart';
+import '../../core/performance_metrics.dart';
+import 'identity_snapshot_io.dart';
 import '../../core/session_failure.dart';
 import '../../core/startup_failure_metadata.dart';
 
@@ -112,7 +113,8 @@ abstract interface class MatrixPlaintextIdentityProbe {
 /// invokes SDK migrations, or creates a database file.
 final class ReadOnlySqlCipherIdentityReader
     implements MatrixLocalIdentityReader, MatrixPlaintextIdentityProbe {
-  const ReadOnlySqlCipherIdentityReader();
+  const ReadOnlySqlCipherIdentityReader({this.io = const IdentitySnapshotIo()});
+  final IdentitySnapshotIo io;
 
   static const _sqliteHeader = <int>[
     83,
@@ -198,10 +200,15 @@ final class ReadOnlySqlCipherIdentityReader
           before[suffix] = null;
           continue;
         }
-        final digest = await _fileDigest(source);
+        final snapshot = File('$snapshotPath$suffix');
+        final digest = await PerformanceMetrics.instance.measure(
+            PerformanceOperation.identityCopyAndHash,
+            () => io.copyAndHash(source, snapshot));
         before[suffix] = digest;
-        final snapshot = await source.copy('$snapshotPath$suffix');
-        if (await _fileDigest(snapshot) != digest) {
+        if (await PerformanceMetrics.instance.measure(
+                PerformanceOperation.identitySnapshotHash,
+                () => io.digest(snapshot)) !=
+            digest) {
           throw const FormatException('Matrix database changed during copy');
         }
       }
@@ -213,7 +220,9 @@ final class ReadOnlySqlCipherIdentityReader
         final digest = type == FileSystemEntityType.notFound
             ? null
             : type == FileSystemEntityType.file
-                ? await _fileDigest(source)
+                ? await PerformanceMetrics.instance.measure(
+                    PerformanceOperation.identitySourceRecheck,
+                    () => io.digest(source))
                 : throw const FormatException('Invalid Matrix database file');
         if (digest != before[suffix]) {
           throw const FormatException('Matrix database changed during probe');
@@ -225,32 +234,38 @@ final class ReadOnlySqlCipherIdentityReader
     }
   }
 
-  Future<String> _fileDigest(File file) async =>
-      (await sha256.bind(file.openRead()).first).toString();
-
   Future<MatrixLocalIdentityRecord> _readSnapshot(
       String databasePath, String cipher) async {
     final plaintext = await hasPlaintextHeader(databasePath);
     final factory = createDatabaseFactoryFfi(
       ffiInit: SQfLiteEncryptionHelper.ffiInit,
     );
-    final db = await factory.openDatabase(databasePath,
-        options: OpenDatabaseOptions(readOnly: true, singleInstance: false));
+    final db = await PerformanceMetrics.instance.measure(
+        PerformanceOperation.identityDatabaseOpen,
+        () => factory.openDatabase(databasePath,
+            options:
+                OpenDatabaseOptions(readOnly: true, singleInstance: false)));
     try {
       // sqflite ignores onConfigure for readOnly, so set the key on this
       // strictly read-only connection before touching sqlite_master.
-      final cipherVersion = await db.rawQuery('PRAGMA cipher_version');
-      if (cipherVersion.isEmpty) throw const FormatException('No SQLCipher');
-      if (!plaintext) {
-        if (cipher.isEmpty) {
-          throw const FormatException('Missing SQLCipher key');
+      await PerformanceMetrics.instance
+          .measure(PerformanceOperation.identityDatabaseConfigure, () async {
+        final cipherVersion = await db.rawQuery('PRAGMA cipher_version');
+        if (cipherVersion.isEmpty) throw const FormatException('No SQLCipher');
+        if (!plaintext) {
+          if (cipher.isEmpty) {
+            throw const FormatException('Missing SQLCipher key');
+          }
+          await db.execute("PRAGMA key = '${cipher.replaceAll("'", "''")}'");
         }
-        await db.execute("PRAGMA key = '${cipher.replaceAll("'", "''")}'");
-      }
-      return await readMatrixIdentityTables(db,
-          requiresAuthenticatedMigration: plaintext);
+      });
+      return await PerformanceMetrics.instance.measure(
+          PerformanceOperation.identityDatabaseRead,
+          () => readMatrixIdentityTables(db,
+              requiresAuthenticatedMigration: plaintext));
     } finally {
-      await db.close();
+      await PerformanceMetrics.instance
+          .measure(PerformanceOperation.identityDatabaseClose, db.close);
     }
   }
 }
@@ -408,7 +423,9 @@ final class MatrixLocalIdentityPreflight {
     }
     String fingerprint;
     try {
-      fingerprint = await fingerprintReader(userId, pickle);
+      fingerprint = await PerformanceMetrics.instance.measure(
+          PerformanceOperation.identityFingerprint,
+          () => fingerprintReader(userId, pickle));
     } catch (error) {
       throw MatrixLocalIdentityPreflightException.fromError(
           MatrixLocalIdentityCause.unreadable, error,

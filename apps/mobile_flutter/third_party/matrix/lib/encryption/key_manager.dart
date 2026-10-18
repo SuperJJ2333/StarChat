@@ -41,6 +41,10 @@ class KeyManager {
   final _inboundGroupSessions = <String, Map<String, SessionKey>>{};
   final _outboundGroupSessions = <String, OutboundGroupSession>{};
   final Set<String> _loadedOutboundGroupSessions = <String>{};
+  final _outboundLoads = <String, Completer<void>>{};
+  final _outboundLoadGeneration = <String, int>{};
+  int _outboundEpoch = 0;
+  bool _disposed = false;
   final Set<String> _requestedSessionIds = <String>{};
 
   KeyManager(this.encryption) {
@@ -390,7 +394,22 @@ class KeyManager {
 
   /// clear all cached inbound group sessions. useful for testing
   void clearOutboundGroupSessions() {
+    _outboundEpoch++;
+    _outboundLoads.clear();
+    _loadedOutboundGroupSessions.clear();
+    _outboundLoadGeneration.clear();
+    for (final session in _outboundGroupSessions.values) {
+      session.dispose();
+    }
     _outboundGroupSessions.clear();
+  }
+
+  void _invalidateOutboundLoad(String roomId) {
+    _outboundLoadGeneration.update(roomId, (n) => n + 1, ifAbsent: () => 1);
+    _outboundLoads.remove(roomId);
+    // A room being cleared/created must not reload the old persisted pickle
+    // while its replacement is still awaiting device keys or storage.
+    _loadedOutboundGroupSessions.add(roomId);
   }
 
   /// Clears the existing outboundGroupSession but first checks if the participating
@@ -398,6 +417,7 @@ class KeyManager {
   /// it wasn't necessary. Otherwise returns true.
   Future<bool> clearOrUseOutboundGroupSession(String roomId,
       {bool wipe = false, bool use = true}) async {
+    _invalidateOutboundLoad(roomId);
     final room = client.getRoomById(roomId);
     final sess = getOutboundGroupSession(roomId);
     if (room == null || sess == null || sess.outboundGroupSession == null) {
@@ -592,6 +612,7 @@ class KeyManager {
 
   Future<OutboundGroupSession> _createOutboundGroupSession(
       String roomId) async {
+    _invalidateOutboundLoad(roomId);
     await clearOrUseOutboundGroupSession(roomId, wipe: true);
     await client.firstSyncReceived;
     final room = client.getRoomById(roomId);
@@ -663,24 +684,63 @@ class KeyManager {
   }
 
   /// Load an outbound group session from database
-  Future<void> loadOutboundGroupSession(String roomId) async {
+  Future<void> loadOutboundGroupSession(String roomId,
+      {bool Function()? canPublish}) {
+    final pending = _outboundLoads[roomId];
+    if (pending != null) return pending.future;
     final database = client.database;
     final userID = client.userID;
-    if (_loadedOutboundGroupSessions.contains(roomId) ||
+    if (_disposed ||
+        _loadedOutboundGroupSessions.contains(roomId) ||
         _outboundGroupSessions.containsKey(roomId) ||
         database == null ||
         userID == null) {
-      return; // nothing to do
+      return Future<void>.value();
     }
-    _loadedOutboundGroupSessions.add(roomId);
-    final sess = await database.getOutboundGroupSession(
-      roomId,
-      userID,
-    );
-    if (sess == null || !sess.isValid) {
-      return;
-    }
-    _outboundGroupSessions[roomId] = sess;
+    final flight = Completer<void>();
+    _outboundLoads[roomId] = flight;
+    final epoch = _outboundEpoch;
+    final generation = _outboundLoadGeneration[roomId];
+    final device = client.deviceID;
+    final room = client.getRoomById(roomId);
+    unawaited(() async {
+      try {
+        final session = await database.getOutboundGroupSession(roomId, userID);
+        final current = !_disposed &&
+            epoch == _outboundEpoch &&
+            generation == _outboundLoadGeneration[roomId] &&
+            identical(_outboundLoads[roomId], flight) &&
+            identical(database, client.database) &&
+            userID == client.userID &&
+            device == client.deviceID &&
+            identical(room, client.getRoomById(roomId)) &&
+            !_outboundGroupSessions.containsKey(roomId) &&
+            !_pendingNewOutboundGroupSessions.containsKey(roomId);
+        var permitted = true;
+        try {
+          permitted = canPublish?.call() ?? true;
+        } catch (_) {
+          permitted = false;
+        }
+        if (current && permitted) {
+          _loadedOutboundGroupSessions.add(roomId);
+          if (session?.isValid == true)
+            _outboundGroupSessions[roomId] = session!;
+        }
+        if (session != null &&
+            !identical(session, _outboundGroupSessions[roomId])) {
+          session.dispose();
+        }
+        flight.complete();
+      } catch (error, stack) {
+        flight.completeError(error, stack);
+      } finally {
+        if (identical(_outboundLoads[roomId], flight)) {
+          _outboundLoads.remove(roomId);
+        }
+      }
+    }());
+    return flight.future;
   }
 
   Future<bool> isCached() async {
@@ -1229,16 +1289,16 @@ class KeyManager {
   StreamSubscription<SyncUpdate>? _uploadKeysOnSync;
 
   void dispose() {
+    _disposed = true;
     // ignore: discarded_futures
     _uploadKeysOnSync?.cancel();
-    for (final sess in _outboundGroupSessions.values) {
-      sess.dispose();
-    }
+    clearOutboundGroupSessions();
     for (final entries in _inboundGroupSessions.values) {
       for (final sess in entries.values) {
         sess.dispose();
       }
     }
+    _inboundGroupSessions.clear();
   }
 }
 

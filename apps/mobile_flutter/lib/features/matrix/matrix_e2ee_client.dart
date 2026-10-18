@@ -1,5 +1,7 @@
 import '../../core/startup_projection/startup_projection.dart';
 import 'room_draft_store.dart';
+import 'sending_session_warmup.dart';
+import 'optional_projection_refresh.dart';
 import '../../core/startup_projection/startup_projection_coordinator.dart';
 import '../../core/startup_projection/startup_projection_store.dart';
 import 'conversation_identity_admission.dart';
@@ -60,6 +62,7 @@ import '../../core/network_state_manager.dart'
         defaultNetworkFailureClassifier;
 import '../../core/chat_diagnostics.dart';
 import '../../core/performance_trace.dart';
+import '../../core/performance_metrics.dart';
 import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
@@ -7253,6 +7256,7 @@ final class MatrixSdkE2eeClient
       secure.startupProjectionCoordinator = coordinator;
       unawaited(client.initializationCompleted.then((_) async {
         if (!_accessRevoked && identical(_client, client)) {
+          _scheduleSendingSessionWarmup();
           await _refreshRoomDisplayHeads();
         }
       }).catchError((Object _) {}));
@@ -7275,9 +7279,14 @@ final class MatrixSdkE2eeClient
               leftRooms: sync.rooms?.leave?.keys.toSet() ?? {},
               redactedEvents: redacted);
           if (_accessRevoked || !identical(_client, client)) return;
-          unawaited(_refreshRoomDisplayHeads());
-          final cache = _projectionStore;
-          if (cache != null) await primeStartupProjection(cache);
+          await _requestProjectionRefresh(
+              rooms: sync.accountData == null
+                  ? {
+                      ...?sync.rooms?.join?.keys,
+                      ...?sync.rooms?.leave?.keys,
+                      ...?sync.rooms?.invite?.keys
+                    }
+                  : null);
         }()
             .catchError((Object _) {}));
       };
@@ -7295,12 +7304,8 @@ final class MatrixSdkE2eeClient
         }
         return (applied) {
           ticket.finish(applied: applied);
-          if (applied) unawaited(_refreshRoomDisplayHeads());
-          final cache = _projectionStore;
-          if (applied && cache != null) {
-            unawaited(Future<void>(() => primeStartupProjection(cache))
-                .catchError((Object _) {}));
-          }
+          // The settled callback has the exact affected rooms. Scheduling here
+          // duplicated both hydration and capture for every local echo/ACK.
         };
       };
     }
@@ -7336,14 +7341,101 @@ final class MatrixSdkE2eeClient
   Future<void>? _displayRefreshFlight;
   bool _displayRefreshPending = false;
   String? _requestedDisplayRoom;
+  OptionalProjectionRefresh? _optionalProjectionRefresh;
+
+  Future<void> _requestProjectionRefresh({Set<String>? rooms}) {
+    final client = _client;
+    if (client == null || _accessRevoked) return Future<void>.value();
+    _optionalProjectionRefresh ??= OptionalProjectionRefresh((changed) async {
+      if (_accessRevoked || !identical(_client, client)) return;
+      final cache = _projectionStore;
+      await captureThenRepairProjection(
+        capture: () async {
+          if (cache != null) await primeStartupProjection(cache);
+        },
+        isCurrent: () => !_accessRevoked && identical(_client, client),
+        // Capture already filled current heads; repair only missing ones.
+        repair: () => _refreshRoomDisplayHeads(prioritizedRoomIds: changed),
+      );
+    });
+    return _optionalProjectionRefresh!.request(rooms: rooms);
+  }
+
+  SendingSessionWarmup? _sendingSessionWarmup;
+  Client? _sendingWarmupClient;
+
+  List<ConversationProjection> _prioritizedLocalRooms(Client client) =>
+      orderConversations([
+        for (final room in client.rooms)
+          if (!controlRoomIds.contains(room.id) &&
+              room.membership == Membership.join &&
+              !preferenceForRoom(room).hidden)
+            ConversationProjection(
+                roomId: room.id,
+                isGroup: !room.isDirectChat,
+                lastActivity: room.lastEvent?.originServerTs ??
+                    DateTime.fromMillisecondsSinceEpoch(0),
+                preference: preferenceForRoom(room)),
+      ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
+
+  void _scheduleSendingSessionWarmup() {
+    final client = _client;
+    if (client == null || client.isInitializationPending || _accessRevoked)
+      return;
+    unawaited(_withClient((active) async {
+      if (!identical(active, client) || !_activeContinuityValidated) return;
+      if (!identical(_sendingWarmupClient, active)) {
+        _sendingWarmupClient = active;
+        final account = active.userID;
+        final device = active.deviceID;
+        final database = active.database;
+        _sendingSessionWarmup = SendingSessionWarmup(
+            candidates: () => _prioritizedLocalRooms(active)
+                .where(
+                    (row) => active.getRoomById(row.roomId)?.encrypted == true)
+                .map((row) => row.roomId)
+                .toList(),
+            isActive: () =>
+                !_accessRevoked &&
+                _activeContinuityValidated &&
+                identical(_client, active) &&
+                active.userID == account &&
+                active.deviceID == device &&
+                identical(active.database, database),
+            load: (roomId) async {
+              final room = active.getRoomById(roomId);
+              if (room == null ||
+                  !room.encrypted ||
+                  room.membership != Membership.join ||
+                  preferenceForRoom(room).hidden) return;
+              await active.encryption?.keyManager.loadOutboundGroupSession(
+                  roomId,
+                  canPublish: () =>
+                      !_accessRevoked &&
+                      _activeContinuityValidated &&
+                      identical(_client, active) &&
+                      active.userID == account &&
+                      active.deviceID == device &&
+                      identical(active.database, database) &&
+                      identical(active.getRoomById(roomId), room) &&
+                      room.membership == Membership.join &&
+                      room.encrypted &&
+                      !controlRoomIds.contains(roomId) &&
+                      !preferenceForRoom(room).hidden);
+            });
+      }
+      await _sendingSessionWarmup!.schedule(current: _requestedDisplayRoom);
+    }).catchError((Object _) {}));
+  }
 
   void prioritizeRoomDisplay(String roomId) {
     if (_requestedDisplayRoom == roomId) return;
     _requestedDisplayRoom = roomId;
+    _scheduleSendingSessionWarmup();
     if (_displayRefreshFlight != null) _displayRefreshPending = true;
   }
 
-  Future<void> _refreshRoomDisplayHeads() {
+  Future<void> _refreshRoomDisplayHeads({Set<String>? prioritizedRoomIds}) {
     if (_displayRefreshFlight != null) {
       _displayRefreshPending = true;
       return _displayRefreshFlight!;
@@ -7370,22 +7462,28 @@ final class MatrixSdkE2eeClient
                   preference: preferenceForRoom(room)),
         ], draftRoomIds: RoomDraftStore.shared.draftRoomIds);
         final requested = _requestedDisplayRoom;
-        final selected = [
-          if (requested != null)
-            ...ordered.where((row) => row.roomId == requested),
-          ...ordered.where((row) => row.roomId != requested),
-        ];
-        final selectedIds = selected.take(40).map((row) => row.roomId).toSet();
+        final selected = selectProjectionRefreshRooms(
+            ordered.map((row) => row.roomId).toList(),
+            current: requested,
+            changed: prioritizedRoomIds);
+        final selectedIds = selected.toSet();
         _roomDisplayHeads.removeWhere((id, head) =>
             (!selectedIds.contains(id) && id != _requestedDisplayRoom) ||
             !head.isCurrent());
-        for (final item in selected.take(40)) {
+        for (final id in selected) {
           if (_accessRevoked || !identical(client, _client)) return;
           if (_requestedDisplayRoom != requested) {
             _displayRefreshPending = true;
             return;
           }
-          final room = rooms[item.roomId]!;
+          final room = rooms[id]!;
+          final existing = _roomDisplayHeads[room.id];
+          if (existing != null &&
+              identical(existing.room, room) &&
+              existing.generation == room.historyGeneration &&
+              existing.isCurrent()) {
+            continue;
+          }
           final permit = _projectionCoordinator?.beginDisplayCapture();
           if (permit == null) return;
           final generation = room.historyGeneration;
@@ -7428,7 +7526,6 @@ final class MatrixSdkE2eeClient
   }
 
   StartupProjectionStore? _projectionStore;
-  StreamSubscription<SyncUpdate>? _projectionSync;
 
   static Map<String, Object> _projectionMedia(Map<String, dynamic> content) {
     final info = content['info'];
@@ -7464,11 +7561,6 @@ final class MatrixSdkE2eeClient
         invalidateHead: secure.invalidateStartupProjection);
     secure.startupProjectionCoordinator = coordinator;
     coordinator.markVerified();
-    _projectionSync ??= _client?.onSync.stream.listen((_) {
-      // SDK completion fences, rather than onSync, grant capture permission.
-      unawaited(Future<void>(() => primeStartupProjection(cache))
-          .catchError((Object _) {}));
-    });
     if (_projectionWriting) {
       _projectionRefreshPending = true;
       return;
@@ -9283,6 +9375,29 @@ final class MatrixSdkE2eeClient
           eventId = await target.sendEvent(
             Map<String, dynamic>.from(content),
             txid: attempt.txid,
+            onTiming: PerformanceMetrics.instance.enabled
+                ? (phase, elapsed) => PerformanceMetrics.instance.record(
+                    switch (phase) {
+                      MatrixSendTiming.localEcho =>
+                        PerformanceOperation.sendLocalEcho,
+                      MatrixSendTiming.queueWait =>
+                        PerformanceOperation.sendQueueWait,
+                      MatrixSendTiming.sessionLoad =>
+                        PerformanceOperation.sendSessionLoad,
+                      MatrixSendTiming.sessionCheck =>
+                        PerformanceOperation.sendSessionCheck,
+                      MatrixSendTiming.sessionCreate =>
+                        PerformanceOperation.sendSessionCreate,
+                      MatrixSendTiming.encrypt =>
+                        PerformanceOperation.sendEncrypt,
+                      MatrixSendTiming.sessionPersist =>
+                        PerformanceOperation.sendSessionPersist,
+                      MatrixSendTiming.http => PerformanceOperation.sendHttp,
+                      MatrixSendTiming.acknowledgement =>
+                        PerformanceOperation.sendAcknowledgement,
+                    },
+                    elapsed)
+                : null,
           );
         } finally {
           attempt.performanceTrace?.mark(PerformanceStage.matrixSendFinish);
@@ -9994,8 +10109,10 @@ final class MatrixSdkE2eeClient
         _projectionCoordinator)) {
       secureSessionStore?.startupProjectionCoordinator = null;
     }
-    unawaited(_projectionSync?.cancel());
-    _projectionSync = null;
+    _optionalProjectionRefresh?.close();
+    _optionalProjectionRefresh = null;
+    _sendingSessionWarmup = null;
+    _sendingWarmupClient = null;
     _recentHistory?.revoke();
     _client?.recoveryOwner?.revoke();
     _cancelSyncProjection();

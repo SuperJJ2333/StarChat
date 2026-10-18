@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -13,10 +14,16 @@ final class _SendClient extends Client {
   final responses = <Future<String> Function()>[];
   final transactions = <String>[];
   bool failSettlement = false;
+  Completer<void>? holdAck;
+  Completer<void>? ackEntered;
   @override
   Future<void> handleSync(SyncUpdate sync, {Direction? direction}) async {
     final status = sync.rooms!.join!.values.first.timeline!.events!.first
         .unsigned![messageSendingStatusKey];
+    if (status == EventStatus.sent.intValue && holdAck != null) {
+      if (ackEntered?.isCompleted == false) ackEntered!.complete();
+      await holdAck!.future;
+    }
     if (failSettlement && status != EventStatus.sending.intValue) {
       failSettlement = false;
       throw StateError('local settlement unavailable');
@@ -32,6 +39,46 @@ final class _SendClient extends Client {
 }
 
 void main() {
+  test('actual room send times echo queue HTTP and ACK at their own boundaries',
+      () async {
+    final client = _SendClient();
+    final response = Completer<String>();
+    client.responses.add(() => response.future);
+    client.holdAck = Completer<void>();
+    client.ackEntered = Completer<void>();
+    final samples = <MatrixSendTiming>[];
+    final room = Room(id: '!room:test', client: client);
+    final send = room.sendEvent({'msgtype': 'm.text', 'body': 'fixture'},
+        txid: 'stable', onTiming: (phase, us) => samples.add(phase));
+    await Future<void>.delayed(Duration.zero);
+    expect(samples, [MatrixSendTiming.localEcho, MatrixSendTiming.queueWait]);
+    response.complete(r'$accepted');
+    await client.ackEntered!.future;
+    expect(samples.last, MatrixSendTiming.http);
+    expect(samples, isNot(contains(MatrixSendTiming.acknowledgement)));
+    client.holdAck!.complete();
+    expect(await send, r'$accepted');
+    expect(samples, [
+      MatrixSendTiming.localEcho,
+      MatrixSendTiming.queueWait,
+      MatrixSendTiming.http,
+      MatrixSendTiming.acknowledgement
+    ]);
+    expect(client.transactions, ['stable']);
+    await client.dispose();
+  });
+
+  test('throwing diagnostic observer does not retry an accepted room send',
+      () async {
+    final client = _SendClient()..responses.add(() async => r'$accepted');
+    final room = Room(id: '!room:test', client: client);
+    expect(
+        await room.sendEvent({'msgtype': 'm.text', 'body': 'fixture'},
+            txid: 'stable', onTiming: (_, __) => throw StateError('fixture')),
+        r'$accepted');
+    expect(client.transactions, ['stable']);
+    await client.dispose();
+  });
   test('failed local echo persistence does not replace the server rejection',
       () async {
     final client = _SendClient()..failSettlement = true;

@@ -40,6 +40,7 @@ final class StartupProjectionCoordinator {
   bool _retired = false;
   bool _poisoned = false;
   bool _displayRevoked = false;
+  bool _headKnownInvalid = false;
   bool get displayRevoked => _displayRevoked || _retired;
   Future<void> _headWork = Future<void>.value();
 
@@ -79,13 +80,20 @@ final class StartupProjectionCoordinator {
     return next;
   }
 
+  Future<void> _invalidateHeadOnce() async {
+    if (_headKnownInvalid) return;
+    await invalidateHead();
+    _headKnownInvalid = true;
+  }
+
   StartupProjectionMutation beginMutation(String reason) {
     if (_retired) throw StateError('Retired projection owner');
     final id = ++_nextTicket;
     _displayRevoked = true;
     _revision++;
     _active.add(id);
-    final before = _serializeHead(invalidateHead).catchError((Object error) {
+    final before =
+        _serializeHead(_invalidateHeadOnce).catchError((Object error) {
       _poisoned = true;
       throw error;
     });
@@ -116,7 +124,9 @@ final class StartupProjectionCoordinator {
           StartupProjectionCapture permit, Future<void> Function() writeHead) =>
       _serializeHead(() async {
         if (!isCurrent(permit)) return;
+        // A failed callback can have partially published a head.
+        _headKnownInvalid = false;
         await writeHead();
-        if (!isCurrent(permit)) await invalidateHead();
+        if (!isCurrent(permit)) await _invalidateHeadOnce();
       }).then((_) => isCurrent(permit));
 }

@@ -188,7 +188,10 @@ class Encryption {
 
   void _runOwnedInRoot(Future<void> Function() action) {
     final owner = client.recoveryOwner;
-    if (owner == null) { runInRoot(action); return; }
+    if (owner == null) {
+      runInRoot(action);
+      return;
+    }
     if (!owner.active) return;
     final admitted = owner.write(action);
     runInRoot(() => admitted);
@@ -202,7 +205,8 @@ class Encryption {
     if (pending == null) return;
     final failure = await pending;
     if (identical(_recoveryIndexWrites[eventId], pending)) {
-      _recoveryIndexWrites.removeWhere((key, value) => key == eventId && identical(value, pending));
+      _recoveryIndexWrites.removeWhere(
+          (key, value) => key == eventId && identical(value, pending));
     }
     if (failure != null) throw failure;
   }
@@ -271,10 +275,13 @@ class Encryption {
               database.updateInboundGroupSessionIndexes(
                   json.encode(inboundGroupSession.indexes), roomId, sessionId);
           final owner = client.recoveryOwner;
-          final indexWrite = owner == null ? writeIndex() : owner.write(writeIndex);
-          final write = indexWrite.then<Object?>((_) => null, onError: (Object _, StackTrace __) {
+          final indexWrite =
+              owner == null ? writeIndex() : owner.write(writeIndex);
+          final write = indexWrite.then<Object?>((_) => null,
+              onError: (Object _, StackTrace __) {
             // Failed persistence must not leave a false in-memory replay proof.
-            if (inboundGroupSession.indexes[messageIndexKey] == messageIndexValue) {
+            if (inboundGroupSession.indexes[messageIndexKey] ==
+                messageIndexValue) {
               inboundGroupSession.indexes.remove(messageIndexKey);
             }
             final failure = StateError('E2EE_RECOVERY_INDEX_STORAGE_FAILED');
@@ -286,8 +293,10 @@ class Encryption {
           if (owner != null) {
             _recoveryIndexWrites[event.eventId] = write;
             unawaited(write.then((failure) {
-              if (failure == null && identical(_recoveryIndexWrites[event.eventId], write)) {
-                _recoveryIndexWrites.removeWhere((key, value) => key == event.eventId && identical(value, write));
+              if (failure == null &&
+                  identical(_recoveryIndexWrites[event.eventId], write)) {
+                _recoveryIndexWrites.removeWhere((key, value) =>
+                    key == event.eventId && identical(value, write));
               }
             }));
           }
@@ -402,8 +411,9 @@ class Encryption {
       }
       return event;
     } catch (e, s) {
-      if (e is StateError && {'E2EE_RECOVERY_INDEX_STORAGE_FAILED',
-          'E2EE_RECOVERY_OWNER_REVOKED'}.contains(e.message)) {
+      if (e is StateError &&
+          {'E2EE_RECOVERY_INDEX_STORAGE_FAILED', 'E2EE_RECOVERY_OWNER_REVOKED'}
+              .contains(e.message)) {
         return originalEvent;
       }
       Logs().e('[Decrypt] Could not decrpyt event', e, s);
@@ -415,7 +425,8 @@ class Encryption {
   /// payload. This will create a new outgoingGroupSession if necessary.
   Future<Map<String, dynamic>> encryptGroupMessagePayload(
       String roomId, Map<String, dynamic> payload,
-      {String type = EventTypes.Message}) async {
+      {String type = EventTypes.Message,
+      MatrixSendTimingObserver? onTiming}) async {
     payload = copyMap(payload);
     final Map<String, dynamic>? mRelatesTo = payload.remove('m.relates_to');
 
@@ -432,11 +443,14 @@ class Encryption {
       throw ('Unknown encryption algorithm');
     }
     if (keyManager.getOutboundGroupSession(roomId)?.isValid != true) {
-      await keyManager.loadOutboundGroupSession(roomId);
+      await measureMatrixSend(MatrixSendTiming.sessionLoad,
+          () => keyManager.loadOutboundGroupSession(roomId), onTiming);
     }
-    await keyManager.clearOrUseOutboundGroupSession(roomId);
+    await measureMatrixSend(MatrixSendTiming.sessionCheck,
+        () => keyManager.clearOrUseOutboundGroupSession(roomId), onTiming);
     if (keyManager.getOutboundGroupSession(roomId)?.isValid != true) {
-      await keyManager.createOutboundGroupSession(roomId);
+      await measureMatrixSend(MatrixSendTiming.sessionCreate,
+          () => keyManager.createOutboundGroupSession(roomId), onTiming);
     }
     final sess = keyManager.getOutboundGroupSession(roomId);
     if (sess?.isValid != true) {
@@ -450,18 +464,22 @@ class Encryption {
       'type': type,
       'room_id': roomId,
     };
-    final encryptedPayload = <String, dynamic>{
-      'algorithm': AlgorithmTypes.megolmV1AesSha2,
-      'ciphertext':
-          sess!.outboundGroupSession!.encrypt(json.encode(payloadContent)),
-      // device_id + sender_key should be removed at some point in future since
-      // they're deprecated. Just left here for compatibility
-      'device_id': client.deviceID,
-      'sender_key': identityKey,
-      'session_id': sess.outboundGroupSession!.session_id(),
-      if (mRelatesTo != null) 'm.relates_to': mRelatesTo,
-    };
-    await keyManager.storeOutboundGroupSession(roomId, sess);
+    final encryptedPayload = measureMatrixSendSync(
+        MatrixSendTiming.encrypt,
+        () => <String, dynamic>{
+              'algorithm': AlgorithmTypes.megolmV1AesSha2,
+              'ciphertext': sess!.outboundGroupSession!
+                  .encrypt(json.encode(payloadContent)),
+              // device_id + sender_key should be removed at some point in future since
+              // they're deprecated. Just left here for compatibility
+              'device_id': client.deviceID,
+              'sender_key': identityKey,
+              'session_id': sess.outboundGroupSession!.session_id(),
+              if (mRelatesTo != null) 'm.relates_to': mRelatesTo,
+            },
+        onTiming);
+    await measureMatrixSend(MatrixSendTiming.sessionPersist,
+        () => keyManager.storeOutboundGroupSession(roomId, sess!), onTiming);
     return encryptedPayload;
   }
 

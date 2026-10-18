@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -42,6 +43,23 @@ enum PerformanceOperation {
   syncResponseWait,
   syncProcessing,
   syncCleanup,
+  sendLocalEcho,
+  sendQueueWait,
+  sendSessionLoad,
+  sendSessionCheck,
+  sendSessionCreate,
+  sendEncrypt,
+  sendSessionPersist,
+  sendHttp,
+  sendAcknowledgement,
+  identityCopyAndHash,
+  identitySnapshotHash,
+  identitySourceRecheck,
+  identityDatabaseOpen,
+  identityDatabaseConfigure,
+  identityDatabaseRead,
+  identityDatabaseClose,
+  identityFingerprint,
 }
 
 enum PerformanceCounter {
@@ -121,6 +139,17 @@ final class PerformanceMetrics {
     if (samples.length == sampleCapacity) samples.removeFirst();
     samples.addLast(microseconds);
     _counts.update(operation, (n) => n + 1, ifAbsent: () => 1);
+  }
+
+  Future<T> measure<T>(
+      PerformanceOperation operation, FutureOr<T> Function() work) async {
+    if (!enabled) return await work();
+    final watch = Stopwatch()..start();
+    try {
+      return await work();
+    } finally {
+      record(operation, watch.elapsedMicroseconds);
+    }
   }
 
   void increment(PerformanceCounter counter) {
