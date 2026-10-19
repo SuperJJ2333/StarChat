@@ -6,7 +6,7 @@
 - Scope: diagnose and fix existing lifecycle within approved cache-first design, ADR-0080 refresh recovery and ADR-0086 retained-identity safeguards. Preserve account isolation, server-authorized grant target, Olm fingerprint/database generation and Keychain; no clearing databases, automatic fresh-device recovery, real message sends or production rollout.
 - Root sole writer, existing clean managed worktree interactive-cache-startup. Baseline16905e7f (runtime62dc76f2), installed Android0.4.61+2230, emulator-5556 UID10090 / firstInstall2026-09-26. Main D:/ workspace has unrelated changes and is not the source-edit target.
 - Own targeted account-selection/reauthentication lifecycle, projection/watchdog behavior only when evidence identifies it, associated tests and these task documents. Broader authentication/E2EE decisions require ADR and DOMAIN then independent QUALITY review before implementation.
-- Current phase: ordinary2232 installed; final local corrective verification complete; waiting for AS6 real-recipient feedback. Earlier stage snapshots below are historical. Started2026-10-19 06:16+08 approximately; exact first active-analysis interval unknown. Artifact root docs/verification/artifacts/2026-10-19/account-switch-readiness/.
+- Current phase: ordinary2232 installed; final local corrective verification complete; AS6 real-recipient delivery PASS_USER_CONFIRMED. Earlier stage snapshots below are historical. Started2026-10-19 06:16+08 approximately; exact first active-analysis interval unknown. Artifact root docs/verification/artifacts/2026-10-19/account-switch-readiness/.
 - No .codegraph; no ongoing previous builds, wake lease or port forwards. Previous2230 test evidence applies unchanged baseline only.
 
 ## Acceptance ledger
@@ -18,6 +18,7 @@
 | AS3 | Local cached history can render/scroll while optional network/history preparation continues after valid target identity | Shallow encrypted head readable while deep SQL held; strict Android native2232 original6audits and new rotation/room-key assertions PASS |
 | AS4 | iOS continuity, authoritative device rotation, failed close/retry, Keychain temporarily unavailable and true fingerprint mismatch regressions | Shared focused153PASS; iOS18/26 native23seed+4restart each PASS, full unsigned compilePASS; physical iPhone/signing not verified |
 | AS5 | Spec/domain then independent quality/security, appropriate scoped/final gates, fixed signer Android Debug install-r and original reproduction | Runtime and corrective fixture DOMAIN→independentQUALITY PASS; ordinary2232 installed; original fullFAIL preserved and file-only correction27PASS/analyze0; no production publication |
+| AS6 | Former failing account sends a new group message that Android0.4.52 recipient can see | PASS_USER_CONFIRMED; direct human confirmation after ordinary2232 install; as6-user-acceptance-2232.json; old missing-key history not repaired |
 
 ## Evidence and next executable action
 
@@ -80,3 +81,10 @@ Final frozen shared92541 is still running (analyze0), not yet PASS. New same-sou
 - AS6 OPEN: recipient's missing sender key is confirmed; new2232 future-send real receipt pending. Root makes no new real sends; historical missing-key messages unrepaired. AS1 full real switch latency remains an observation gap, not a claimed performance measurement.
 - All source-bound build/gate jobs finished; local mapping/VM forward/wake cleanup complete. No formal release/popup/download mutation. Four owned task docs and current-state entry only are eligible for CAS sync to primary, never mobile source.
 - Next action: receive user result for one user-entered new2232→old0.4.52 group message; on failure collect sanitized public metadata for that attempt. Do not repeat independent completed gates on unchanged input.
+
+
+## AS6 real-recipient acceptance (2026-10-19T13:47:19.547354+08:00)
+
+Direct user confirmation: “原故障账号在‘测试群二’发送的新消息，Android 0.4.52 接收端可见”. AS6 now PASS_USER_CONFIRMED for new messages in the original failing-account/room/old-receiver scenario. Previous OPEN snapshots above are historical. Evidence: as6-user-acceptance-2232.json; current ordinary0.4.63+2232/runtime2ace/APKbf97 remains unchanged. No root new real send, new build/install or production publication.
+
+No pending recipient question remains. Already-sent missing-key history is not restored by this confirmation. Full >10s switching timing and physical iPhone/signing acceptance remain distinct unmeasured/unverified items; no all-room/all-device or latency claim. Documentation-only update: links, owned scope, primary CAS and diff checks; existing runtime/native evidence reused.

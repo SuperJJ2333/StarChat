@@ -1,6 +1,6 @@
 # Account-switch readiness verification
 
-Last updated 2026-10-19T13:30:59.825791+08:00. Current ordinary Android **0.4.63+2232 Debug** is installed on original emulator-5556 with retained data. Runtime source `2acebfdafcfa7637927913e37a8585dad261b568`. Test/document-only follow-up does not alter the installed runtime. **AS6 real-recipient acceptance remains OPEN.**
+Last updated 2026-10-19T13:47:19.547354+08:00. Current ordinary Android **0.4.63+2232 Debug** is installed on original emulator-5556 with retained data. Runtime source `2acebfdafcfa7637927913e37a8585dad261b568`. Test/document-only follow-up does not alter the installed runtime. **AS6 real-recipient acceptance PASS, confirmed directly by the user: new messages from the formerly failing account in 测试群二 are visible on Android0.4.52.**
 
 ## Confirmed findings and changes
 
@@ -16,6 +16,7 @@ Evidence root: `artifacts/2026-10-19/account-switch-readiness/` in the interacti
 
 | Gate | Actual result | Evidence |
 | --- | --- | --- |
+| AS6 original real-recipient scenario | **PASS_USER_CONFIRMED**; former failing account/new message visible on Android0.4.52 | as6-user-acceptance-2232.json |
 | Lifecycle/account-switch focused |153 testDone PASS, exit0 | readiness-green-final |
 | Final runtime affected coverage |541 testDone PASS, analyze0; paired version contract3PASS | key-sharing-impact-r3, version contract receipt |
 | Final frozen shared command | **FAIL**, analyze0,6367PASS/9SKIP/2FAIL, source stable | final-shared-2232/receipt.json and classification-initial.json |
@@ -47,4 +48,4 @@ No production popup/download mutation, new real automatic send, uninstall, data 
 
 Frozen shared gate02:13:00Z→02:52:25Z (39m25s), FAIL retained. Strict Android native02:28:54Z→02:34:07Z, driver291.36s. iOS run created02:14:27Z, finished02:47:39Z; jobs overlapped local work, so do not sum as task wall-clock. Corrective file/analyzer 2026-10-19T05:00:43.7112686+00:00→2026-10-19T05:01:16.1832690+00:00. Exact active-analysis and external-wait duration is unknown; no fabricated total.
 
-Next executable acceptance: user manually sends a new message with the formerly failing account in 测试群二 and confirms decryption/visibility on Android0.4.52. Existing async question is pending; no additional send authorization is inferred. If still failing, inspect sanitized public identity/key-share outcomes for that new attempt before any further product change. Local send-success alone cannot close AS6. The user's original >10s switching duration has not been fully remeasured or attributed after repair.
+At record time 2026-10-19T13:47:19.547354+08:00, the user directly confirmed new messages from the formerly failing account in 测试群二 are visible on Android0.4.52. AS6 is closed as PASS_USER_CONFIRMED for this original scenario; no pending recipient question remains. This is user-assisted actual visibility evidence, not a server-acceptance inference. Root sent no additional messages. Previously missing-key messages remain unrepaired. The user's original >10s switching duration has not been fully remeasured or attributed after repair; physical iPhone/signing acceptance remains separate. No new build, install or publication is required by this documentation-only acceptance update.

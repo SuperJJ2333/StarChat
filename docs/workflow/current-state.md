@@ -1,12 +1,12 @@
 # 当前工作状态
 
-## 2026-10-19 切号与密钥分发：2232 Debug已安装，等待真实接收反馈
+## 2026-10-19 切号与密钥分发：2232 Debug原故障群聊真实送达验收通过
 
 运行时2acebfda，普通0.4.63+2232已于10:34:53+08保数据install-r原5556，main SHA bf97af627699…/126130522B，固定75b31签名，设备同字节/UID10090/首次安装保持。严格Android9原生/driver0及原6审计通过；iOS18/26原生seed23+restart4各PASS，完整unsigned生产原生编译PASS。iOS整体CI仍FAIL，两job均为基线16905同名3项视频缓存宿主失败，失败门禁保留；不等于物理iPhone/签名升级通过。
 
 541相关PASS；冻结共享原命令FAIL6367PASS/9SKIP/2FAIL保留。失败涉及嵌套写入计数旧假设及其未清理数据库影响，独立原归档用例PASS；只修宿主测试断言/无条件清理，完整文件27casePASS(+3harness)、analyze0。运行时/lock/平台输入未变，DOMAIN→独立QUALITY通过后按证据复用，不将原全量改称绿，不重复构建APK。
 
-用户0.4.52接收端明确缺sender session key。新版严格校验完整密钥分享、等待全部chunk、检查实际HTTP前上下文并安全轮换未来会话；保留旧inbound历史授权。AS6仍OPEN，待用户原故障账号→旧接收端确认新消息可见；合成验证不能替代真实送达，已丢密钥旧消息未恢复，原>10s切号总耗时也未完整复测。无新自动真实发送/正式弹窗/下载修改。所有构建门禁已结束，无遗留映射/forward/wake更改。见[任务](tasks/2026-10-19-account-switch-readiness.md)、[报告](../verification/2026-10-19-account-switch-readiness.md)。
+用户0.4.52接收端明确缺sender session key。新版严格校验完整密钥分享、等待全部chunk、检查实际HTTP前上下文并安全轮换未来会话；保留旧inbound历史授权。AS6已由用户直接确认PASS：原故障账号在测试群二发送的新消息，Android0.4.52接收端可见；记录as6-user-acceptance-2232.json。此次真实新消息送达已验收，已丢密钥旧消息未恢复，原>10s切号总耗时也未完整复测。无新自动真实发送/正式弹窗/下载修改。所有构建门禁已结束，无遗留映射/forward/wake更改。见[任务](tasks/2026-10-19-account-switch-readiness.md)、[报告](../verification/2026-10-19-account-switch-readiness.md)。
 
 ## 2026-10-18 缓存房间准入修正：2230普通Debug已安装，14/14缓存命中
 
