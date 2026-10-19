@@ -30,3 +30,20 @@ QUALITY additionally requires same-client login attempt isolation: serialize the
 ## Required evidence
 
 Actual SDK old401/old-success fencing; cached old error followed by immediate new timeout0 sync; genuine new error still reported; no restart on login/rotation/persistence failure or superseded owner. Real encrypted local history/AEAD capture after A→B→A, same room IDs without cross-account content, held deep SQL/cache and disposal. Preserve original cold-start held-preflight/SDK tests, scoped mobile gate and fixed signer Android runtime. iOS native/device verification must be explicitly distinguished from Windows shared fixtures.
+
+
+## Retained-rotation marker consistency supplement
+
+The SDK soft-logout branch currently updates only OlmManager.ourDeviceId after durable credentials adoption. Encryption.olmDatabase instead checks Encryption.ourDeviceId against Client.deviceID. A genuine same-account server rotation therefore can disable the retained Olm database facade, including session persistence and last-sent-key replay. This is an independently proven source gap; it is not yet the established cause of the reported B-account message delivery defect. Native inspection taken after user switched to a working account showed equal markers and must not be attributed to B.
+
+The bounded correction captures the exact Encryption, OlmManager, prior nonempty user/device, database and recovery owner before the durable update. Both old encryption markers must equal the same prior device, proving this is the retained nondehydrated owner, and adopted user must remain equal with nonempty target device. After updateClient succeeds, recheck the exact encryption/database/owner and unchanged prior markers, then synchronously update both markers with no intervening await. Wrong-account, mismatched/dehydrated, failed persistence and revoked-owner paths must not promote access. No new Olm account, database clearing, key export, server key custody or weakened identity checks.
+
+Required proof uses real SQLCipher and Olm: rotated client retains the identical database facade, newly updated Olm sessions persist and survive close/reopen while retained identity/history remain unchanged. Test persistence failure and owner revocation. Domain review conditionally approved these boundaries; independent quality approval is required before implementation.
+
+## AS6 missing-key delivery supplement (2026-10-19)
+
+Recipient Android0.4.52 now explicitly reports `the sender has not sent us the session key`. Read-only failing-sender metadata anchors the accepted event and live outbound session to the same account and session. Its intended recipient map includes all8members, while inbound historical authorization metadata is empty. This proves missing-key reception and inconsistent legacy reuse state; it does not identify the original key-loss trigger.
+
+DOMAIN then independent QUALITY conditionally approved a bounded repair: require exact eligible target/public-key coverage for room-key ciphertexts, await every room-key chunk, and rotate future sessions when participant/device eligibility changes or historical authorization proof is missing. Preserve all old inbound sessions and never manufacture index0 authorization. New outbound is usable only after complete encrypted key-sharing and an owner/identity/device-fenced transaction; validate before transaction commit and again before publication. A valid commit preceding later revocation is not claimed rolled back. Reopen/use must revalidate. Serialize room payload preparation and encryption without recursive room-lock acquisition. No new plaintext channel, automatic device trust or secret-server access.
+
+Temporary OTK/network failures retain existing retryable message failure behavior. All-target readiness may delay a group send; it must never silently skip a legitimate target and report success. Already-sent historical ciphertext is not automatically repaired by future-session rotation.

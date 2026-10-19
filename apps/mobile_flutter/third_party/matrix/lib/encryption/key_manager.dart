@@ -412,155 +412,114 @@ class KeyManager {
     _loadedOutboundGroupSessions.add(roomId);
   }
 
-  /// Clears the existing outboundGroupSession but first checks if the participating
-  /// devices have been changed. Returns false if the session has not been cleared because
-  /// it wasn't necessary. Otherwise returns true.
+  Map<String, Map<String, (String?, String?, bool)>> _deviceShareSnapshot(
+      Iterable<DeviceKeys> keys) {
+    final snapshot = <String, Map<String, (String?, String?, bool)>>{};
+    for (final key in keys) {
+      final id = key.deviceId;
+      if (id != null) {
+        (snapshot[key.userId] ??= {})[id] =
+            (key.curve25519Key, key.ed25519Key, key.encryptToDevice);
+      }
+    }
+    return snapshot;
+  }
+
+  void Function() _captureShareContext(Room room,
+      {List<DeviceKeys>? devices, OutboundGroupSession? expectedSession}) {
+    final owner = client.recoveryOwner;
+    final database = client.database;
+    final user = client.userID;
+    final device = client.deviceID;
+    final membership = room.membership;
+    final expected = devices == null ? null : _deviceShareSnapshot(devices);
+    return () {
+      owner?.check();
+      if (_disposed ||
+          !identical(client.recoveryOwner, owner) ||
+          !identical(client.database, database) ||
+          !identical(client.encryption, encryption) ||
+          client.userID != user ||
+          client.deviceID != device ||
+          !identical(client.getRoomById(room.id), room) ||
+          room.membership != membership ||
+          !identical(getOutboundGroupSession(room.id), expectedSession)) {
+        throw StateError('E2EE_ROOM_KEY_SHARE_CONTEXT_CHANGED');
+      }
+      if (expected != null) {
+        final current = <DeviceKeys>[];
+        for (final member
+            in room.getParticipants([Membership.join, Membership.invite])) {
+          current.addAll(client.userDeviceKeys[member.id]?.deviceKeys.values ??
+              <DeviceKeys>[]);
+        }
+        if (!const DeepCollectionEquality()
+            .equals(expected, _deviceShareSnapshot(current))) {
+          throw StateError('E2EE_ROOM_KEY_SHARE_DEVICES_CHANGED');
+        }
+      }
+    };
+  }
+
+  /// Reuse only a fully authorized recipient set; changes rotate future keys.
   Future<bool> clearOrUseOutboundGroupSession(String roomId,
       {bool wipe = false, bool use = true}) async {
     _invalidateOutboundLoad(roomId);
     final room = client.getRoomById(roomId);
     final sess = getOutboundGroupSession(roomId);
-    if (room == null || sess == null || sess.outboundGroupSession == null) {
-      return true;
-    }
-
+    if (room == null || sess?.outboundGroupSession == null) return true;
+    final check = _captureShareContext(room, expectedSession: sess);
+    check();
+    final content =
+        room.getState(EventTypes.Encryption)?.parsedRoomEncryptionContent;
+    final maxMessages = content?.rotationPeriodMsgs ?? 100;
+    final maxAge = content?.rotationPeriodMs ?? 604800000;
+    wipe = wipe ||
+        (sess!.sentMessages ?? maxMessages) >= maxMessages ||
+        sess.creationTime
+            .add(Duration(milliseconds: maxAge))
+            .isBefore(DateTime.now());
     if (!wipe) {
-      // first check if it needs to be rotated
-      final encryptionContent =
-          room.getState(EventTypes.Encryption)?.parsedRoomEncryptionContent;
-      final maxMessages = encryptionContent?.rotationPeriodMsgs ?? 100;
-      final maxAge = encryptionContent?.rotationPeriodMs ??
-          604800000; // default of one week
-      if ((sess.sentMessages ?? maxMessages) >= maxMessages ||
-          sess.creationTime
-              .add(Duration(milliseconds: maxAge))
-              .isBefore(DateTime.now())) {
-        wipe = true;
-      }
+      final inbound = await loadInboundGroupSession(
+          room.id, sess.outboundGroupSession!.session_id());
+      check();
+      final keys = await room.getUserDeviceKeys();
+      check();
+      final checkDevices =
+          _captureShareContext(room, devices: keys, expectedSession: sess);
+      checkDevices();
+      // A legacy device list is an intended-recipient record, not delivery or
+      // historical-index proof. Never infer old authorization from it. Rotate
+      // a future session instead of silently promoting incremental shares.
+      wipe = inbound == null ||
+          inbound.senderKey != encryption.identityKey ||
+          !const DeepCollectionEquality()
+              .equals(sess.devices, _getDeviceKeyIdMap(keys)) ||
+          keys.any((key) =>
+              key.encryptToDevice &&
+              inbound.allowedAtIndex[key.userId]?[key.curve25519Key] == null);
+      if (!wipe) return false;
+    }
+    final database = client.database;
+    Future<void> remove() async {
+      check();
+      await database?.removeOutboundGroupSession(roomId);
+      check();
     }
 
-    final inboundSess = await loadInboundGroupSession(
-        room.id, sess.outboundGroupSession!.session_id());
-    if (inboundSess == null) {
-      wipe = true;
-    }
-
-    if (!wipe) {
-      // next check if the devices in the room changed
-      final devicesToReceive = <DeviceKeys>[];
-      final newDeviceKeys = await room.getUserDeviceKeys();
-      final newDeviceKeyIds = _getDeviceKeyIdMap(newDeviceKeys);
-      // first check for user differences
-      final oldUserIds = Set.from(sess.devices.keys);
-      final newUserIds = Set.from(newDeviceKeyIds.keys);
-      if (oldUserIds.difference(newUserIds).isNotEmpty) {
-        // a user left the room, we must wipe the session
-        wipe = true;
+    final owner = client.recoveryOwner;
+    Future<void> persist() async {
+      if (database == null) {
+        await remove();
       } else {
-        final newUsers = newUserIds.difference(oldUserIds);
-        if (newUsers.isNotEmpty) {
-          // new user! Gotta send the megolm session to them
-          devicesToReceive
-              .addAll(newDeviceKeys.where((d) => newUsers.contains(d.userId)));
-        }
-        // okay, now we must test all the individual user devices, if anything new got blocked
-        // or if we need to send to any new devices.
-        // for this it is enough if we iterate over the old user Ids, as the new ones already have the needed keys in the list.
-        // we also know that all the old user IDs appear in the old one, else we have already wiped the session
-        for (final userId in oldUserIds) {
-          final oldBlockedDevices = sess.devices.containsKey(userId)
-              ? Set.from(sess.devices[userId]!.entries
-                  .where((e) => e.value)
-                  .map((e) => e.key))
-              : <String>{};
-          final newBlockedDevices = newDeviceKeyIds.containsKey(userId)
-              ? Set.from(newDeviceKeyIds[userId]!
-                  .entries
-                  .where((e) => e.value)
-                  .map((e) => e.key))
-              : <String>{};
-          // we don't really care about old devices that got dropped (deleted), we only care if new ones got added and if new ones got blocked
-          // check if new devices got blocked
-          if (newBlockedDevices.difference(oldBlockedDevices).isNotEmpty) {
-            wipe = true;
-            break;
-          }
-          // and now add all the new devices!
-          final oldDeviceIds = sess.devices.containsKey(userId)
-              ? Set.from(sess.devices[userId]!.entries
-                  .where((e) => !e.value)
-                  .map((e) => e.key))
-              : <String>{};
-          final newDeviceIds = newDeviceKeyIds.containsKey(userId)
-              ? Set.from(newDeviceKeyIds[userId]!
-                  .entries
-                  .where((e) => !e.value)
-                  .map((e) => e.key))
-              : <String>{};
-
-          // check if a device got removed
-          if (oldDeviceIds.difference(newDeviceIds).isNotEmpty) {
-            wipe = true;
-            break;
-          }
-
-          // check if any new devices need keys
-          final newDevices = newDeviceIds.difference(oldDeviceIds);
-          if (newDeviceIds.isNotEmpty) {
-            devicesToReceive.addAll(newDeviceKeys.where(
-                (d) => d.userId == userId && newDevices.contains(d.deviceId)));
-          }
-        }
-      }
-
-      if (!wipe) {
-        if (!use) {
-          return false;
-        }
-        // okay, we use the outbound group session!
-        sess.devices = newDeviceKeyIds;
-        final rawSession = <String, dynamic>{
-          'algorithm': AlgorithmTypes.megolmV1AesSha2,
-          'room_id': room.id,
-          'session_id': sess.outboundGroupSession!.session_id(),
-          'session_key': sess.outboundGroupSession!.session_key(),
-        };
-        try {
-          devicesToReceive.removeWhere((k) => !k.encryptToDevice);
-          if (devicesToReceive.isNotEmpty) {
-            // update allowedAtIndex
-            for (final device in devicesToReceive) {
-              inboundSess!.allowedAtIndex[device.userId] ??= <String, int>{};
-              if (!inboundSess.allowedAtIndex[device.userId]!
-                      .containsKey(device.curve25519Key) ||
-                  inboundSess.allowedAtIndex[device.userId]![
-                          device.curve25519Key]! >
-                      sess.outboundGroupSession!.message_index()) {
-                inboundSess
-                        .allowedAtIndex[device.userId]![device.curve25519Key!] =
-                    sess.outboundGroupSession!.message_index();
-              }
-            }
-            await client.database?.updateInboundGroupSessionAllowedAtIndex(
-                json.encode(inboundSess!.allowedAtIndex),
-                room.id,
-                sess.outboundGroupSession!.session_id());
-            // send out the key
-            await client.sendToDeviceEncryptedChunked(
-                devicesToReceive, EventTypes.RoomKey, rawSession);
-          }
-        } catch (e, s) {
-          Logs().e(
-              '[LibOlm] Unable to re-send the session key at later index to new devices',
-              e,
-              s);
-        }
-        return false;
+        await database.transaction(remove);
       }
     }
-    sess.dispose();
+
+    await (owner == null ? persist() : owner.write(persist));
+    check();
     _outboundGroupSessions.remove(roomId);
-    await client.database?.removeOutboundGroupSession(roomId);
+    sess!.dispose();
     return true;
   }
 
@@ -610,72 +569,83 @@ class KeyManager {
     }
   }
 
-  Future<OutboundGroupSession> _createOutboundGroupSession(
+  Future<OutboundGroupSession> _createOutboundGroupSession(String roomId) {
+    final owner = client.recoveryOwner;
+    Future<OutboundGroupSession> action() =>
+        _createSharedOutboundGroupSession(roomId);
+    return owner == null ? action() : owner.write(action);
+  }
+
+  Future<OutboundGroupSession> _createSharedOutboundGroupSession(
       String roomId) async {
     _invalidateOutboundLoad(roomId);
     await clearOrUseOutboundGroupSession(roomId, wipe: true);
-    await client.firstSyncReceived;
     final room = client.getRoomById(roomId);
-    if (room == null) {
-      throw Exception(
-          'Tried to create a megolm session in a non-existing room ($roomId)!');
+    if (room == null ||
+        room.membership != Membership.join ||
+        client.userID == null) {
+      throw Exception('E2EE_ROOM_KEY_SHARE_ROOM_UNAVAILABLE');
     }
-    final userID = client.userID;
-    if (userID == null) {
-      throw Exception(
-          'Tried to create a megolm session without being logged in!');
-    }
-
-    final deviceKeys = await room.getUserDeviceKeys();
-    final deviceKeyIds = _getDeviceKeyIdMap(deviceKeys);
-    deviceKeys.removeWhere((k) => !k.encryptToDevice);
-    final outboundGroupSession = olm.OutboundGroupSession();
+    final checkOwner = _captureShareContext(room);
+    checkOwner();
+    await client.firstSyncReceived;
+    checkOwner();
+    final devices = await room.getUserDeviceKeys();
+    checkOwner();
+    final check = _captureShareContext(room, devices: devices);
+    check();
+    final user = client.userID!;
+    final database = client.database;
+    final outbound = olm.OutboundGroupSession();
+    var published = false;
     try {
-      outboundGroupSession.create();
-    } catch (e, s) {
-      outboundGroupSession.free();
-      Logs().e('[LibOlm] Unable to create new outboundGroupSession', e, s);
-      rethrow;
-    }
-    final rawSession = <String, dynamic>{
-      'algorithm': AlgorithmTypes.megolmV1AesSha2,
-      'room_id': room.id,
-      'session_id': outboundGroupSession.session_id(),
-      'session_key': outboundGroupSession.session_key(),
-    };
-    final allowedAtIndex = <String, Map<String, int>>{};
-    for (final device in deviceKeys) {
-      if (!device.isValid) {
-        Logs().e('Skipping invalid device');
-        continue;
+      outbound.create();
+      // Key and index are captured together, before any asynchronous share.
+      final index = outbound.message_index();
+      final rawSession = <String, dynamic>{
+        'algorithm': AlgorithmTypes.megolmV1AesSha2,
+        'room_id': room.id,
+        'session_id': outbound.session_id(),
+        'session_key': outbound.session_key(),
+      };
+      final eligible = devices.where((key) => key.encryptToDevice).toList();
+      final allowed = <String, Map<String, int>>{};
+      for (final key in eligible) {
+        (allowed[key.userId] ??= {})[key.curve25519Key!] = index;
       }
-      allowedAtIndex[device.userId] ??= <String, int>{};
-      allowedAtIndex[device.userId]![device.curve25519Key!] =
-          outboundGroupSession.message_index();
-    }
-    await setInboundGroupSession(
-        roomId, rawSession['session_id'], encryption.identityKey!, rawSession,
-        allowedAtIndex: allowedAtIndex);
-    final sess = OutboundGroupSession(
-      devices: deviceKeyIds,
-      creationTime: DateTime.now(),
-      outboundGroupSession: outboundGroupSession,
-      key: userID,
-    );
-    try {
+      await setInboundGroupSession(
+          roomId, rawSession['session_id'], encryption.identityKey!, rawSession,
+          allowedAtIndex: allowed);
+      check();
+      final session = OutboundGroupSession(
+          devices: _getDeviceKeyIdMap(devices),
+          creationTime: DateTime.now(),
+          outboundGroupSession: outbound,
+          key: user);
       await client.sendToDeviceEncryptedChunked(
-          deviceKeys, EventTypes.RoomKey, rawSession);
-      await storeOutboundGroupSession(roomId, sess);
-      _outboundGroupSessions[roomId] = sess;
-    } catch (e, s) {
-      Logs().e(
-          '[LibOlm] Unable to send the session key to the participating devices',
-          e,
-          s);
-      sess.dispose();
-      rethrow;
+          eligible, EventTypes.RoomKey, rawSession,
+          checkRoomKeyContext: check);
+      check();
+      Future<void> commit() async {
+        check();
+        await storeOutboundGroupSession(roomId, session);
+        // This check executes inside the transaction, before commit. Failure
+        // leaves only an unused inbound history row, never a send-ready group.
+        check();
+      }
+
+      if (database == null) {
+        await commit();
+      } else {
+        await database.transaction(commit);
+      }
+      check();
+      _outboundGroupSessions[roomId] = session;
+      published = true;
+      return session;
+    } finally {
+      if (!published) outbound.free();
     }
-    return sess;
   }
 
   /// Get an outbound group session for a room id

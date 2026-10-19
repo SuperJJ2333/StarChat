@@ -2061,6 +2061,9 @@ class Client extends MatrixApi {
       batch: _prevBatch,
       groupCallSession: _groupCallSessionId,
     );
+    final retainedEncryption = encryption;
+    final retainedOlmManager = retainedEncryption?.olmManager;
+    final retainedDatabase = database;
     var identityAdoptionFailed = false;
     try {
       Logs().i('Initialize client $clientName');
@@ -2168,8 +2171,24 @@ class Client extends MatrixApi {
       // If we are refreshing the session, we are done here:
       if (onLoginStateChanged.value == LoginState.softLoggedOut) {
         if (accessToken != null && userID != null) {
+          final adoptedUserId = userID;
+          final adoptedDeviceId = _deviceID;
+          final credentialDatabase = this.database;
+          // Identity adoption above may legitimately replace the old owner.
+          // Fence the admitted owner that will persist these credentials.
+          final credentialOwner = recoveryOwner;
+          final canAdoptRetainedEncryption = retainedDatabase != null &&
+              identical(credentialDatabase, retainedDatabase) &&
+              retainedEncryption != null &&
+              identical(encryption, retainedEncryption) &&
+              previousIdentity.user?.isNotEmpty == true &&
+              previousIdentity.user == adoptedUserId &&
+              previousIdentity.device?.isNotEmpty == true &&
+              adoptedDeviceId?.isNotEmpty == true &&
+              retainedEncryption.ourDeviceId == previousIdentity.device &&
+              retainedOlmManager?.ourDeviceId == previousIdentity.device;
           // Store the new tokens:
-          await _database?.updateClient(
+          await credentialDatabase?.updateClient(
             homeserver.toString(),
             accessToken,
             accessTokenExpiresAt,
@@ -2182,13 +2201,23 @@ class Client extends MatrixApi {
                 olmAccount ??
                 account?.tryGet<String>('olm_account'),
           );
-          // A same-account server device rotation keeps this Olm account.
-          // Once durable credentials are committed, sign/upload its retained
-          // keys under the adopted device rather than treating it as dehydrated.
-          final olmManager = encryption?.olmManager;
-          if (previousIdentity.user == userID &&
-              olmManager?.ourDeviceId == previousIdentity.device) {
-            olmManager?.ourDeviceId = _deviceID;
+          if (canAdoptRetainedEncryption) {
+            if (_disposed ||
+                this.userID != adoptedUserId ||
+                deviceID != adoptedDeviceId ||
+                !identical(this.database, retainedDatabase) ||
+                !identical(encryption, retainedEncryption) ||
+                !identical(retainedEncryption.olmManager, retainedOlmManager) ||
+                !identical(recoveryOwner, credentialOwner) ||
+                credentialOwner?.active == false ||
+                retainedEncryption.ourDeviceId != previousIdentity.device ||
+                retainedOlmManager?.ourDeviceId != previousIdentity.device) {
+              throw StateError('E2EE_RECOVERY_OWNER_REVOKED');
+            }
+            // Both gates describe this retained account. Updating only the
+            // inner marker disables Encryption.olmDatabase and key replay.
+            retainedEncryption.ourDeviceId = adoptedDeviceId!;
+            retainedOlmManager!.ourDeviceId = adoptedDeviceId;
           }
         }
         onLoginStateChanged.add(LoginState.loggedIn);
@@ -2321,9 +2350,8 @@ class Client extends MatrixApi {
               if (scalar != null) {
                 if (identical(live.lastEvent, _startupSeedHeads[live.id])) {
                   final head = restored.lastEvent;
-                  live.lastEvent = head == null
-                      ? null
-                      : Event.fromJson(head.toJson(), live);
+                  live.lastEvent =
+                      head == null ? null : Event.fromJson(head.toJson(), live);
                 }
                 if (live.notificationCount == scalar.$1) {
                   live.notificationCount = restored.notificationCount;
@@ -3693,11 +3721,25 @@ class Client extends MatrixApi {
     String eventType,
     String txnId,
     Map<String, Map<String, Map<String, dynamic>>> messages,
-  ) async {
+  ) =>
+      _sendToDeviceWithContext(eventType, txnId, messages);
+
+  Future<void> _sendToDeviceWithContext(
+    String eventType,
+    String txnId,
+    Map<String, Map<String, Map<String, dynamic>>> messages, {
+    void Function()? checkBeforeDispatch,
+    bool queueOnFailure = true,
+  }) async {
     try {
+      checkBeforeDispatch?.call();
       await processToDeviceQueue();
+      checkBeforeDispatch?.call();
       await super.sendToDevice(eventType, txnId, messages);
     } catch (e, s) {
+      // A failed room-key operation is retried with a newly authorized group.
+      // Generic persisted ciphertext has no membership/owner context to replay.
+      if (!queueOnFailure) rethrow;
       Logs().w(
           '[Client] Problem while sending to_device event, retrying later...',
           e,
@@ -3739,9 +3781,22 @@ class Client extends MatrixApi {
     Map<String, dynamic> message, {
     String? messageId,
     bool onlyVerified = false,
+    void Function()? checkRoomKeyContext,
   }) async {
     final encryption = this.encryption;
-    if (!encryptionEnabled || encryption == null) return;
+    final completeKeyShare = eventType == EventTypes.RoomKey ||
+        eventType == EventTypes.ForwardedRoomKey;
+    if (!encryptionEnabled || encryption == null) {
+      if (completeKeyShare &&
+          deviceKeys.any((key) =>
+              !key.blocked &&
+              !(key.userId == userID && key.deviceId == deviceID) &&
+              (!onlyVerified || key.verified))) {
+        throw StateError('E2EE_ROOM_KEY_SHARE_UNAVAILABLE');
+      }
+      return;
+    }
+    deviceKeys = List<DeviceKeys>.from(deviceKeys);
     // Don't send this message to blocked devices, and if specified onlyVerified
     // then only send it to verified devices
     if (deviceKeys.isNotEmpty) {
@@ -3760,8 +3815,61 @@ class Client extends MatrixApi {
     // As we send to multiple devices at the same time, we may only proceed here if the lock for
     // *all* of them is freed and lock *all* of them while sending.
 
+    final shareOwner = recoveryOwner;
+    final shareDatabase = database;
+    final shareUser = userID;
+    final shareDevice = deviceID;
+    final targets = [
+      for (final device in deviceKeys)
+        (
+          device,
+          device.userId,
+          device.deviceId,
+          device.curve25519Key,
+          device.ed25519Key,
+          device.blocked,
+          device.verified,
+          userDeviceKeys[device.userId]?.deviceKeys[device.deviceId] != null
+        )
+    ];
+    void checkKeyShare() {
+      if (!completeKeyShare) return;
+      checkRoomKeyContext?.call();
+      shareOwner?.check();
+      if (_disposed ||
+          !identical(recoveryOwner, shareOwner) ||
+          !identical(database, shareDatabase) ||
+          !identical(this.encryption, encryption) ||
+          !encryptionEnabled ||
+          userID != shareUser ||
+          deviceID != shareDevice ||
+          targets.any((t) =>
+              t.$1.userId != t.$2 ||
+              t.$1.deviceId != t.$3 ||
+              t.$1.curve25519Key != t.$4 ||
+              t.$1.ed25519Key != t.$5 ||
+              t.$1.blocked != t.$6 ||
+              t.$1.verified != t.$7)) {
+        throw StateError('E2EE_ROOM_KEY_SHARE_OWNER_CHANGED');
+      }
+      for (final target in targets) {
+        final current = userDeviceKeys[target.$2]?.deviceKeys[target.$3];
+        if ((target.$8 && current == null) ||
+            (current != null &&
+                (current.userId != target.$2 ||
+                    current.deviceId != target.$3 ||
+                    current.curve25519Key != target.$4 ||
+                    current.ed25519Key != target.$5 ||
+                    current.blocked != target.$6 ||
+                    current.verified != target.$7))) {
+          throw StateError('E2EE_ROOM_KEY_SHARE_DEVICES_CHANGED');
+        }
+      }
+    }
+
     try {
       await _sendToDeviceEncryptedLock.lock(deviceKeys);
+      checkKeyShare();
 
       // Send with send-to-device messaging
       final data = await encryption.encryptToDeviceMessage(
@@ -3769,9 +3877,32 @@ class Client extends MatrixApi {
         eventType,
         message,
       );
+      checkKeyShare();
+      if (completeKeyShare) {
+        final count = data.values.fold<int>(0, (n, value) => n + value.length);
+        if (count != targets.length ||
+            targets.any((t) {
+              final encrypted = data[t.$2]?[t.$3];
+              final ciphertext = encrypted?['ciphertext'];
+              return t.$4 == null ||
+                  encrypted?['algorithm'] !=
+                      AlgorithmTypes.olmV1Curve25519AesSha2 ||
+                  ciphertext is! Map ||
+                  !ciphertext.containsKey(t.$4);
+            })) {
+          throw StateError('E2EE_ROOM_KEY_SHARE_INCOMPLETE');
+        }
+      }
       eventType = EventTypes.Encrypted;
-      await sendToDevice(
-          eventType, messageId ?? generateUniqueTransactionId(), data);
+      if (completeKeyShare) {
+        await _sendToDeviceWithContext(
+            eventType, messageId ?? generateUniqueTransactionId(), data,
+            checkBeforeDispatch: checkKeyShare, queueOnFailure: false);
+      } else {
+        await sendToDevice(
+            eventType, messageId ?? generateUniqueTransactionId(), data);
+      }
+      checkKeyShare();
     } finally {
       _sendToDeviceEncryptedLock.unlock(deviceKeys);
     }
@@ -3784,9 +3915,21 @@ class Client extends MatrixApi {
   Future<void> sendToDeviceEncryptedChunked(
     List<DeviceKeys> deviceKeys,
     String eventType,
-    Map<String, dynamic> message,
-  ) async {
-    if (!encryptionEnabled) return;
+    Map<String, dynamic> message, {
+    void Function()? checkRoomKeyContext,
+  }) async {
+    final completeKeyShare = eventType == EventTypes.RoomKey ||
+        eventType == EventTypes.ForwardedRoomKey;
+    if (completeKeyShare) checkRoomKeyContext?.call();
+    if (!encryptionEnabled) {
+      if (completeKeyShare &&
+          deviceKeys.any((key) =>
+              !key.blocked &&
+              !(key.userId == userID && key.deviceId == deviceID))) {
+        throw StateError('E2EE_ROOM_KEY_SHARE_UNAVAILABLE');
+      }
+      return;
+    }
     // be sure to copy our device keys list
     deviceKeys = List<DeviceKeys>.from(deviceKeys);
     deviceKeys.removeWhere((DeviceKeys k) =>
@@ -3804,7 +3947,9 @@ class Client extends MatrixApi {
     var i = 0;
     // we leave this in a for-loop for now, so that we can easily adjust the break condition
     // based on other things, if we want to hard-`await` more devices in the future
-    for (; i < deviceKeys.length && i <= 0; i += chunkSize) {
+    for (;
+        i < deviceKeys.length && (completeKeyShare || i <= 0);
+        i += chunkSize) {
       Logs().v('Sending chunk $i...');
       final chunk = deviceKeys.sublist(
           i,
@@ -3812,7 +3957,8 @@ class Client extends MatrixApi {
               ? deviceKeys.length
               : i + chunkSize);
       // and send
-      await sendToDeviceEncrypted(chunk, eventType, message);
+      await sendToDeviceEncrypted(chunk, eventType, message,
+          checkRoomKeyContext: checkRoomKeyContext);
     }
     // now send out the background chunks
     if (i < deviceKeys.length) {

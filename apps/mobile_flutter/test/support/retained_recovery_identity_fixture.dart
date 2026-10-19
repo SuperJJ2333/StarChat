@@ -9,6 +9,8 @@ import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:matrix/matrix.dart';
+import 'package:matrix/encryption/utils/olm_session.dart';
+import 'package:matrix/encryption/encryption.dart';
 import 'package:matrix/src/utils/client_init_exception.dart';
 import 'package:olm/olm.dart' as olm;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -28,7 +30,7 @@ class RetainedRecoveryIdentityFixture {
   final String cipher;
   final SecureSessionStore sessions;
   final bool preserveStoreOnInvalidToken;
-  late Client client;
+  late RetainedIdentityTestClient client;
   late HeldRecoveryDatabase database;
   late MatrixSdkE2eeClient matrix;
   late final factory =
@@ -40,8 +42,11 @@ class RetainedRecoveryIdentityFixture {
   Map<String, dynamic>? uploadedDeviceKeys;
   Completer<void>? loginEntered;
   Completer<void>? loginRelease;
+  Future<http.Response?> Function(http.Request)? additionalResponse;
 
   Future<http.Response> _respond(http.Request request) async {
+    final additional = await additionalResponse?.call(request);
+    if (additional != null) return additional;
     final path = request.url.path;
     if (path.endsWith('/versions')) {
       return http.Response('{"versions":["v1.1","v1.2","v1.11"]}', 200);
@@ -103,30 +108,41 @@ class RetainedRecoveryIdentityFixture {
         factory: sqlFactory, path: path, cipher: cipher);
     final sql = await sqlFactory.openDatabase(path,
         options: OpenDatabaseOptions(onConfigure: encryption.applyPragmaKey));
-    expect((await sql.rawQuery('PRAGMA cipher_version')).isNotEmpty, isTrue);
-    database = HeldRecoveryDatabase(sql, sqlFactory);
-    await database.open();
-    client = Client(clientName,
-        databaseBuilder: (_) => database,
-        supportedLoginTypes: {'m.login.token'},
-        httpClient: MockClient(_respond),
-        preserveStoreOnInvalidToken: preserveStoreOnInvalidToken)
-      ..backgroundSync = false;
-    // Factory production order: real SDK init precedes the wrapper constructor.
-    if (seed) {
-      await client.init(
-          newToken: 'synthetic-original',
-          newRefreshToken: 'synthetic-refresh-original',
-          newTokenExpiresAt: DateTime.utc(2040),
-          newHomeserver: endpoint,
-          newUserID: user,
-          newDeviceID: 'RETAINED',
-          newDeviceName: 'retained-device');
-    } else {
-      await client.init();
+    RetainedIdentityTestClient? opening;
+    try {
+      expect((await sql.rawQuery('PRAGMA cipher_version')).isNotEmpty, isTrue);
+      database = HeldRecoveryDatabase(sql, sqlFactory);
+      await database.open();
+      opening = client = RetainedIdentityTestClient(clientName,
+          databaseBuilder: (_) => database,
+          supportedLoginTypes: {'m.login.token'},
+          httpClient: MockClient(_respond),
+          preserveStoreOnInvalidToken: preserveStoreOnInvalidToken)
+        ..backgroundSync = false;
+      // Factory production order: real SDK init precedes the wrapper constructor.
+      if (seed) {
+        await client.init(
+            newToken: 'synthetic-original',
+            newRefreshToken: 'synthetic-refresh-original',
+            newTokenExpiresAt: DateTime.utc(2040),
+            newHomeserver: endpoint,
+            newUserID: user,
+            newDeviceID: 'RETAINED',
+            newDeviceName: 'retained-device');
+      } else {
+        await client.init();
+      }
+      client.rooms.add(Room(id: roomId, client: client));
+      return client;
+    } catch (error, stack) {
+      try {
+        await opening?.dispose();
+      } catch (_) {/* Preserve initialization failure. */}
+      try {
+        if (sql.isOpen) await sql.close();
+      } catch (_) {/* Preserve initialization failure. */}
+      Error.throwWithStackTrace(error, stack);
     }
-    client.rooms.add(Room(id: roomId, client: client));
-    return client;
   }
 
   void wrap() {
@@ -202,6 +218,62 @@ class RetainedRecoveryIdentityFixture {
       homeserver: endpoint,
       deviceId: 'RETAINED');
 
+  Future<void> expectRotatedOlmPersistence() async {
+    final encryption = client.encryption!;
+    expect(encryption.ourDeviceId, client.deviceID);
+    expect(encryption.olmManager.ourDeviceId, client.deviceID);
+    expect(identical(encryption.olmDatabase, database), isTrue,
+        reason: 'Retained rotation must keep the real Olm database facade.');
+    final fingerprint = client.fingerprintKey;
+    final sender = olm.Account()..create();
+    final recipient = olm.Account()
+      ..create()
+      ..generate_one_time_keys(1);
+    olm.Session? peerSession;
+    try {
+      final senderKey =
+          jsonDecode(sender.identity_keys())['curve25519'] as String;
+      final peerKey =
+          jsonDecode(recipient.identity_keys())['curve25519'] as String;
+      final oneTime =
+          (jsonDecode(recipient.one_time_keys())['curve25519'] as Map)
+              .values
+              .first as String;
+      final outgoing = olm.Session()..create_outbound(sender, peerKey, oneTime);
+      final sessionId = outgoing.session_id();
+      final stored = OlmSession(
+          key: user,
+          identityKey: peerKey,
+          sessionId: sessionId,
+          session: outgoing,
+          lastReceived: DateTime.now());
+      await encryption.olmManager.storeOlmSession(stored);
+      final first = outgoing.encrypt('synthetic first');
+      peerSession = olm.Session()
+        ..create_inbound_from(recipient, senderKey, first.body);
+      expect(peerSession.decrypt(first.type, first.body), 'synthetic first');
+      await encryption.olmManager.storeOlmSession(stored);
+      await matrix.suspend();
+      await openClient();
+      wrap();
+      expect(client.fingerprintKey == fingerprint, isTrue);
+      expect(client.deviceID, 'ROTATED');
+      expect(identical(client.encryption!.olmDatabase, database), isTrue);
+      final restored =
+          await client.encryption!.olmManager.getOlmSessions(peerKey);
+      expect(restored.length, 1);
+      expect(restored.single.sessionId == sessionId, isTrue);
+      final next = restored.single.session!.encrypt('synthetic after reopen');
+      expect(
+          peerSession.decrypt(next.type, next.body), 'synthetic after reopen');
+      await expectHistory();
+    } finally {
+      peerSession?.free();
+      recipient.free();
+      sender.free();
+    }
+  }
+
   Future<void> rotateAfterHeldWrite() async {
     await matrix.currentSessionCredentials();
     final original = client;
@@ -266,6 +338,33 @@ class RetainedRecoveryIdentityFixture {
   }
 }
 
+class RetainedIdentityTestClient extends Client {
+  RetainedIdentityTestClient(super.clientName,
+      {super.databaseBuilder,
+      super.supportedLoginTypes,
+      super.httpClient,
+      super.preserveStoreOnInvalidToken});
+
+  bool replaceDatabase = false;
+  DatabaseApi? replacementDatabase;
+  bool replaceEncryption = false;
+  Encryption? replacementEncryption;
+  Future<void> Function()? beforeToDeviceQueue;
+
+  @override
+  Future<void> processToDeviceQueue() async {
+    await beforeToDeviceQueue?.call();
+    await super.processToDeviceQueue();
+  }
+
+  @override
+  DatabaseApi? get database =>
+      replaceDatabase ? replacementDatabase : super.database;
+  @override
+  Encryption? get encryption =>
+      replaceEncryption ? replacementEncryption : super.encryption;
+}
+
 class HeldRecoveryDatabase extends MatrixSdkDatabase {
   HeldRecoveryDatabase(Database sql, DatabaseFactory factory)
       : super(RetainedRecoveryIdentityFixture.clientName,
@@ -273,6 +372,42 @@ class HeldRecoveryDatabase extends MatrixSdkDatabase {
   bool hold = false;
   final entered = Completer<void>();
   final release = Completer<void>();
+  Future<void> Function()? beforeClientUpdate;
+  Future<void> Function()? afterClientUpdate;
+  Future<void> Function()? afterOutboundStore;
+  Future<void> Function()? afterTransaction;
+
+  @override
+  Future<void> transaction(Future<void> Function() action) async {
+    await super.transaction(action);
+    await afterTransaction?.call();
+  }
+
+  @override
+  Future<void> storeOutboundGroupSession(
+      String roomId, String pickle, String deviceIds, int creationTime) async {
+    await super
+        .storeOutboundGroupSession(roomId, pickle, deviceIds, creationTime);
+    await afterOutboundStore?.call();
+  }
+
+  @override
+  Future<void> updateClient(
+      String homeserverUrl,
+      String token,
+      DateTime? tokenExpiresAt,
+      String? refreshToken,
+      String userId,
+      String? deviceId,
+      String? deviceName,
+      String? prevBatch,
+      String? olmAccount) async {
+    await beforeClientUpdate?.call();
+    await super.updateClient(homeserverUrl, token, tokenExpiresAt, refreshToken,
+        userId, deviceId, deviceName, prevBatch, olmAccount);
+    await afterClientUpdate?.call();
+  }
+
   @override
   Future<void> storeRecoveryRecord(
       String key, Map<String, dynamic> value) async {

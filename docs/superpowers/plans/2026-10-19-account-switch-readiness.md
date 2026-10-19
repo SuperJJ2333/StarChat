@@ -10,3 +10,14 @@ User-authorized bugfix continuing the existing account/cache-first flow; root ex
 6. DOMAIN/SPEC then independent QUALITY implementation; analyzer and final shared gate on frozen new runtime with native hashes preflight. Build/rebuild/align/fixed-sign/verify normal Debug once, reserve paired version from actual local state, install-r preserving original data, reproduce switch/login/history behavior. Reuse unchanged gates only with explicit input equivalence. Document iOS native/device limitations separately and do not claim them verified.
 7. Restore owned temporary resources; synchronize only task documents and own current-state entry, preserving unrelated D:/ source. No production popup/download changes or unrequested real messages.
 
+
+
+## New native delivery report and rotation supplement
+
+1. Preserve delivered2231 source and failed/full/consumer receipts. The original full command is FAIL6332PASS/9skip/1fixture error; corrected shared fake and all30transitive host consumers plus analyzer PASS, never relabel original command.
+2. Continue the B-account/Android0.4.52 receiver defect as AS6. Confirm server event acceptance, public identity, exact room, cached recipient public key metadata, keyshare/replay and recipient behavior. No further real test sends without matching authorization; user manually sent the one authorized test after native input did not insert any text. Do not inspect SDK Client credential fields, Olm account pickles or room/session keys.
+3. Under the ADR supplement, first add real SQLCipher/Olm red coverage for the two marker facade/persistence gap, then obtain independent Quality review and implement the guarded synchronous adoption. Preserve failed-persistence/revocation/dehydration boundaries.
+4. Run impacted host tests and final shared gate on final runtime. Rebuild conventional fixed-signer Android Debug if runtime changes. Use focused iOS native identity seed/restart verification and full unsigned production native compile; unrelated host/media failures stay recorded. Native iPhone/signing/Keychain upgrade remains separate.
+5. Preserve-data install and user-assisted B-account/old-receiver test must confirm real receipt before AS6 is complete. No production popup/download mutation.
+
+AS6 implementation: test-first exact key-share coverage/chunk completion; replace unsafe incremental share promotion with future-session rotation; prove real peer Olm/Megolm decrypt, persistence failure/revocation/reopen and concurrent preparation, with old history authorization unchanged. DOMAIN and independent QUALITY design approval recorded in ADR supplement. Root owns SDK client/key_manager/encryption and focused tests. No further real messages authorized beyond the one already manually sent.

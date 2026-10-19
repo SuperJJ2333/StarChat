@@ -36,6 +36,7 @@ void main() {
     'held first continuity',
     'held rotation',
     'same device',
+    'rotated Olm persistence',
     'post-persistence failure',
     'late foreign user',
     'corrupt binding',
@@ -89,6 +90,11 @@ void main() {
           await fixture.renew();
           expect(fixture.client.deviceID, 'RETAINED');
           await fixture.expectHistory();
+        }
+        if (scenario == 'rotated Olm persistence') {
+          fixture.responseDevice = 'ROTATED';
+          await fixture.renew();
+          await fixture.expectRotatedOlmPersistence();
         }
         if (scenario == 'post-persistence failure') {
           fixture.responseDevice = 'ROTATED';

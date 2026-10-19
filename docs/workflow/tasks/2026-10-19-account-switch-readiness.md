@@ -30,3 +30,34 @@
 - Next: freeze candidate, final shared analyze/full tests, conventional fixed-signer main and strict native builds; preserve-data install and native acceptance. Aggregate verify preflight blocked by no canonical .env; do not import primary's runtime secrets.
 - iOS native build/device availability not established; shared tests cannot be called iPhone verification. No credentials requested in chat.
 
+
+## Frozen candidate correction and iOS validation
+
+At07:17+08 the additional Python version contract found pubspec2231 vs compiled AppConfig2230 (1FAIL/2PASS). The original runtime936507 source/build was not delivered. Its packaging pipeline finished PASS before attempted cancellation, but it is superseded by the independent version contract; full shared gate was canceled with exit-1, not PASS. Owned descendants were stopped and V/Y were released. No emulator install occurred.
+
+AppConfig version defaults were corrected test-first (3PASS) and candidate re-frozen as11b72ec7754179370926377ade0a16e578801349. A complete new mobile Git archive was extracted over the build input; all2148 tracked mobile blobs verified against new HEAD before restarting final-shared-2231-b2 and main-2231-b2. Only that candidate can be delivered. No source commits while these gates/builds run.
+
+Existing repository CI authentication verified read-only; no credential persisted. Validation-only branch codex/account-switch-readiness-2231 pushed at the frozen SHA. ios-compatibility.yml dispatched07:24:15+08 for same-source production native compile and iPhone15 iOS18/26 synthetic compatibility; no TestFlight/enterprise upload/publication job. ios-ci-dispatch.json and ios-ci-latest.json are authoritative. Native simulation does not replace retained-data physical iPhone verification.
+
+
+## Native delivery reopened
+
+At 2026-10-19T08:34:03.404715+08:00, ordinary0.4.62+2231 is installed via install-main-b2 PASS, SHA913037d775fac2f7f7fc7fc5437deeac0cf18ed77082358bf39922909b8ea19a, same UID10090/firstInstall. Strict native-r1 PASS8checks, wake setting restored. Cold-room sample3/14 PASS content_ready279/300/687ms; scope PARTIAL, no all-room claim.
+
+Full frozen shared gate ended07:58:28+08, source stable, analyze0, exit1:6332PASS/9skips/1 test-fake failure. Fake init now adopts public user/device after successful super.init, original rotation assertions expanded; all30transitive host consumers and analyze PASS at08:05:30+08. Runtime/SDK/lock unchanged by that test-only correction.
+
+AS6 OPEN: user says switched account can receive and locally send successfully, but Android0.4.52 recipient sees no event; switching emulator to other accounts works. User authorized one exact test message, native tool inserted none/sent0; user then manually sent the authorized text and confirmed not visible. Server normal encrypted events in the expected active room are accepted/outlierfalse, sender public key matches registry, not shadow-banned. Two same-name rooms exist, but only active8-member room has recent traffic including multiple senders. Public key counts are healthy; no messages or encryption secrets read. Current working account alias b09b2f6347 is distinct from failing event sender8712672654. Therefore metadata r7/r9 must not be misattributed to failed sender. User has been asked to return to failing account without another send.
+
+Independent retained rotation source gap: SDK moves inner OlmManager device marker but not outer Encryption marker that grants Olm DB facade. ADR/plan supplement added; conditional DOMAIN approved. No product change yet; real red/persistence proof and independentQUALITY next.
+
+iOS original run39176370952 production unsigned compile PASS, native phases skipped after3video host failures. Supplement39178296351 unchanged apps tree: Mac16905 baseline reproduces exact3host failures (comparisonPASS, original testsFAIL). iOS18 native seedFAIL, restartverifyPASS; overallFAIL preserved by explicit host outcome guard. iOS26 last known running; no overall native login PASS claim. Detailed log download did not yield a retained log; inspect safely via bounded streaming/range or CI artifacts.
+
+## 2232 source-complete checkpoint
+
+Recipient0.4.52 explicitly reports missing sender session key after reentering. Live failing-account read-only r10–r13 matches accepted-event public account/session identity; intended device targets are present, historical allowedAtIndex metadata is empty. No plaintext or cryptographic secrets obtained; no additional real sends.
+
+Source now prevents incomplete room-key encryption from being acknowledged, awaits all room-key chunks, rejects stale member/device context before actual HTTP (including OTK and queued-transport waits), and forbids strict shares from entering the context-free deferred queue. Future-only rotation preserves old inbound history/authorization. Real SQLCipher/Olm tests prove recipient decryption and safe rejection/retry/reopen; protected DOMAIN then independent QUALITY implementation review PASS after pre-dispatch/replay findings and native-create cleanup/public override corrections.
+
+Final paired candidate0.4.63+2232 reserved from all registered worktrees (maximum2231). Actual emulator still ordinary2231. Final impacted gate key-sharing-impact-r3 is running; original r1/r2 failure receipts remain. New-source shared full gate, Android main/native fixed-signer builds/install, iOS18/26 new native and unsigned production compile remain pending. AS6 live recipient validation remains OPEN; future rotation does not repair already-sent missing-key history.
+
+Final impacted gate key-sharing-impact-r3 PASS {'pass': 541, 'skip': 0, 'failure_or_error': 0}, analyze0; paired version contract3PASS. DOMAIN→independentQUALITY final PASS. Candidate is ready for source freeze and final same-source shared/native gates.

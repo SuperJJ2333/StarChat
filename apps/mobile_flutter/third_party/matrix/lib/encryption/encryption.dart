@@ -29,6 +29,7 @@ import 'package:matrix/encryption/ssss.dart';
 import 'package:matrix/encryption/utils/bootstrap.dart';
 import 'package:matrix/matrix.dart';
 import 'package:matrix/src/utils/copy_map.dart';
+import 'package:matrix/src/utils/multilock.dart';
 import 'package:matrix/src/utils/run_in_root.dart';
 
 class Encryption {
@@ -423,7 +424,44 @@ class Encryption {
 
   /// Encrypts the given json payload and creates a send-ready m.room.encrypted
   /// payload. This will create a new outgoingGroupSession if necessary.
+  final _roomSendLocks = MultiLock<String>();
+
   Future<Map<String, dynamic>> encryptGroupMessagePayload(
+      String roomId, Map<String, dynamic> payload,
+      {String type = EventTypes.Message,
+      MatrixSendTimingObserver? onTiming}) async {
+    final owner = client.recoveryOwner;
+    final database = client.database;
+    final user = client.userID;
+    final device = client.deviceID;
+    void check() {
+      owner?.check();
+      if (!identical(client.recoveryOwner, owner) ||
+          !identical(client.database, database) ||
+          !identical(client.encryption, this) ||
+          client.userID != user ||
+          client.deviceID != device) {
+        throw StateError('E2EE_ROOM_KEY_SHARE_CONTEXT_CHANGED');
+      }
+    }
+
+    Future<Map<String, dynamic>> action() async {
+      await _roomSendLocks.lock([roomId]);
+      try {
+        check();
+        final result = await _encryptGroupMessagePayload(roomId, payload,
+            type: type, onTiming: onTiming);
+        check();
+        return result;
+      } finally {
+        _roomSendLocks.unlock([roomId]);
+      }
+    }
+
+    return owner == null ? action() : owner.write(action);
+  }
+
+  Future<Map<String, dynamic>> _encryptGroupMessagePayload(
       String roomId, Map<String, dynamic> payload,
       {String type = EventTypes.Message,
       MatrixSendTimingObserver? onTiming}) async {

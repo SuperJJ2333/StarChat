@@ -20,6 +20,7 @@ import 'package:video_player/video_player.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../test/support/retained_recovery_identity_fixture.dart';
+import '../test/features/matrix/room_key_share_session_test.dart' as key_share;
 
 // Fixtures contain only generated, four-second media in assets/diagnostics/.
 // Run seed, terminate the app process, then run verify on the same simulator
@@ -253,6 +254,11 @@ void main() {
         fixture.responseDevice = 'ROTATED';
         await fixture.renew();
       }
+      await fixture.expectRotatedOlmPersistence();
+      await key_share.verifyRoomKeyShareScenario('roundtrip');
+      await key_share
+          .verifyRoomKeyShareScenario('legacy missing authorization');
+      await key_share.verifyRoomKeyShareScenario('precommit revocation');
       await fixture.matrix.suspend();
       await fixture.renew();
       await fixture.expectHistory();

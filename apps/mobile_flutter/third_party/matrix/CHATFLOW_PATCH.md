@@ -1,5 +1,17 @@
 # ChatFlow integration patch on Matrix 0.34.0
 
+2026-10-19 retained Olm storage after device rotation: a durable same-account
+credential adoption moves both Encryption and OlmManager device markers
+together. Both old markers must identify the original nonempty device; the
+exact retained database, encryption objects, admitted owner and adopted
+credentials are rechecked after the write. Failed/revoked/replaced owners and
+foreign, empty or dehydrated-marker identities do not promote this facade.
+No Olm account or key is replaced. Real SQLCipher/Olm tests prove an advanced
+session persists across close/reopen with the retained fingerprint/history,
+and cover ten refusal boundaries; the iOS retained-restart fixture reuses
+the same persistence assertion. This is an independent rotation correction,
+not proof that sender-specific AS6 delivery is resolved.
+
 2026-10-19 retained credential handoff: `startSyncImmediately()` resumes a
 quiesced, successfully persisted retained login through the normal SDK loop
 with a timeout-zero first poll. It resets only the retired credentials' delay;
@@ -286,3 +298,25 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
 - Regressions live in `history_pagination_continuity_test.dart`, existing SDK
   fragment/adapter/memory tests, and actual RoomPage scroll tests. Cryptography,
   key recovery, storage schema and Matrix network contracts remain unchanged.
+
+## 2026-10-19: complete room-key distribution and retained-session marker
+
+Retained, authoritatively adopted device rotation advances both Encryption and
+OlmManager device markers only after durable credentials and exact owner/DB/
+identity revalidation. No new Olm identity is manufactured.
+
+RoomKey and ForwardedRoomKey dispatch require exact eligible device/public-key
+ciphertext coverage and await every chunk. Group context is checked after Olm
+preparation and after generic queue processing, immediately before HTTP. Strict
+key shares never enter the context-free deferred queue; ordinary control-message
+transport overrides and queue semantics remain intact. Future group sessions
+rotate when recipient eligibility/public keys change or legacy historical-index
+proof is missing. Old inbound history and authorization are retained unchanged.
+New outbound publication follows complete sharing and an owner-fenced database
+transaction, with per-room payload preparation/encryption serialized.
+
+Regression evidence includes real SQLCipher/Olm recipient decryption, missing
+OTKs, partial/chunk failure, pre-dispatch member/device changes, failed storage,
+pre/postcommit revocation, reopen, and preservation of historical authorization.
+These corrections do not by themselves prove the original live key-loss trigger
+or restore previously missing historical keys.

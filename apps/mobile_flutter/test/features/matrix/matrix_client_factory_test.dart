@@ -370,7 +370,7 @@ class LogoutTrackingClient extends Client {
     void Function()? onMigration,
   }) async {
     adoptedDeviceId = newDeviceID;
-    return super.init(
+    await super.init(
       newToken: newToken,
       newTokenExpiresAt: newTokenExpiresAt,
       newRefreshToken: newRefreshToken,
@@ -383,6 +383,8 @@ class LogoutTrackingClient extends Client {
       waitUntilLoadCompletedLoaded: waitUntilLoadCompletedLoaded,
       onMigration: onMigration,
     );
+    matrixUserId = newUserID ?? matrixUserId;
+    matrixDeviceId = newDeviceID ?? matrixDeviceId;
   }
 
   @override
@@ -842,6 +844,9 @@ void main() {
         loginToken: 'test-once', homeserver: Uri.parse('https://matrix.test'));
     expect(stale.adoptedDeviceId, 'device-NEW',
         reason: 'server-rotated device id must be adopted (was L04 before)');
+    expect(stale.userID, '@a:test');
+    expect(stale.deviceID, 'device-NEW');
+    expect(stale.accessToken, 'rotated-token');
     expect(matrix.isLoggedIn, isTrue);
   });
 

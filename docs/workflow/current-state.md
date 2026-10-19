@@ -1,5 +1,13 @@
 # 当前工作状态
 
+## 2026-10-19 切号与密钥分发：2232源码完成，最终门禁待跑
+
+模拟器已保数据安装普通0.4.62+2231（11b72ec7），固定签名main SHA913037d775…/UID10090保持，native8PASS、3房样本279–687ms；旧完整门禁6332PASS/9skip/1fake FAIL保留，fake修正全部30consumer及analyze PASS。无正式弹窗/下载变更。
+
+AS6重开：用户确认Android0.4.52接收端提示缺sender session key；故障账号真实public元数据与已接受事件一致，分发目标记录存在但旧历史授权元数据为空。补齐严格密钥覆盖/所有chunk等待/实际HTTP前成员设备检查、失败不入无context重放队列、仅未来会话轮换及事务/owner fence；保留旧inbound和历史授权。真实SQLCipher/Olm RED/GREEN、DOMAIN→独立QUALITY完成；先前marker持久化缺口也修正并通过审查。不能据此认定AS6原始触发链或旧历史已恢复。
+
+已预留配对0.4.63+2232，构建/安装待完成。key-sharing-impact-r3 PASS、analyze0、版本契约3PASS，最终共享全量、Android普通/原生固定签名重建、iOS18/26新断言及完整unsigned原生编译待跑；用户真实接收确认仍OPEN。旧iOS生产编译PASS、身份seed/restart4+4通过，host3video基线失败及native媒体漏fixture失败保留。下一步冻结候选后完成门禁交付。见[任务](tasks/2026-10-19-account-switch-readiness.md)、[报告](../verification/2026-10-19-account-switch-readiness.md)。
+
 ## 2026-10-18 缓存房间准入修正：2230普通Debug已安装，14/14缓存命中
 
 运行时62dc76f285b4bf02ae4be79c532228cd2e58de45，0.4.61+2230固定签名重建普通APK SHA61ebcfc280fa2d263b14924dbbe0960a90f3ded2836e036cf8fcd947e8d7cd09/126130522B，已install-r至原5556，设备同字节、UID10090/firstInstall2026-09-26保持。共用拒绝快照慢分支已去掉合法lease后的prepare前置；严格同owner业务refresh不再错误全局撤销缓存，其他身份/隐私fence与完整SDK发送授权保留。
