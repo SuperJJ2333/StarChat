@@ -1,30 +1,50 @@
 # Account-switch readiness verification
 
-Candidate0.4.62+2231; frozen runtime11b72ec7754179370926377ade0a16e578801349. Original Android emulator-5556 installed2230 at baseline, UID10090 and firstInstall2026-09-26. No production distribution changes or real test messages authorized in this task. Evidence root `artifacts/2026-10-19/account-switch-readiness/` in the interactive-cache-startup worktree.
+Last updated 2026-10-19T13:30:59.825791+08:00. Current ordinary Android **0.4.63+2232 Debug** is installed on original emulator-5556 with retained data. Runtime source `2acebfdafcfa7637927913e37a8585dad261b568`. Test/document-only follow-up does not alter the installed runtime. **AS6 real-recipient acceptance remains OPEN.**
 
-## Findings and change
+## Confirmed findings and changes
 
-Selection retired A's projection owner but never bound B's new owner. This prevented subsequent encrypted head capture. Selection now uses the constructor/resume owner wiring after exact continuity validation; the owner stays unverified until the existing authenticated prime, and binding failure retires/closes it. Original startup fallback stays tied to its original owner.
+Account selection omitted a fresh projection owner; retained login could let an old-token sync401 clear newly adopted credentials. The repair binds the new unverified owner after exact continuity, drains old SDK work before adopting credentials, serializes login intents, and fences stale account/generation callbacks. Only the first persisted retained-login SDK poll uses timeout0; normal backoff and genuine new401 behavior remain.
 
-A real SDK old-token sync401 delivered after retained broker login could clear the new token. Retained login now awaits the SDK abort's transaction drain and retired-generation isolation before broker adoption. Once server user/device, retained key upload/authorized rotation and continuity persistence succeed, the exact adopted token/device/client and lifecycle generation are rechecked, then the normal loop restarts with timeout0. Ordinary backoff, new-device init and genuine new401 behavior remain. Complete login operations are serialized; synchronous lifecycle generation checks prevent queued or acquiring old requests from reviving after logout/selection, and old failure cleanup cannot suspend a newer owner.
+The Android0.4.52 recipient explicitly reported “the sender has not sent us the session key”. Read-only encrypted-event/public-key metadata confirms server acceptance; acceptance alone does not prove peer decryption. One exact test message was authorized and manually sent by the user after native input inserted nothing; root sent zero additional real messages. Live metadata does not prove the complete historical triggering sequence.
 
-## Test evidence
+The SDK now requires complete eligible-device ciphertext coverage and every room-key chunk to succeed, checks current owner/member/device context immediately before actual HTTP and after completion, and excludes strict room-key failures from the context-free deferred queue. Eligibility changes use a future-only outbound-session rotation; old inbound history/authorization remains. A separately proven retained-device marker gap is repaired only behind durable exact-credential/identity/owner/database fences. No keys are recreated to bypass identity checks; no plaintext fallback, history authorization expansion or server-side key recovery is added. Already-sent missing-key history is not repaired by this future-send correction.
 
-- Original RED: readiness-red-r2/r4; real stale401 credential loss, omitted coordinator and overlapping login adoption. queued-logout-red and acquisition-red separately prove queued/acquiring intent revocation. Early compilation/fixture failures are retained and are not counted as root-cause RED.
-- Final focused readiness-green-final:153PASS/exit0,2026-10-19 07:05:24→07:05:48+08. Includes stale old401/200, genuine new401, fresh real SDK success replacing cached unavailable status, current backoff preserved under repeated start, owner binding failure cleanup, upload/rotation/persistence/logout failure, and overlapping-login revocation.
-- Real SQLCipher and AEAD fixtures prove A→B→A with identical room IDs remains isolated and shallow heads are readable while deep SQL is held; a real SDK SQL transaction held in storePrevBatch blocks broker adoption until its drain completes. Existing preflight/device rotation/retained identity/reinstall/temporary secure-storage and actual mismatch regressions are included.
-- DOMAIN/SPEC then independent QUALITY/security implementation review:PASS. Final frozen analyze completed with0issues. Frozen complete shared gate and platform build/runtime remain in progress; do not infer their result from the focused gate.
+## Evidence
 
-The fresh-status fixture's intermediate failures were caused by an expect assertion in SDK runInRoot producing OutsideTestException. The assertion was moved to the test zone; no product condition was bypassed. All failed logs remain separate from the final gate.
+Evidence root: `artifacts/2026-10-19/account-switch-readiness/` in the interactive-cache-startup worktree. RED, failed attempts and superseded candidates are retained, never relabeled as passing.
 
-## Delivery and practical limits
+| Gate | Actual result | Evidence |
+| --- | --- | --- |
+| Lifecycle/account-switch focused |153 testDone PASS, exit0 | readiness-green-final |
+| Final runtime affected coverage |541 testDone PASS, analyze0; paired version contract3PASS | key-sharing-impact-r3, version contract receipt |
+| Final frozen shared command | **FAIL**, analyze0,6367PASS/9SKIP/2FAIL, source stable | final-shared-2232/receipt.json and classification-initial.json |
+| Unchanged archive case isolated |1 actual case PASS (+3 harness testDone), exit0 | vault-archive-isolated-original-2232 |
+| Corrected complete vault fixture |27 actual cases PASS (+3 harness testDone), exit0; full analyze0 | vault-fixture-green-2232 |
+| Protected runtime review | DOMAIN then independent QUALITY PASS | reviews-2232.json |
+| Test-only corrective review | DOMAIN then independent QUALITY PASS | fixture-reviews-2232.json |
+| Android strict native |9 synthetic cases, driver exit0; original6 audits and new retained-rotation/room-key-roundtrip assertions true | native-2232-r1/receipt.json |
+| iOS18 native | seed23PASS; restart verify4PASS | ios-evidence-12160110936.json |
+| iOS26 native | seed23PASS; restart verify4PASS | ios-evidence-12159619954.json |
+| Complete production iOS unsigned compilation |PASS | run39189028520 full compilation job117857513965 |
+| iOS overall CI | **FAIL**; three video-cache host failures also present by name on baseline16905; native phases successful | ios-native-2232-latest.json; ios-host-final-classification-2232.json |
 
-Final shared gate/build/install results are pending. Packaging follows source→Apktool2.12.1→zipalign36P16→fixed75b31 signer→semantic and payload verification. Only install-r; never clear/uninstall/downgrade. iOS request is prevention of historical L04/L07, not a reproduced current iOS defect; shared Windows regressions do not constitute native iPhone verification. No iOS signing/Keychain policy or production download/popup changed.
+The two final shared failures were a test assumption and its contamination: held outbound work now legitimately has nested admitted writes (2, not exactly1). The boundary test now requires pendingWrites>0 while held, preserving suspension timeout, open database, blocked drain, expected-error and settled-zero assertions. Unconditional teardown releases held SQLite, drains owner work, frees native state and completes suspension even after assertion failure. The unchanged archive case passes alone; the complete corrected file passes without server-mock changes. Original full command remains FAIL.
 
-Observed baseline old-client suspension was9ms and one full preflight about1.44s in the available process log; these are partial intervals, not attribution of the user's actual >10s. The reported history phrase is not a literal in current source. Real user-assisted switching/login observation and complete timing remain open. Credentials must be entered only on the emulator, never read or collected by the harness.
+Only `test/features/matrix/recovery_vault_sdk_test.dart` changed after runtime freeze; fixed-string search found no Dart imports of that test file. Runtime/library/lock/native target/platform inputs remain identical. Per mobile delivery evidence-reuse rules, unaffected full-file results and Android/iOS source-bound gates are reused; the corrected entire file and analyzer were rerun. This is **not** a new all-green full command. Binding receipt: vault-fixture-input-equivalence-2232.json. Latest test SHA `a980923b31f0c9ed792703aba77ea6e34a5c40e8bf3dfa0d3de5e09cab4a3b50`, Olm3.2.15/SQLCipher4.10.0 DLL and lock hashes are in its runner receipt.
 
-Aggregate scripts/verify.ps1 preflight: canonical .env absent; do not import primary's runtime secrets. Scope-specific mobile gate is used, not an assertion that every repository gate passed. Previous14 synthetic ignored test DBs remain after automatic approval rejected cleanup with “blocked by policy”; excluded from APK and no retry attempted.
+Aggregate `scripts/verify.ps1` preflight was NOT_EXECUTED_MISSING_ENV; canonical .env is absent and production credentials were not imported. Windows native input hashes were explicitly verified. Physical iPhone, enterprise signing/retained-data upgrade and actual APNs remain outside these synthetic/unsigned checks. Genuine invalid credentials may still correctly produce authentication failures; no absolute “never L04/L07” claim.
 
-## Superseded first candidate
+## Installed delivery
 
-Original936507 candidate's conventional APK pipeline passed but Python version contract found compiled AppConfig2230 vs package2231; it was never installed or delivered. Full gate exit-1 is canceled/not passed. Version defaults corrected with3PASS and frozen11b72ec7; final evidence must use b2 gate/build artifacts. Same-source validation-only iOS compatibility workflow dispatched07:24:15+08; results pending, no publishing job.
+Ordinary main Debug APK: `D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-10-19/account-switch-readiness/main-2232/final.apk`,126130522bytes, SHA256 `bf97af627699e77d58915c020fbec6be90c1c4a85de56f8d8c0492ea96509c1f`, package `com.liuhetong.mobile.debug`, stable signer75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff.
+
+Source→Apktool2.12.1→zipalign36P16→fixed signer→payload/manifest/DEX/ABI verification PASS. Original emulator install-r 2026-10-19T02:34:35.9039828Z→02:34:53.7234724Z PASS; installed byte SHA matches, UID10090 and firstInstall2026-09-26 04:06:20 retained. Diagnostic native APK was replaced by ordinary main. Activity total6311ms is an Android activity metric under test load, not cached-content first paint or a performance improvement measurement.
+
+No production popup/download mutation, new real automatic send, uninstall, data clear or downgrade. Owned wake setting restored0, owned ADB forward removed; no gate/build is still running. Earlier14 ignored synthetic test databases were retained after automatic approval rejected deletion with “blocked by policy”; no retry/workaround and excluded from APK.
+
+## Timing and next action
+
+Frozen shared gate02:13:00Z→02:52:25Z (39m25s), FAIL retained. Strict Android native02:28:54Z→02:34:07Z, driver291.36s. iOS run created02:14:27Z, finished02:47:39Z; jobs overlapped local work, so do not sum as task wall-clock. Corrective file/analyzer 2026-10-19T05:00:43.7112686+00:00→2026-10-19T05:01:16.1832690+00:00. Exact active-analysis and external-wait duration is unknown; no fabricated total.
+
+Next executable acceptance: user manually sends a new message with the formerly failing account in 测试群二 and confirms decryption/visibility on Android0.4.52. Existing async question is pending; no additional send authorization is inferred. If still failing, inspect sanitized public identity/key-share outcomes for that new attempt before any further product change. Local send-success alone cannot close AS6. The user's original >10s switching duration has not been fully remeasured or attributed after repair.

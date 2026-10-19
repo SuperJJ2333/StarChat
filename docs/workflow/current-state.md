@@ -1,12 +1,12 @@
 # 当前工作状态
 
-## 2026-10-19 切号与密钥分发：2232源码完成，最终门禁待跑
+## 2026-10-19 切号与密钥分发：2232 Debug已安装，等待真实接收反馈
 
-模拟器已保数据安装普通0.4.62+2231（11b72ec7），固定签名main SHA913037d775…/UID10090保持，native8PASS、3房样本279–687ms；旧完整门禁6332PASS/9skip/1fake FAIL保留，fake修正全部30consumer及analyze PASS。无正式弹窗/下载变更。
+运行时2acebfda，普通0.4.63+2232已于10:34:53+08保数据install-r原5556，main SHA bf97af627699…/126130522B，固定75b31签名，设备同字节/UID10090/首次安装保持。严格Android9原生/driver0及原6审计通过；iOS18/26原生seed23+restart4各PASS，完整unsigned生产原生编译PASS。iOS整体CI仍FAIL，两job均为基线16905同名3项视频缓存宿主失败，失败门禁保留；不等于物理iPhone/签名升级通过。
 
-AS6重开：用户确认Android0.4.52接收端提示缺sender session key；故障账号真实public元数据与已接受事件一致，分发目标记录存在但旧历史授权元数据为空。补齐严格密钥覆盖/所有chunk等待/实际HTTP前成员设备检查、失败不入无context重放队列、仅未来会话轮换及事务/owner fence；保留旧inbound和历史授权。真实SQLCipher/Olm RED/GREEN、DOMAIN→独立QUALITY完成；先前marker持久化缺口也修正并通过审查。不能据此认定AS6原始触发链或旧历史已恢复。
+541相关PASS；冻结共享原命令FAIL6367PASS/9SKIP/2FAIL保留。失败涉及嵌套写入计数旧假设及其未清理数据库影响，独立原归档用例PASS；只修宿主测试断言/无条件清理，完整文件27casePASS(+3harness)、analyze0。运行时/lock/平台输入未变，DOMAIN→独立QUALITY通过后按证据复用，不将原全量改称绿，不重复构建APK。
 
-已预留配对0.4.63+2232，构建/安装待完成。key-sharing-impact-r3 PASS、analyze0、版本契约3PASS，最终共享全量、Android普通/原生固定签名重建、iOS18/26新断言及完整unsigned原生编译待跑；用户真实接收确认仍OPEN。旧iOS生产编译PASS、身份seed/restart4+4通过，host3video基线失败及native媒体漏fixture失败保留。下一步冻结候选后完成门禁交付。见[任务](tasks/2026-10-19-account-switch-readiness.md)、[报告](../verification/2026-10-19-account-switch-readiness.md)。
+用户0.4.52接收端明确缺sender session key。新版严格校验完整密钥分享、等待全部chunk、检查实际HTTP前上下文并安全轮换未来会话；保留旧inbound历史授权。AS6仍OPEN，待用户原故障账号→旧接收端确认新消息可见；合成验证不能替代真实送达，已丢密钥旧消息未恢复，原>10s切号总耗时也未完整复测。无新自动真实发送/正式弹窗/下载修改。所有构建门禁已结束，无遗留映射/forward/wake更改。见[任务](tasks/2026-10-19-account-switch-readiness.md)、[报告](../verification/2026-10-19-account-switch-readiness.md)。
 
 ## 2026-10-18 缓存房间准入修正：2230普通Debug已安装，14/14缓存命中
 

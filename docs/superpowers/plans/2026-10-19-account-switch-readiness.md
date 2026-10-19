@@ -21,3 +21,8 @@ User-authorized bugfix continuing the existing account/cache-first flow; root ex
 5. Preserve-data install and user-assisted B-account/old-receiver test must confirm real receipt before AS6 is complete. No production popup/download mutation.
 
 AS6 implementation: test-first exact key-share coverage/chunk completion; replace unsafe incremental share promotion with future-session rotation; prove real peer Olm/Megolm decrypt, persistence failure/revocation/reopen and concurrent preparation, with old history authorization unchanged. DOMAIN and independent QUALITY design approval recorded in ADR supplement. Root owns SDK client/key_manager/encryption and focused tests. No further real messages authorized beyond the one already manually sent.
+
+
+## Final fixture-only correction and evidence reuse
+
+After runtime2ace/2232 is installed, preserve the original shared FAIL6367/9/2. Replace the fixture's exact pendingWrites1 expectation with the actual safety contract (>0 while SQLite held,0 after settle), without altering timeout/open DB/drain/error assertions. Always release and dispose held fixtures after failed assertions. Run original archive alone, then the entire corrected fixture and analyzer; no server-mock change unless independently proved necessary. Record no imports and exact unchanged runtime/lock/native/platform inputs, then DOMAIN→independentQUALITY review. Reuse unaffected full/native/compile gates under mobile workflow rules; no APK rebuild for this unrelated host test file. Keep AS6 real recipient and physical iPhone acceptance open.

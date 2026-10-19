@@ -6,18 +6,18 @@
 - Scope: diagnose and fix existing lifecycle within approved cache-first design, ADR-0080 refresh recovery and ADR-0086 retained-identity safeguards. Preserve account isolation, server-authorized grant target, Olm fingerprint/database generation and Keychain; no clearing databases, automatic fresh-device recovery, real message sends or production rollout.
 - Root sole writer, existing clean managed worktree interactive-cache-startup. Baseline16905e7f (runtime62dc76f2), installed Android0.4.61+2230, emulator-5556 UID10090 / firstInstall2026-09-26. Main D:/ workspace has unrelated changes and is not the source-edit target.
 - Own targeted account-selection/reauthentication lifecycle, projection/watchdog behavior only when evidence identifies it, associated tests and these task documents. Broader authentication/E2EE decisions require ADR and DOMAIN then independent QUALITY review before implementation.
-- Current phase: final candidate verification. Started2026-10-19 06:16+08 approximately; exact first active-analysis interval unknown. Artifact root docs/verification/artifacts/2026-10-19/account-switch-readiness/.
+- Current phase: ordinary2232 installed; final local corrective verification complete; waiting for AS6 real-recipient feedback. Earlier stage snapshots below are historical. Started2026-10-19 06:16+08 approximately; exact first active-analysis interval unknown. Artifact root docs/verification/artifacts/2026-10-19/account-switch-readiness/.
 - No .codegraph; no ongoing previous builds, wake lease or port forwards. Previous2230 test evidence applies unchanged baseline only.
 
 ## Acceptance ledger
 
 | ID | Requirement | Status / evidence |
 | --- | --- | --- |
-| AS1 | Both login entrances have stage timings and classified service error; do not hide real outages | Investigating; current-PID sanitized native baseline captured |
+| AS1 | Both login entrances have stage timings and classified service error; do not hide real outages | Lifecycle causes proved/fixed; full real switch timing and >10s attribution remain unmeasured |
 | AS2 | A→B→A creates valid new projection owner; old account/room callbacks cannot populate new account even for shared room ID | RED missing coordinator proved; fixed bind and cleanup, real SQLCipher A/B/A same-room late-callback/deep-SQL coverage PASS |
-| AS3 | Local cached history can render/scroll while optional network/history preparation continues after valid target identity | Shallow encrypted head readable while deep SQL held after account switches; native candidate pending |
-| AS4 | iOS continuity, authoritative device rotation, failed close/retry, Keychain temporarily unavailable and true fingerprint mismatch regressions | Shared focused gate153PASS including retained identity, preflight, rotation, reinstall safeguards; no native iOS result claimed |
-| AS5 | Spec/domain then independent quality/security, appropriate scoped/final gates, fixed signer Android Debug install-r and original reproduction | DOMAIN→independent QUALITY implementation PASS; final frozen shared gate/build/install pending; no production publication |
+| AS3 | Local cached history can render/scroll while optional network/history preparation continues after valid target identity | Shallow encrypted head readable while deep SQL held; strict Android native2232 original6audits and new rotation/room-key assertions PASS |
+| AS4 | iOS continuity, authoritative device rotation, failed close/retry, Keychain temporarily unavailable and true fingerprint mismatch regressions | Shared focused153PASS; iOS18/26 native23seed+4restart each PASS, full unsigned compilePASS; physical iPhone/signing not verified |
+| AS5 | Spec/domain then independent quality/security, appropriate scoped/final gates, fixed signer Android Debug install-r and original reproduction | Runtime and corrective fixture DOMAIN→independentQUALITY PASS; ordinary2232 installed; original fullFAIL preserved and file-only correction27PASS/analyze0; no production publication |
 
 ## Evidence and next executable action
 
@@ -61,3 +61,22 @@ Source now prevents incomplete room-key encryption from being acknowledged, awai
 Final paired candidate0.4.63+2232 reserved from all registered worktrees (maximum2231). Actual emulator still ordinary2231. Final impacted gate key-sharing-impact-r3 is running; original r1/r2 failure receipts remain. New-source shared full gate, Android main/native fixed-signer builds/install, iOS18/26 new native and unsigned production compile remain pending. AS6 live recipient validation remains OPEN; future rotation does not repair already-sent missing-key history.
 
 Final impacted gate key-sharing-impact-r3 PASS {'pass': 541, 'skip': 0, 'failure_or_error': 0}, analyze0; paired version contract3PASS. DOMAIN→independentQUALITY final PASS. Candidate is ready for source freeze and final same-source shared/native gates.
+
+
+## Installed2232 native checkpoint (2026-10-19T10:38:38.550878+08:00)
+
+Frozen runtime2acebfdafcfa7637927913e37a8585dad261b568, paired0.4.63+2232. Main fixed-signature rebuilt APK SHAbf97af627699e77d58915c020fbec6be90c1c4a85de56f8d8c0492ea96509c1f; installed bytes match exactly. Ordinary install-r 2026-10-19T02:34:35.9039828+00:00 to 2026-10-19T02:34:53.7234724+00:00, UID10090 and firstInstall2026-09-26 04:06:20 retained. Diagnostic APK is not the current installed target.
+
+Strict native 2026-10-19T02:28:54Z to 2026-10-19T02:34:07Z, driver291.36s/exit0: original6scenario audits plus new retained_rotation_olm_reopen_verified and room_key_share_roundtrip_verified all true; original stayon0 restored and own VM port removed. Synthetic identities only, zero additional real message sends.
+
+Final frozen shared92541 is still running (analyze0), not yet PASS. New same-source iOS run39189028520 full unsigned production compile PASS; native iOS18 verify/iOS26 seed still running at last query. Ordinary2232 is ready for user-assisted old Android0.4.52 recipient test; async question pending. AS6 original historical trigger and already-sent missing-key history remain unproven/unrepaired; do not infer live resolution from synthetic tests.
+
+
+## Final verification handoff (2026-10-19T13:30:59.825791+08:00)
+
+- Runtime remains `2acebfdafcfa7637927913e37a8585dad261b568`; ordinary0.4.63+2232 installed as recorded above. Current test/docs-only follow-up changes no product or native-target input and needs no new APK/version.
+- Original full FAIL6367PASS/9SKIP/2FAIL retained. Exact pendingWrites1 assumption corrected to >0 with all close/drain safety assertions retained, plus unconditional fixture teardown. Original archive alone1case PASS; full fixture27cases PASS (+3harness); analyze0. No mock expansion or product change. DOMAIN→independentQUALITY PASS; input equivalence and reuse explicitly recorded, not an all-green full command.
+- iOS new-source run39189028520 completed: production unsigned compilePASS, iOS18/26 seed23+restart4 each PASS. OverallFAIL remains due host outcome guard; exact three video-cache failed names match baseline16905 in both jobs (ios-host-final-classification-2232.json); preserve classification/baseline artifacts and physical-device limitations.
+- AS6 OPEN: recipient's missing sender key is confirmed; new2232 future-send real receipt pending. Root makes no new real sends; historical missing-key messages unrepaired. AS1 full real switch latency remains an observation gap, not a claimed performance measurement.
+- All source-bound build/gate jobs finished; local mapping/VM forward/wake cleanup complete. No formal release/popup/download mutation. Four owned task docs and current-state entry only are eligible for CAS sync to primary, never mobile source.
+- Next action: receive user result for one user-entered new2232→old0.4.52 group message; on failure collect sanitized public metadata for that attempt. Do not repeat independent completed gates on unchanged input.
