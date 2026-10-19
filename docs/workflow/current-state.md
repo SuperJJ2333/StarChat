@@ -1,5 +1,12 @@
 # 当前工作状态
 
+## 2026-10-19 Android2232正式版及普通更新弹窗已发布
+
+0.4.63+2232正式ARM64，固定75b31，73655386B/SHA87caa9552091…fe0c8，源码1bf84dc2/运行时2ace已验收，PUBLISH_PASS 2026-10-19T06:27:29.285762+00:00，实际Android/iOS/legacy路由及3审计通过。更新说明含冷启/缓存/头像/最近表情/切号及群消息送达修复；最低build3，iOS2215保持。
+
+20构建门禁、35发布保护、DOMAIN→独立QUALITY通过；原fullFAIL6367/9/2保留，后续27case/analyze0及9native/AS6真实送达按输入一致复用。新CDN路由Deployed/HEAD/CORS，35容器/schema/guards/旧2216APK/其他alias和iOS静态保持，双工作区仅两静态CAS回填。无服务部署或新真实测试消息。完整verify缺.env、旧视频宿主失败/原16KiB/杀软及ARM64真机/旧版实际可见弹窗限制保留，不将服务端发布成功当手机观察通过。见[任务](tasks/2026-10-19-android2232-release.md)、[报告](../verification/2026-10-19-android2232-release.md)。
+
+
 ## 2026-10-19 切号与密钥分发：2232 Debug原故障群聊真实送达验收通过
 
 运行时2acebfda，普通0.4.63+2232已于10:34:53+08保数据install-r原5556，main SHA bf97af627699…/126130522B，固定75b31签名，设备同字节/UID10090/首次安装保持。严格Android9原生/driver0及原6审计通过；iOS18/26原生seed23+restart4各PASS，完整unsigned生产原生编译PASS。iOS整体CI仍FAIL，两job均为基线16905同名3项视频缓存宿主失败，失败门禁保留；不等于物理iPhone/签名升级通过。
