@@ -1,17 +1,5 @@
-name: iPhone 15 native compatibility
+name: Account-switch2232 native compatibility
 on:
-  push:
-    branches: [main, codex/ios-compatibility, codex/mobile-parity-20260909]
-    paths:
-      - 'apps/mobile_flutter/**'
-      - '.github/workflows/ios-compatibility.yml'
-      - 'scripts/generate_ios_compatibility_fixtures.py'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'apps/mobile_flutter/**'
-      - '.github/workflows/ios-compatibility.yml'
-      - 'scripts/generate_ios_compatibility_fixtures.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,6 +12,10 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Bind frozen application tree
+        run: test "$(git rev-parse HEAD:apps)" = "$(git rev-parse 2acebfdafcfa7637927913e37a8585dad261b568:apps)"
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.9'
@@ -84,6 +76,10 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Bind frozen application tree
+        run: test "$(git rev-parse HEAD:apps)" = "$(git rev-parse 2acebfdafcfa7637927913e37a8585dad261b568:apps)"
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.9'
@@ -116,6 +112,8 @@ jobs:
         working-directory: apps/mobile_flutter
         run: flutter pub get
       - name: Test corrected media and direct-room paths
+        id: host_shared
+        continue-on-error: true
         working-directory: apps/mobile_flutter
         run: flutter test --no-pub test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart test/features/matrix/direct_chat_sync_failure_test.dart test/features/matrix/canonical_direct_chat_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/video_viewer_cache_test.dart test/features/matrix/group_announcement_sdk_recovery_test.dart test/features/matrix/search_media_resolver_test.dart test/features/matrix/room_search_media_grid_test.dart test/features/matrix/room_search_context_test.dart test/features/matrix/matrix_room_history_date_capability_test.dart test/features/matrix/room_offline_loading_test.dart test/features/matrix/matrix_room_timeline_adapter_test.dart test/features/matrix/global_search_room_anchor_integration_test.dart test/features/auth
       - name: Configure simulator-only dependencies
@@ -128,7 +126,11 @@ jobs:
           p = pathlib.Path('pubspec.yaml')
           content = p.read_text()
           assert content.count('  mobile_scanner: 6.0.11\n') == 1
-          p.write_text(content.replace('  mobile_scanner: 6.0.11\n', ''))
+          content = content.replace('  mobile_scanner: 6.0.11\n', '')
+          assert '    - assets/diagnostics/\n' not in content
+          assert content.count('    - assets/sounds/\n') == 1
+          content = content.replace('    - assets/sounds/\n', '    - assets/sounds/\n    - assets/diagnostics/\n')
+          p.write_text(content)
           PY
           echo 'Diagnostic-only exclusion: mobile_scanner 6.0.11 (MLKit lacks arm64 simulator); scanning and full production plugin combination not covered.' > "$RUNNER_TEMP/compatibility/limitations.txt"
           flutter config --no-enable-swift-package-manager
@@ -312,3 +314,8 @@ jobs:
           name: iphone15-ios${{ matrix.ios }}-compatibility
           path: ${{ runner.temp }}/compatibility/
           retention-days: 14
+      - name: Preserve host shared failure as job failure
+        if: always()
+        env:
+          HOST_SHARED_OUTCOME: ${{ steps.host_shared.outcome }}
+        run: test "$HOST_SHARED_OUTCOME" = success
