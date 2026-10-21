@@ -1,5 +1,11 @@
 # 当前工作状态
 
+## 2026-10-21 Android2233 Debug聊天滚动定位修复已安装
+
+0.4.64+2233普通main Debug/x86_64，源码fb15a9a8，固定75b31签名/126163290B/SHA fa8cd9405725…83f3fe；20:13:03+08覆盖原5556，设备同字节/UID10090/首次安装保持，真实冷启动PASS。历史恢复不再误作新发送；最新边缘多轮布局跟随；阅读中的可见中心及坐标记账保持，主动导航取消旧跳转。
+
+最终共享6378PASS/9既有SKIP/0FAIL、analyze0/source_stabletrue，50相邻及SPEC→独立QUALITY通过；首次全量失败/取消与Gradle环境失败均保留。完整verify缺.env未执行。真实账号群聊滚动因UIAutomator未返回层级仍待用户复测，不能以宿主/启动成功替代。无真实测试消息、无正式弹窗或下载修改；线上仍2232。见[任务](tasks/2026-10-21-timeline-scroll-position.md)、[报告](../verification/2026-10-21-timeline-scroll-position.md)。
+
 ## 2026-10-19 Android2232正式版及普通更新弹窗已发布
 
 0.4.63+2232正式ARM64，固定75b31，73655386B/SHA87caa9552091…fe0c8，源码1bf84dc2/运行时2ace已验收，PUBLISH_PASS 2026-10-19T06:27:29.285762+00:00，实际Android/iOS/legacy路由及3审计通过。更新说明含冷启/缓存/头像/最近表情/切号及群消息送达修复；最低build3，iOS2215保持。

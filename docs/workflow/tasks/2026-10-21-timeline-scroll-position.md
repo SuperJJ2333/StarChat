@@ -8,9 +8,9 @@
 
 | ID | 验收 | 状态 |
 | --- | --- | --- |
-| S1 | 历史浏览期间补消息/回执/分页不强制回最新 | 调查 |
-| S2 | 普通冷入房显示最新缓存，补齐不落在旧图片；用户滚动后保留位置 | 调查 |
-| S3 | 主动发送、回到最新、搜索/引用定位及变高气泡回归 | 待测 |
+| S1 | 历史浏览期间补消息/回执/分页不强制回最新 | 宿主PASS；原房间待用户复测 |
+| S2 | 普通冷入房显示最新缓存，补齐不落在旧图片；用户滚动后保留位置 | 宿主PASS；原房间待用户复测 |
+| S3 | 主动发送、回到最新、搜索/引用定位及变高气泡回归 | 最终共享PASS |
 
 发现：RoomPage._changed将任意变动后的最新自发消息交给无条件post-frame jump；未区分历史恢复和主动发送。尚未将此风险当作两种真机症状均已复现。
 下一步：建立RED复现，独立检查缓存接续，最小修复后相关门禁及顺序审查。没有新发送真实消息授权，不操作生产。
@@ -41,3 +41,20 @@
 - 惰性布局临时min=-134而原点已校正-1234；仅extentBefore判断会错误清零历史阅读距离。新增实际最新行可见校验，防止临时估计误判。
 - `origin-distance-green-r2.log`是真实相对移动RED；`origin-distance-green-r3.log`PASS。`origin-impact-final.log`50PASS：连续历史fling、真实RoomPage恢复、生命周期、变量高度、惯性和定位取消。夹具初次编译错误不计RED。
 - 更新夹具为固定可见气泡边界及相对滑动距离；新增用例finally清理。SPEC delta PASS，独立QUALITY复查中，随后重跑最终共享全量。
+
+## 最终共享门禁通过
+
+fb15a9a8冻结输入；2026-10-21 19:51:58–20:03:22+08，6378PASS/9既有SKIP/0FAIL（另893 harness），analyze0/test0/source_stable=true。full-receipt.json/full-summary.json及prior-failure-recheck.json记录最终证据，前次23失败均重跑通过。当前正构建debug-2233-main-fb15，正式2232发布状态未改动。
+
+## 构建环境记录
+
+首次debug-2233-main-fb15在Gradle PreCreateOutputParentsStep/GFileUtils parent-null处失败，尚未完成Flutter源码编译；原日志保留。与历史Windows短盘符构建问题相同堆栈，不能仅凭重跑成功宣称持久根因已修复。未改移动源码，以新run debug-2233-main-fb15-r2重试，源码构建与前后所有tracked mobile blob一致性均通过，固定签名/对齐/包身份已通过，最终语义校验继续。
+
+
+## 已交付与下一步
+
+2233普通main Debug/x86_64已于2026-10-21 20:13:03+08保数据覆盖安装原5556，固定75b31签名，126163290B/SHA fa8cd9405725fa11933c714daef848e111b7256793f52b8171d71eaaa683f3fe；源码fb15a9a8，设备同字节/UID10090/首次安装保持，真实MAIN/LAUNCHER冷启动PASS。重建全部步骤0。详见[最终报告](../../verification/2026-10-21-timeline-scroll-position.md)。
+
+下一步：用户在原故障房间复测冷启动最新缓存位置，以及连续浏览历史后等待后台接续是否回底。UIAutomator流式层级读取未返回XML，原生群聊滚动未验收，不用宿主或启动成功替代。没有发送真实测试消息，没有修改正式发布配置；不能将本Debug安装称作正式更新已推送。
+
+交付收尾：本任务V映射已移除，构建脚本已移除其Y映射；无本任务遗留测试/打包进程、端口转发或服务端操作。证据cleanup.json，任务/报告/计划和本次current-state段已同步主工作区，历史段原字节保留。
