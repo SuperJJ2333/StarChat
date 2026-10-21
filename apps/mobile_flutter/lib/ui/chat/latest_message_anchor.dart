@@ -6,20 +6,27 @@ final class LatestMessageAnchor {
   LatestMessageAnchor(this.controller);
   final ScrollController controller;
   String? _latest;
-  bool _scheduled = false;
+  int _generation = 0;
   bool _disposed = false;
 
-  void update(String? stableId, {required bool outgoing}) {
+  void update(String? stableId,
+      {required bool outgoing, bool newSend = false}) {
+    if (!newSend || !outgoing || stableId == null) return;
     final changed = _latest != stableId;
     _latest = stableId;
-    if (!changed || !outgoing || stableId == null || _scheduled) return;
-    _scheduled = true;
+    if (!changed) return;
+    final generation = ++_generation;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scheduled = false;
-      if (_disposed || !controller.hasClients) return;
+      if (_disposed || generation != _generation || !controller.hasClients) {
+        return;
+      }
       controller.jumpTo(controller.position.minScrollExtent);
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
+
+  /// A gesture supersedes an earlier send's pending layout correction.
+  void cancelPending() => _generation++;
 
   void dispose() => _disposed = true;
 }

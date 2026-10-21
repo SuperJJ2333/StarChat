@@ -2124,6 +2124,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _showNudgeToast('拍一拍太频繁，请稍后再试');
       return;
     }
+    controller?.beginLocalSend();
     try {
       // The profile service is authoritative for a sender's nudge suffix.
       // Refresh it at send time so a just-saved profile setting is used by
@@ -2321,13 +2322,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // Sending switches to the latest window and publishes a local bubble before
     // SDK acknowledgment. Scroll to that bubble even while transport is pending.
     // Read receipts below continue to use the authoritative SDK newest message.
-    final latest = timeline != null &&
-            !timeline.hasLaterWindow &&
-            timeline.messages.isNotEmpty
-        ? timeline.messages.last
-        : timeline?.newestMessage;
-    latestMessageAnchor.update(latest?.stableId,
-        outgoing: latest?.isOwn ?? false);
+    latestMessageAnchor.update(timeline?.latestLocalSendIntent,
+        outgoing: true, newSend: true);
     for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
       if (message.isRecalled) {
         // A retained poster can be found before the async loader registers a
@@ -2515,6 +2511,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       await service.validateSelectedFile(file);
       if (mime.startsWith('video/')) {
+        timeline.beginLocalSend();
         await matrix.enqueueVideoFile(
           jobId: 'file-video-${DateTime.now().microsecondsSinceEpoch}',
           video: MatrixOutgoingVideoFile(
@@ -2527,7 +2524,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           ),
           targetRoomIds: [targetRoomId],
         );
-        await timeline.showLatest();
         if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
           _showMediaMessage('正在发送');
         }
@@ -3053,9 +3049,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (galleryVideos.isNotEmpty) {
       try {
         await matrix.enqueueVideoFiles(requests: galleryVideos);
-        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
-          await timeline.showLatest();
-        }
       } on MatrixOutgoingWorkCapacityException {
         for (final request in galleryVideos) {
           timeline.failPreparingMedia('outgoing-${request.jobId}-0-0');
@@ -3300,6 +3293,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);
       }
+      timeline?.beginLocalSend();
       await matrix.enqueueVideoFile(
         jobId: 'capture-video-${DateTime.now().microsecondsSinceEpoch}',
         video: MatrixOutgoingVideoFile(
@@ -3313,9 +3307,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         targetRoomIds: [targetRoomId],
       );
       admitted = true;
-      // This is a sender-originated item, so return the current room from an
-      // anchored older window to latest where its account pending bubble lives.
-      await timeline?.showLatest();
+      // The pre-enqueue intent selected latest. Do not override a gesture made
+      // while admission was pending.
       if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
         _showMediaMessage('正在发送');
       }
@@ -4653,6 +4646,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ],
               recentRoomIds: recent.load(),
               onForward: (ids) async {
+                if (mounted &&
+                    !_disposing &&
+                    identical(widget.roomLease, matrix) &&
+                    ids.any(matrix.notificationRoomIds.contains)) {
+                  controller?.beginLocalSend();
+                }
                 final job = await matrix.enqueuePreparedMediaFrom(
                   jobId: transaction,
                   sourceId: transaction,
@@ -5735,6 +5734,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 if (destinations.any((room) => room.id == id)) id,
             ],
             onForward: (roomIds) async {
+              if (mounted &&
+                  !_disposing &&
+                  identical(widget.roomLease, matrix) &&
+                  roomIds.any(matrix.notificationRoomIds.contains)) {
+                controller?.beginLocalSend();
+              }
               final jobs = await matrix.enqueueForward(
                 batchId: batchId,
                 messages: frozen,
@@ -6365,6 +6370,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       MessageTextSelectionSession.dismissActive();
       messageListScrolling.value = true;
       if (notification.dragDetails != null) {
+        latestMessageAnchor.cancelPending();
         _observeMessageScrollActivityIfAttached();
         _userTimelineDragActive = true;
         _cancelPendingTimelineWindowShift();

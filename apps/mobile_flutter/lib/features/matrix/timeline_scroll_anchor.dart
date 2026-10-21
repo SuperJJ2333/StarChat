@@ -40,11 +40,7 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
   String? _centerId;
   bool _followLatestBeforePaint = false;
 
-  bool _takeLatestFollow() {
-    final result = _followLatestBeforePaint;
-    _followLatestBeforePaint = false;
-    return result;
-  }
+  bool _shouldFollowLatest() => widget.followLatest && _followLatestBeforePaint;
 
   void _correctLayoutPosition(ScrollPosition position, double pixels) {
     if (!position.hasPixels) {
@@ -66,9 +62,7 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
   @override
   void didUpdateWidget(covariant AnchoredTimelineList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.followLatest &&
-        widget.controller.hasClients &&
-        oldWidget.eventIds.firstOrNull != widget.eventIds.firstOrNull) {
+    if (widget.followLatest && widget.controller.hasClients) {
       final position = widget.controller.position;
       if (position.hasContentDimensions &&
           position.extentBefore < .5 &&
@@ -166,7 +160,8 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
       key: _viewportKey,
       child: CustomScrollView(
         controller: widget.controller,
-        physics: _FollowTimelineLatestPhysics(takeFollow: _takeLatestFollow),
+        physics:
+            _FollowTimelineLatestPhysics(shouldFollow: _shouldFollowLatest),
         reverse: true,
         center: centerKey,
         slivers: [if (split > 0) sliver(before: true), sliver(before: false)],
@@ -176,13 +171,14 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
 }
 
 class _FollowTimelineLatestPhysics extends ScrollPhysics {
-  const _FollowTimelineLatestPhysics({required this.takeFollow, super.parent});
-  final bool Function() takeFollow;
+  const _FollowTimelineLatestPhysics(
+      {required this.shouldFollow, super.parent});
+  final bool Function() shouldFollow;
 
   @override
   _FollowTimelineLatestPhysics applyTo(ScrollPhysics? ancestor) =>
       _FollowTimelineLatestPhysics(
-          takeFollow: takeFollow, parent: buildParent(ancestor));
+          shouldFollow: shouldFollow, parent: buildParent(ancestor));
 
   @override
   double adjustPositionForNewDimensions({
@@ -191,7 +187,11 @@ class _FollowTimelineLatestPhysics extends ScrollPhysics {
     required bool isScrolling,
     required double velocity,
   }) {
-    if (takeFollow() && !isScrolling) return newPosition.minScrollExtent;
+    // Lazy slivers refine their estimates in multiple layout passes. Keep the
+    // latest edge through all of them, including same-ID media geometry changes.
+    if (!isScrolling && shouldFollow()) {
+      return newPosition.minScrollExtent;
+    }
     return super.adjustPositionForNewDimensions(
         oldPosition: oldPosition,
         newPosition: newPosition,

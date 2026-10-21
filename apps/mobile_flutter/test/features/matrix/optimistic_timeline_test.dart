@@ -19,8 +19,10 @@ void main() {
       () async {
     final adapter = EchoAdapter();
     final controller = RoomTimelineController(adapter);
+    expect(controller.latestLocalSendIntent, isNull);
     final send = controller.sendText('hello');
     final optimistic = controller.messages.single;
+    expect(controller.latestLocalSendIntent, optimistic.stableId);
     await controller.refresh();
     expect(controller.messages.single.stableId, optimistic.stableId);
     adapter.items.add(RoomMessageViewModel(
@@ -42,6 +44,7 @@ void main() {
     await controller.refresh();
     expect(controller.messages, hasLength(1));
     expect(controller.messages.single.stableId, optimistic.stableId);
+    expect(controller.latestLocalSendIntent, optimistic.stableId);
     expect(
         controller.messages.single.timestamp, adapter.items.single.timestamp);
     controller.dispose();

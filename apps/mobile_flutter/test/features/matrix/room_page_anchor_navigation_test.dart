@@ -45,6 +45,7 @@ final class _AnchorRoom extends Room {
   int liveMessageCount = 3;
   final timelines = <_AnchorTimeline>[];
   final contextRequests = <String>[];
+  VoidCallback? timelineUpdated;
 
   @override
   bool get isDirectChat => false;
@@ -58,6 +59,7 @@ final class _AnchorRoom extends Room {
     void Function()? onUpdate,
     String? eventContextId,
   }) async {
+    timelineUpdated = onUpdate;
     if (timelineGate != null) await timelineGate!.future;
     if (eventContextId != null) {
       contextRequests.add(eventContextId);
@@ -236,6 +238,37 @@ Future<void> _disposeRoom(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('background own-message hydration does not pull reader to latest',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late _AnchorClient client;
+    await _pumpRoom(tester, null, roomId: '!own-history:test',
+        onClient: (value) {
+      client = value;
+      client.room.liveMessageCount = 100;
+    });
+    final list =
+        tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
+    list.controller.jumpTo(450);
+    await tester.pump();
+    final position = list.controller.offset;
+    client.room.timelines.single.events.add(Event(
+      room: client.room,
+      eventId: r'$restored-own',
+      senderId: client.userID!,
+      type: EventTypes.Message,
+      originServerTs: DateTime.utc(2027),
+      content: {'msgtype': 'm.text', 'body': 'synthetic recovered own message'},
+    ));
+    client.room.timelineUpdated!();
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(list.controller.offset, closeTo(position, 1));
+    expect(list.controller.position.extentBefore, greaterThan(80));
+    await _disposeRoom(tester);
+  });
+
   testWidgets(
       'starting a user drag cancels delayed context before it can replace current rows',
       (tester) async {

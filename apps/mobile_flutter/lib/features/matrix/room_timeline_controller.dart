@@ -747,6 +747,22 @@ final class RoomTimelineController extends ChangeNotifier
   int _projectedEchoRevision = 0;
   bool _publishedViewingHistory = false;
   final _localEchoes = <String, RoomMessageViewModel>{};
+
+  /// Route-local send intent; hydration, ACKs and recovered outbox rows never
+  /// create one. Used by the view independently of chronological newest IDs.
+  String? latestLocalSendIntent;
+  int _localSendIntentSequence = 0;
+
+  /// Register user intent before an asynchronous direct send. Completion must
+  /// not re-register it: the reader may have moved while enqueue/ACK waited.
+  void beginLocalSend() {
+    if (_disposed) return;
+    _restoreLatest();
+    latestLocalSendIntent = 'route-send-${_localSendIntentSequence++}';
+    messages = _snapshot();
+    _publish();
+  }
+
   final _eventTransactions = <String, String>{};
   final _senders = <String, Future<String> Function()>{};
   // Txids stay in this controller only. The trace exports its random operation
@@ -1125,6 +1141,7 @@ final class RoomTimelineController extends ChangeNotifier
       required RoomMessageKind kind,
       required String mimeType}) {
     if (_disposed) return;
+    latestLocalSendIntent = txid;
     _mediaProjectionIds.add(txid);
     _restoreLatest();
     _localEchoes[txid] = RoomMessageViewModel(
@@ -1668,11 +1685,13 @@ final class RoomTimelineController extends ChangeNotifier
     String? mode,
     String? recipientId,
     String? recipientMatrixId,
-  }) =>
-      adapter.sendRedPacketReference(packetId, greeting,
-          mode: mode,
-          recipientId: recipientId,
-          recipientMatrixId: recipientMatrixId);
+  }) {
+    beginLocalSend();
+    return adapter.sendRedPacketReference(packetId, greeting,
+        mode: mode,
+        recipientId: recipientId,
+        recipientMatrixId: recipientMatrixId);
+  }
 
   Future<String> sendTransferReference(
     String transferId,
@@ -1680,9 +1699,11 @@ final class RoomTimelineController extends ChangeNotifier
     String? note, {
     String? receiverId,
     String? receiverMatrixId,
-  }) =>
-      adapter.sendTransferReference(transferId, amount, note,
-          receiverId: receiverId, receiverMatrixId: receiverMatrixId);
+  }) {
+    beginLocalSend();
+    return adapter.sendTransferReference(transferId, amount, note,
+        receiverId: receiverId, receiverMatrixId: receiverMatrixId);
+  }
 
   /// 发送一条文本消息（用户点击发送 / 恢复流程 / 初始 outbox 共用本路径）。
   ///
@@ -1719,7 +1740,7 @@ final class RoomTimelineController extends ChangeNotifier
     if (_inFlightTxids.contains(tx)) {
       // Preserve the original latest-window projection even when a duplicate
       // durable row cannot be dispatched.
-      _restoreLatest();
+      if (outboxRow == null) _restoreLatest();
       messages = _snapshot();
       _reindex();
       return null;
@@ -1727,7 +1748,7 @@ final class RoomTimelineController extends ChangeNotifier
     final existingTrace = _retainedSendTrace(tx);
     final trace = existingTrace ?? _openSendTrace(tx, outboxRow);
     try {
-      _restoreLatest();
+      if (outboxRow == null) _restoreLatest();
       messages = _snapshot();
       _reindex();
     } catch (_) {
@@ -1763,15 +1784,18 @@ final class RoomTimelineController extends ChangeNotifier
     _localEchoes[tx] = local;
     // Recovery and a page timer can revisit an existing durable identity.
     // Keep one visible row so projection indexes never point at a duplicate.
-    messages = messages.any((message) => message.stableId == tx)
-        ? [
-            for (final message in messages)
-              message.stableId == tx ? local : message
-          ]
-        : [...messages, local];
+    messages = outboxRow != null
+        ? _snapshot()
+        : messages.any((message) => message.stableId == tx)
+            ? [
+                for (final message in messages)
+                  message.stableId == tx ? local : message
+              ]
+            : [...messages, local];
     if (_windowSource != null && messages.length > 200) {
       messages = List.unmodifiable(messages.skip(messages.length - 200));
     }
+    if (outboxRow == null) latestLocalSendIntent = tx;
     _publish();
     if (!permitted) {
       await _persistOutboxOutcome(tx, local, RoomDeliveryState.failed,
@@ -1794,7 +1818,6 @@ final class RoomTimelineController extends ChangeNotifier
         row.roomId != outboxRoomId;
     if (foreign) _foreignOutboxTransactions.add(tx);
     if (_localEchoes.containsKey(tx)) return;
-    _restoreLatest();
     messages = _snapshot();
     _reindex();
     final local = RoomMessageViewModel(
@@ -1822,13 +1845,15 @@ final class RoomTimelineController extends ChangeNotifier
     // 失败行重进房间后必须停留在它原本的 Chronological 位置。
     final insertIndex =
         messages.indexWhere((m) => m.timestamp.isAfter(local.timestamp));
-    messages = insertIndex >= 0
-        ? [
-            ...messages.sublist(0, insertIndex),
-            local,
-            ...messages.sublist(insertIndex)
-          ]
-        : [...messages, local];
+    messages = hasLaterWindow
+        ? _snapshot()
+        : insertIndex >= 0
+            ? [
+                ...messages.sublist(0, insertIndex),
+                local,
+                ...messages.sublist(insertIndex)
+              ]
+            : [...messages, local];
     _publish();
   }
 

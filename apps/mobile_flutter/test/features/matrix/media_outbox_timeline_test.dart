@@ -29,6 +29,8 @@ void main() {
     final controller =
         RoomTimelineController(adapter, outboxRoomId: '!room:test');
     controller.projectMediaTasks([_task('stable')]);
+    expect(controller.latestLocalSendIntent, isNull,
+        reason: 'durable media recovery is not a route-local send');
     expect(controller.messages.single.stableId, 'stable');
     adapter.items.add(RoomMessageViewModel(
         id: 'sdk-local',
