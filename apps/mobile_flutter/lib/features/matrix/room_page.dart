@@ -6623,6 +6623,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     controller: messageScrollController,
                     eventIds: messages.reversed.map((m) => m.stableId).toList(),
                     messageKeys: _stableMessageKeys,
+                    latestFollowRequested: () =>
+                        latestMessageAnchor.followingLatest,
                     followLatest: !_shiftingWindow &&
                         !(controller?.hasLaterWindow ?? false) &&
                         !(controller?.isViewingHistoryContext ?? false),

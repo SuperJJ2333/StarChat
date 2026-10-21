@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'package:liuhetong_mobile/features/statistics/statistics_room_scope.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
@@ -1490,26 +1491,32 @@ void registerStartupProjectionEntryTests(
                 ? preflight.release.isCompleted
                 : held.release.isCompleted,
             isFalse);
+        // Sending intentionally returns to latest. Establish a new reading
+        // position before asserting that background SDK handoff preserves it.
+        expect(scroll.position.extentBefore, lessThan(.5));
+        await tester.drag(viewport, const Offset(0, 120));
+        await flush(30);
+        expect(scroll.position.extentBefore, greaterThan(80));
         final viewportBounds = tester.getRect(viewport);
-        final visibleMessages = find
-            .descendant(of: viewport, matching: find.byType(Text))
-            .evaluate()
-            .where((element) =>
-                (element.widget as Text).data?.startsWith('Cached message ') ==
-                true)
-            .where((element) {
-          final bounds = tester.getRect(find.byElementPredicate(
-              (candidate) => identical(candidate, element)));
-          return viewportBounds.contains(bounds.topLeft) &&
-              viewportBounds.contains(bounds.bottomRight);
-        }).toList();
-        expect(visibleMessages, isNotEmpty,
-            reason: 'capture an actually visible stable cached bubble');
-        final anchorText =
-            (visibleMessages[visibleMessages.length ~/ 2].widget as Text).data!;
-        final anchor =
-            find.descendant(of: viewport, matching: find.text(anchorText));
-        final anchorY = tester.getTopLeft(anchor).dy - viewportBounds.top;
+        final anchoredList = tester
+            .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
+        bool fullyVisible(String id) {
+          final key = anchoredList.messageKeys[id];
+          if (key?.currentContext == null ||
+              find.byKey(key!).evaluate().isEmpty) return false;
+          final bounds = tester.getRect(find.byKey(key!));
+          return bounds.top >= viewportBounds.top &&
+              bounds.bottom <= viewportBounds.bottom;
+        }
+
+        final centerKey = tester.widget<CustomScrollView>(viewport).center
+            as ValueKey<(String, String?)>;
+        final centerId = centerKey.value.$2;
+        final anchorId = centerId != null && fullyVisible(centerId)
+            ? centerId
+            : anchoredList.eventIds.firstWhere(fullyVisible);
+        final anchor = find.byKey(anchoredList.messageKeys[anchorId]!);
+        final anchorY = tester.getBottomLeft(anchor).dy - viewportBounds.top;
         if (terminal) auditVisibleFrames = false;
         if (independent) {
           preflight.release.complete();
@@ -1552,7 +1559,7 @@ void registerStartupProjectionEntryTests(
         expect(anchor, findsOneWidget);
         final restoredViewport = tester.getRect(viewport);
         expect(restoredViewport.overlaps(tester.getRect(anchor)), isTrue);
-        expect(tester.getTopLeft(anchor).dy - restoredViewport.top,
+        expect(tester.getBottomLeft(anchor).dy - restoredViewport.top,
             closeTo(anchorY, 8.0),
             reason:
                 'same stable cached message must retain its viewport reading position');
@@ -1561,6 +1568,10 @@ void registerStartupProjectionEntryTests(
             client.getRoomById('!room-64:synthetic.test'), same(retainedRoom));
         if (independent) {
           final dynamic activePage = roomState;
+          // Reading-position assertions above finish before explicit navigation.
+          // Canonical head assertions need the live window, not the held history.
+          await activePage.controller.showLatest();
+          await flush(30);
           expect(activePage.controller.findMessage('cached-57').packetId,
               'forbidden-authority',
               reason: 'decrypted media retains canonical content');

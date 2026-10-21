@@ -20,6 +20,7 @@ class AnchoredTimelineList extends StatefulWidget {
     required this.itemBuilder,
     this.padding = EdgeInsets.zero,
     this.followLatest = true,
+    this.latestFollowRequested,
   });
 
   final ScrollController controller;
@@ -31,6 +32,10 @@ class AnchoredTimelineList extends StatefulWidget {
   /// Only enable for the live window, excluding explicit window transitions.
   final bool followLatest;
 
+  /// Explicit local send keeps lazy layout refinements at the newest edge.
+  /// The owner cancels this intent when the user navigates away.
+  final bool Function()? latestFollowRequested;
+
   @override
   State<AnchoredTimelineList> createState() => _AnchoredTimelineListState();
 }
@@ -40,7 +45,10 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
   String? _centerId;
   bool _followLatestBeforePaint = false;
 
-  bool _shouldFollowLatest() => widget.followLatest && _followLatestBeforePaint;
+  bool _shouldFollowLatest() =>
+      widget.followLatest &&
+      (_followLatestBeforePaint ||
+          (widget.latestFollowRequested?.call() ?? false));
 
   void _correctLayoutPosition(ScrollPosition position, double pixels) {
     if (!position.hasPixels) {
@@ -79,7 +87,13 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
     }
     // Ordinary edits and prepending older rows do not move the coordinate
     // origin. Appending newer rows also preserves it while reading history.
-    if (_centerId != null && widget.eventIds.contains(_centerId)) {
+    final readingHistory = widget.controller.hasClients &&
+        widget.controller.position.hasContentDimensions &&
+        widget.controller.position.extentBefore >= .5 &&
+        !widget.controller.position.isScrollingNotifier.value;
+    if (!readingHistory &&
+        _centerId != null &&
+        widget.eventIds.contains(_centerId)) {
       final oldLeading = oldWidget.eventIds.firstOrNull == _centerId
           ? oldWidget.padding.bottom
           : 0.0;
@@ -98,11 +112,41 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
         viewport.hasSize &&
         widget.controller.hasClients) {
       final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+      // Keep an established visible reading origin through sequential metadata
+      // updates. Choosing another row each time would accumulate layout drift.
+      final centerBox =
+          widget.messageKeys[_centerId]?.currentContext?.findRenderObject();
+      if (readingHistory &&
+          widget.eventIds.contains(_centerId) &&
+          widget.padding == oldWidget.padding &&
+          centerBox is RenderBox &&
+          centerBox.attached &&
+          centerBox.hasSize) {
+        final centerRect =
+            centerBox.localToGlobal(Offset.zero) & centerBox.size;
+        if (centerRect.top >= bounds.top &&
+            centerRect.bottom <= bounds.bottom) {
+          return;
+        }
+      }
+      (String, Rect)? retained;
       for (final id in widget.eventIds) {
         final box = widget.messageKeys[id]?.currentContext?.findRenderObject();
         if (box is! RenderBox || !box.attached || !box.hasSize) continue;
         final rect = box.localToGlobal(Offset.zero) & box.size;
         if (!rect.overlaps(bounds)) continue;
+        retained ??= (id, rect);
+        // Prefer a fully visible reading row over a newer bubble whose bottom
+        // lies outside the viewport. Hydration can change that newer bubble's
+        // height even when every event ID remains unchanged.
+        if (!readingHistory ||
+            (rect.top >= bounds.top && rect.bottom <= bounds.bottom)) {
+          retained = (id, rect);
+          break;
+        }
+      }
+      if (retained != null) {
+        final (id, rect) = retained;
         _centerId = id;
         // In reverse layout the center row's bottom is the sliver origin.
         // Rebase layout and its ongoing simulation together. The next tick

@@ -23,6 +23,10 @@ void main() {
     anchor.update('new-send', outgoing: true, newSend: true);
     await tester.pump();
     expect(scroll.offset, 150);
+    anchor.update('navigation-send', outgoing: true, newSend: true);
+    scroll.jumpTo(220);
+    await tester.pump();
+    expect(scroll.offset, 220);
     anchor.update('another-send', outgoing: true, newSend: true);
     await tester.pump();
     expect(scroll.offset, 0);
