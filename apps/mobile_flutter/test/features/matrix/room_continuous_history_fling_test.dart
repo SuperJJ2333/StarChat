@@ -209,15 +209,18 @@ void main() {
         .controller;
     final button = find.byKey(const Key('timeline-return-latest'));
     expect(button, findsNothing);
-    final latest = scroll.position.minScrollExtent;
-    scroll.jumpTo(latest + 100);
+    scroll.jumpTo(scroll.position.minScrollExtent + 100);
     await tester.pump();
     expect(button, findsNothing);
-    scroll.jumpTo(latest + 1200);
+    scroll.jumpTo(scroll.position.minScrollExtent + 1200);
     await tester.pump();
     expect(button, findsOneWidget,
         reason: 'crossing the threshold must work without an incoming event');
-    scroll.jumpTo(latest + 100);
+    scroll.jumpTo(scroll.offset - 100);
+    await tester.pump();
+    expect(button, findsOneWidget,
+        reason: 'small movement after origin rebase retains reading distance');
+    scroll.jumpTo(scroll.offset - 1000);
     await tester.pump();
     expect(button, findsNothing);
     // A newly received event behind a pinned window sets hasLaterWindow even
@@ -236,7 +239,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(button, findsNothing,
         reason: 'pinning a bounded window must not expose the button');
-    scroll.jumpTo(latest + 1200);
+    scroll.jumpTo(scroll.position.minScrollExtent + 1200);
     await tester.pump();
     expect(button, findsOneWidget);
     await tester.tap(button);

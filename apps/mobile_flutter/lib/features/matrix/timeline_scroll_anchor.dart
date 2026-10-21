@@ -21,6 +21,7 @@ class AnchoredTimelineList extends StatefulWidget {
     this.padding = EdgeInsets.zero,
     this.followLatest = true,
     this.latestFollowRequested,
+    this.onOriginRebased,
   });
 
   final ScrollController controller;
@@ -36,6 +37,9 @@ class AnchoredTimelineList extends StatefulWidget {
   /// The owner cancels this intent when the user navigates away.
   final bool Function()? latestFollowRequested;
 
+  /// Coordinate correction only; owners must not count it as reader movement.
+  final ValueChanged<double>? onOriginRebased;
+
   @override
   State<AnchoredTimelineList> createState() => _AnchoredTimelineListState();
 }
@@ -50,7 +54,8 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
       (_followLatestBeforePaint ||
           (widget.latestFollowRequested?.call() ?? false));
 
-  void _correctLayoutPosition(ScrollPosition position, double pixels) {
+  void _correctLayoutPosition(ScrollPosition position, double pixels,
+      {bool originRebase = true}) {
     if (!position.hasPixels) {
       position.correctPixels(pixels);
       return;
@@ -58,7 +63,9 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
     // Mark the correction for the next layout even if its extents stay equal.
     // Flutter then rebases ballistic motion at the current velocity, while a
     // held drag retains its activity and gesture.
-    position.correctBy(pixels - position.pixels);
+    final delta = pixels - position.pixels;
+    position.correctBy(delta);
+    if (originRebase && delta != 0) widget.onOriginRebased?.call(delta);
   }
 
   @override
@@ -163,7 +170,8 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
     // responsibility.
     _centerId = widget.eventIds.firstOrNull;
     if (widget.controller.hasClients) {
-      _correctLayoutPosition(widget.controller.position, 0);
+      _correctLayoutPosition(widget.controller.position, 0,
+          originRebase: false);
     }
   }
 

@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
-import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart' show changliaoCallMessageType;
+import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart'
+    show changliaoCallMessageType;
 import 'package:liuhetong_mobile/ui/chat/wechat_call_bubble.dart';
 import 'package:liuhetong_mobile/features/finance/finance_message_entry.dart';
 
@@ -98,7 +99,10 @@ class _LifecycleTimeline extends Fake implements Timeline {
   Future<void> setReadMarker({String? eventId, bool? public}) async =>
       throw const SocketException('synthetic offline read receipt');
   @override
-  void cancelSubscriptions() { cancelCount++; }
+  void cancelSubscriptions() {
+    cancelCount++;
+  }
+
   int cancelCount = 0;
 }
 
@@ -234,7 +238,8 @@ void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
 
-  test('prepared room transfers once and abandoned entry closes once', () async {
+  test('prepared room transfers once and abandoned entry closes once',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final client = _LifecycleClient();
     final matrix = MatrixSdkE2eeClient(client,
@@ -250,7 +255,8 @@ void main() {
     await client.dispose();
   });
 
-  test('prepared room adoption leaves disposal with the active page owner', () async {
+  test('prepared room adoption leaves disposal with the active page owner',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final client = _LifecycleClient();
     final matrix = MatrixSdkE2eeClient(client,
@@ -267,38 +273,72 @@ void main() {
     await client.dispose();
   });
 
-  testWidgets('cached finance and call readiness change while optional hydration is held', (tester) async {
+  testWidgets(
+      'cached finance and call readiness change while optional hydration is held',
+      (tester) async {
     final client = _CachedClient();
-    client.store.events = [Event(room: client.localRoom, eventId: 'finance', senderId: '@peer:lifecycle.test',
-      type: EventTypes.Message, originServerTs: DateTime.utc(2026, 10, 7),
-      content: {'msgtype': changliaoRedPacketMessageType, 'packet_id': 'packet-test', 'body': 'packet'}),
-      Event(room: client.localRoom, eventId: 'call', senderId: '@peer:lifecycle.test',
-        type: EventTypes.Message, originServerTs: DateTime.utc(2026, 10, 7),
-        content: {'msgtype': changliaoCallMessageType, 'body': 'call'}),
+    client.store.events = [
+      Event(
+          room: client.localRoom,
+          eventId: 'finance',
+          senderId: '@peer:lifecycle.test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 10, 7),
+          content: {
+            'msgtype': changliaoRedPacketMessageType,
+            'packet_id': 'packet-test',
+            'body': 'packet'
+          }),
+      Event(
+          room: client.localRoom,
+          eventId: 'call',
+          senderId: '@peer:lifecycle.test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 10, 7),
+          content: {'msgtype': changliaoCallMessageType, 'body': 'call'}),
     ];
     client.localRoom.heldTimeline = Completer<Timeline>();
     final ready = ValueNotifier(false);
-    final lease = await _mountLifecycleRoom(tester, client, dispatchReady: ready,
-      initialContact: const ContactDetails(userId: 'peer', username: 'peer', matrixUserId: '@peer:lifecycle.test'));
+    final lease = await _mountLifecycleRoom(tester, client,
+        dispatchReady: ready,
+        initialContact: const ContactDetails(
+            userId: 'peer',
+            username: 'peer',
+            matrixUserId: '@peer:lifecycle.test'));
     try {
       final page = tester.state(find.byType(RoomPage)) as dynamic;
       final controller = page.controller;
-      final scroll = tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList)).controller;
+      final scroll = tester
+          .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList))
+          .controller;
       final offset = scroll.offset;
       expect(find.byType(FinanceMessageEntry), findsNothing);
-      expect(tester.widget<WeChatCallBubble>(find.byType(WeChatCallBubble)).onRedial, isNull);
+      expect(
+          tester
+              .widget<WeChatCallBubble>(find.byType(WeChatCallBubble))
+              .onRedial,
+          isNull);
       ready.value = true;
       await tester.pump();
       expect(find.byType(FinanceMessageEntry), findsOneWidget);
-      expect(tester.widget<WeChatCallBubble>(find.byType(WeChatCallBubble)).onRedial, isNotNull);
+      expect(
+          tester
+              .widget<WeChatCallBubble>(find.byType(WeChatCallBubble))
+              .onRedial,
+          isNotNull);
       ready.value = false;
       await tester.pump();
       expect(find.byType(FinanceMessageEntry), findsNothing);
       expect(find.text('状态未知'), findsOneWidget);
-      expect(tester.widget<WeChatCallBubble>(find.byType(WeChatCallBubble)).onRedial, isNull);
+      expect(
+          tester
+              .widget<WeChatCallBubble>(find.byType(WeChatCallBubble))
+              .onRedial,
+          isNull);
       expect(identical(page.controller, controller), isTrue);
       expect(scroll.offset, offset);
-      expect(controller.messages.map((RoomMessageViewModel m) => m.id), containsAll(['finance', 'call']));
+      expect(controller.messages.map((RoomMessageViewModel m) => m.id),
+          containsAll(['finance', 'call']));
     } finally {
       client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
       await tester.pumpWidget(const SizedBox());
@@ -345,7 +385,18 @@ void main() {
     final scroll = tester.widget<AnchoredTimelineList>(list).controller;
     scroll.jumpTo(100);
     await tester.pump();
-    final position = scroll.offset;
+    final anchored = tester.widget<AnchoredTimelineList>(list);
+    final bounds = tester.getRect(find.byType(CustomScrollView).first);
+    final retainedId = anchored.eventIds.firstWhere((id) {
+      final key = anchored.messageKeys[id];
+      if (key == null || find.byKey(key).evaluate().isEmpty) {
+        return false;
+      }
+      final rect = tester.getRect(find.byKey(key));
+      return rect.top >= bounds.top && rect.bottom <= bounds.bottom;
+    });
+    final retainedRow = find.byKey(anchored.messageKeys[retainedId]!);
+    final position = tester.getBottomLeft(retainedRow).dy;
     client.localRoom.heldTimeline!.complete(client.localRoom.timeline);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
@@ -353,7 +404,7 @@ void main() {
         identical(page.controller,
             (tester.state(find.byType(RoomPage)) as dynamic).controller),
         isTrue);
-    expect(scroll.offset, position);
+    expect(tester.getBottomLeft(retainedRow).dy, closeTo(position, 1));
     expect(
         page.controller.messages
             .any((RoomMessageViewModel m) => m.id == 'synthetic-1199'),

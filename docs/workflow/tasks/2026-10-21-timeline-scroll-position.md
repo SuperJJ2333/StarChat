@@ -33,3 +33,11 @@
 - 新严格发送边缘断言发现27px布局后续偏移；显式发送意图现在供布局物理持续跟随，各轮lazy extent补算无需父组件重建；用户拖动或程序定位离开最新会同时取消跟随及待执行跳转。未使用会破坏历史定位的old metrics推断。
 - SPEC最终PASS（2026-10-21，本轮质量复查待完成）。新媒体独立布局测试、完整启动文件与最终共享门禁仍在进行；编译夹具错误、历史失败和取消记录均保留，不计作通过。
 - 发送后历史阅读位置断言完成后，测试显式showLatest再核验canonical-new-head；不能要求保持历史窗口同时强制展示最新头部。
+
+## 全量发现的坐标记账补充
+
+- 第一轮全量在4890PASS/9SKIP/23FAIL（另633 harness）停止修正，非PASS；`origin-accounting-r1-*`保留。23失败中包含旧绝对偏移断言及首个断言失败跳过清理导致的MaintenanceActivity定时器级联，不将它们全部归为产品缺陷。
+- 真实补充缺陷：idle可见中心重基准后，页面_lastTimelineScrollOffset仍是旧坐标，下一次真实滚动会误判方向/距离。onOriginRebased仅对坐标补偿同步调整前值；不改变阅读距离，也不对主动非重叠导航使用。
+- 惰性布局临时min=-134而原点已校正-1234；仅extentBefore判断会错误清零历史阅读距离。新增实际最新行可见校验，防止临时估计误判。
+- `origin-distance-green-r2.log`是真实相对移动RED；`origin-distance-green-r3.log`PASS。`origin-impact-final.log`50PASS：连续历史fling、真实RoomPage恢复、生命周期、变量高度、惯性和定位取消。夹具初次编译错误不计RED。
+- 更新夹具为固定可见气泡边界及相对滑动距离；新增用例finally清理。SPEC delta PASS，独立QUALITY复查中，随后重跑最终共享全量。

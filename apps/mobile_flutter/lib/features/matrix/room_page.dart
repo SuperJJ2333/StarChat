@@ -6061,6 +6061,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 上滑接近顶部（reverse 列表像素增大方向）→ 自动加载更早历史。
   /// 加载中的幂等/耗尽判定由 [RoomTimelineController.loadHistory] 负责。
+  bool _latestTimelineRowIsVisible() {
+    final newest = controller?.messages.lastOrNull;
+    final row = _stableMessageKeys[newest?.stableId]
+        ?.currentContext
+        ?.findRenderObject();
+    final viewport = _timelineViewportKey.currentContext?.findRenderObject();
+    if (row is! RenderBox ||
+        !row.attached ||
+        !row.hasSize ||
+        viewport is! RenderBox ||
+        !viewport.hasSize) {
+      return false;
+    }
+    return (row.localToGlobal(Offset.zero) & row.size)
+        .overlaps(viewport.localToGlobal(Offset.zero) & viewport.size);
+  }
+
   void _onMessageScroll() {
     if (_shiftingWindow || _locatingMessage) return;
     if (!messageScrollController.hasClients) return;
@@ -6074,7 +6091,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // afterwards. Count reading distance, not the changing local pixel origin.
     _latestReadingDistance = (_latestReadingDistance + offset - previousOffset)
         .clamp(0, double.infinity);
-    if (!(controller?.hasLaterWindow ?? false) && position.extentBefore < 80) {
+    // Before layout, a rebased lazy sliver can still report its old estimated
+    // minimum. Only reset distance when the actual newest row is on screen.
+    if (!(controller?.hasLaterWindow ?? false) &&
+        position.extentBefore < 80 &&
+        _latestTimelineRowIsVisible()) {
       _latestReadingDistance = 0;
       _explicitHistoryReturn = false;
     }
@@ -6623,6 +6644,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     controller: messageScrollController,
                     eventIds: messages.reversed.map((m) => m.stableId).toList(),
                     messageKeys: _stableMessageKeys,
+                    onOriginRebased: (delta) {
+                      final previous = _lastTimelineScrollOffset;
+                      if (previous != null) {
+                        _lastTimelineScrollOffset = previous + delta;
+                      }
+                    },
                     latestFollowRequested: () =>
                         latestMessageAnchor.followingLatest,
                     followLatest: !_shiftingWindow &&

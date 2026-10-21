@@ -247,26 +247,43 @@ void main() {
       client = value;
       client.room.liveMessageCount = 100;
     });
-    final list =
-        tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
-    list.controller.jumpTo(450);
-    await tester.pump();
-    final position = list.controller.offset;
-    client.room.timelines.single.events.add(Event(
-      room: client.room,
-      eventId: r'$restored-own',
-      senderId: client.userID!,
-      type: EventTypes.Message,
-      originServerTs: DateTime.utc(2027),
-      content: {'msgtype': 'm.text', 'body': 'synthetic recovered own message'},
-    ));
-    client.room.timelineUpdated!();
-    for (var i = 0; i < 8; i++) {
-      await tester.pump(const Duration(milliseconds: 60));
+    try {
+      final list = tester
+          .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
+      list.controller.jumpTo(450);
+      await tester.pump();
+      final anchored = list;
+      final bounds = tester.getRect(find.byType(CustomScrollView).first);
+      final retainedId = anchored.eventIds.firstWhere((id) {
+        final key = anchored.messageKeys[id];
+        if (key == null || find.byKey(key).evaluate().isEmpty) {
+          return false;
+        }
+        final rect = tester.getRect(find.byKey(key));
+        return rect.top >= bounds.top && rect.bottom <= bounds.bottom;
+      });
+      final retainedRow = find.byKey(anchored.messageKeys[retainedId]!);
+      final position = tester.getBottomLeft(retainedRow).dy;
+      client.room.timelines.single.events.add(Event(
+        room: client.room,
+        eventId: r'$restored-own',
+        senderId: client.userID!,
+        type: EventTypes.Message,
+        originServerTs: DateTime.utc(2027),
+        content: {
+          'msgtype': 'm.text',
+          'body': 'synthetic recovered own message'
+        },
+      ));
+      client.room.timelineUpdated!();
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      expect(tester.getBottomLeft(retainedRow).dy, closeTo(position, 1));
+      expect(list.controller.position.extentBefore, greaterThan(80));
+    } finally {
+      await _disposeRoom(tester);
     }
-    expect(list.controller.offset, closeTo(position, 1));
-    expect(list.controller.position.extentBefore, greaterThan(80));
-    await _disposeRoom(tester);
   });
 
   testWidgets(
