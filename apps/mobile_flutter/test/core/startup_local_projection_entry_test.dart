@@ -1503,8 +1503,10 @@ void registerStartupProjectionEntryTests(
         bool fullyVisible(String id) {
           final key = anchoredList.messageKeys[id];
           if (key?.currentContext == null ||
-              find.byKey(key!).evaluate().isEmpty) return false;
-          final bounds = tester.getRect(find.byKey(key!));
+              find.byKey(key!).evaluate().isEmpty) {
+            return false;
+          }
+          final bounds = tester.getRect(find.byKey(key));
           return bounds.top >= viewportBounds.top &&
               bounds.bottom <= viewportBounds.bottom;
         }
