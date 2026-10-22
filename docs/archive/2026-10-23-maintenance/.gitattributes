@@ -1,0 +1,2 @@
+# Historical patches must retain original whitespace for byte-checked restoration.
+*.patch -text whitespace=-blank-at-eol,-blank-at-eof

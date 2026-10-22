@@ -1,0 +1,9 @@
+--- a/docs/workflow/tasks/2026-10-16-mobile-experience-2216.md
++++ b/docs/workflow/tasks/2026-10-16-mobile-experience-2216.md
+@@ -1,4 +1,6 @@
+ # 0.4.46体验五项优化实施
++
++此入口同步自[活动工作树任务记录](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/workflow/tasks/2026-10-16-mobile-experience-2216.md)；实际源码和完整证据以该工作树为准。
+ 
+ 用户2026-10-16已批准方案并要求推进，允许模拟器安装Debug。当前阶段：实现/独立审查完成，Android实际main及修订原生门禁通过，iOS待匹配签名/真机验收；基线92846f60，工作树im-reliability/StarChat，分支codex/mobile-experience-2216-20261016。root负责集成/构建/HTML及记录；Tasks1–4各自实现与审查已结束，原生测试-only修正已独审并提交27b00b9f。
+ 

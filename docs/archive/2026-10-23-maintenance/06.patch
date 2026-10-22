@@ -1,0 +1,8 @@
+--- a/docs/verification/2026-10-16-android2216-release.md
++++ b/docs/verification/2026-10-16-android2216-release.md
+@@ -31,4 +31,4 @@
+ 
+ 源码回填已按七份before/四份staged精确SHA执行：本地旧iOS2213文案同步为已经发布的2215，只是本地源文件一致性，不重新发布iOS。admin-home仅替换两处版本/build文案，额外钱包会话校验字节保留；两份network脚本只换行差异，未修改。最后交付证据独审PASS。
+ 
+-[任务](../workflow/tasks/2026-10-16-android2216-release.md)，[构建](artifacts/2026-10-16/android2216-release/arm64-final/receipt.json)，[门禁绑定](artifacts/2026-10-16/android2216-release/gates/gates.json)，[构建SPEC](artifacts/2026-10-16/android2216-release/reviews/spec-build.md)，[构建QUALITY](artifacts/2026-10-16/android2216-release/reviews/quality-build.md)。
++[任务](../workflow/tasks/2026-10-16-android2216-release.md)，[构建](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/android2216-release/arm64-final/receipt.json)，[门禁绑定](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/android2216-release/gates/gates.json)，[构建SPEC](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/android2216-release/reviews/spec-build.md)，[构建QUALITY](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/android2216-release/reviews/quality-build.md)。

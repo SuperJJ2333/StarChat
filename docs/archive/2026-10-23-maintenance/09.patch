@@ -1,0 +1,11 @@
+--- a/docs/verification/2026-10-17-startup-feedback.md
++++ b/docs/verification/2026-10-17-startup-feedback.md
+@@ -13,7 +13,7 @@
+ 
+ 非根来源页返回、切 tab、关联准备期间换账号均使旧意图失效。旧任务不得清理新房间的统计上下文；正常 pop 与 AppHome dispose 使用本页面持有的幂等清理。加密、账号权限及持久待发边界保持。
+ 
+-证据根目录：[startup-local-projection/artifacts](artifacts/2026-10-17/startup-local-projection/)。私人账号截图、录像只本地保存，不在本文转录消息或账号标识。
++证据根目录：[startup-local-projection/artifacts](C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat/docs/verification/artifacts/2026-10-17/startup-local-projection/)。私人账号截图、录像只本地保存，不在本文转录消息或账号标识。
+ 
+ ## 源码与主机验证
+ 

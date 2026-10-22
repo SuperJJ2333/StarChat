@@ -1,0 +1,11 @@
+--- a/docs/verification/2026-10-17-startup-local-projection.md
++++ b/docs/verification/2026-10-17-startup-local-projection.md
+@@ -18,7 +18,7 @@
+ 
+ ## 证据及结果
+ 
+-所有详细证据位于 [本次证据目录](artifacts/2026-10-17/startup-local-projection/)。
++所有详细证据位于 [本次证据目录](C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat/docs/verification/artifacts/2026-10-17/startup-local-projection/)。
+ 
+ | 检查 | 结果与限制 |
+ | --- | --- |

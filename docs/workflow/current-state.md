@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-23 项目维护与资料保全
+
+候选源码为 `codex/interactive-cache-startup-20261016` / `8535e07f`。主树独有资料及双方冲突的保全入口见[整合索引](../archive/2026-10-23-maintenance/README.md)。本轮仅做已授权的诊断契约与门禁维护；Android2233/iOS2215既有工件与发布状态保留。最终门禁和合并状态以[本轮记录](../verification/2026-10-23-project-maintenance-completion.md)为准。
+
 ## Android 0.4.64 (2233) 正式更新已发布 · 2026-10-22
 
 用户授权发布正式更新弹窗；2026-10-21T19:19:53.971153+00:00 PUBLISH_PASS，3条审计。可选更新，min3/iOS2215不变。20构建门禁、35发布保护、同源码6378回归复用和线上后验通过。真实房间滚动、ARM64真机覆盖和旧客户端实际弹窗仍未观察。下一步仅按设备反馈复核。[任务](tasks/2026-10-22-android2233-release.md) · [证据](../verification/2026-10-22-android2233-release.md)。

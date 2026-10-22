@@ -1,0 +1,41 @@
+--- a/docs/verification/2026-10-16-super-emoji-autoplay.md
++++ b/docs/verification/2026-10-16-super-emoji-autoplay.md
+@@ -25,7 +25,7 @@
+ 
+ ## 验证记录
+ 
+-所有日志位于 [独立证据目录](artifacts/2026-10-16/super-emoji-autoplay/)，未覆盖前次2216结果。
++所有日志位于 [独立证据目录](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/super-emoji-autoplay/)，未覆盖前次2216结果。
+ 
+ - RED：主机首次因过期短盘符V不存在而启动失败（环境错误，非行为RED）；恢复已验证短盘符后，无点击资源请求预期1、实际0，7项中1失败；HTML预期playing、实际static，4项中1失败。
+ - GREEN：60项相关Flutter测试PASS，覆盖无点击资源加载、静态fallback、帧推进、共享同一资源、离屏停止、返回/后台恢复、缓存和手势。完整Flutter analyze退出0。SVG parser已有filter诊断保留，不宣称测试日志零警告。
+@@ -36,7 +36,7 @@
+ - `scripts/verify.ps1`前置`.env`仍缺失，复用前次相同脚本与配置门禁的阻断事实，不借用生产密钥；不宣称全仓verify通过。
+ - 独立SPEC PASS→QUALITY APPROVED；非阻断建议为新测试应在断言前注册失败路径清理。未发现新增生产资源安全缺陷。
+ 
+-![合成HTML演示：可见自动播放](artifacts/2026-10-16/super-emoji-autoplay/html-autoplay.png)
++![合成HTML演示：可见自动播放](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/super-emoji-autoplay/html-autoplay.png)
+ 
+ ## 回退与未覆盖
+ 
+@@ -52,7 +52,7 @@
+ 
+ ## Android成品与真实播放验收
+ 
+-09:17:40–09:23:17+08 完成源码→Apktool2.12.1常规重建→对齐→固定75b31签名→语义/资产核对。最终 [x86_64 Debug APK](artifacts/2026-10-16/super-emoji-autoplay/android-main-autoplay/final.apk) 为125,933,914 bytes，SHA256 **21553235a4ec7ef7e68a8d780dae43dac583f74ea3a31ff80c466ec6328ceab5**。
++09:17:40–09:23:17+08 完成源码→Apktool2.12.1常规重建→对齐→固定75b31签名→语义/资产核对。最终 [x86_64 Debug APK](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/super-emoji-autoplay/android-main-autoplay/final.apk) 为125,933,914 bytes，SHA256 **21553235a4ec7ef7e68a8d780dae43dac583f74ea3a31ff80c466ec6328ceab5**。
+ 
+ 09:23:46–09:23:58+08 install-r完成，模拟器5556/API28/Android9/LDPlayer9，UID10090、首次安装时间2026-09-26 04:06:20保持；实际安装APK完整SHA一致。未卸载、清数据或热重载。新候选保留原账号/房间；末态为实际main应用。
+ 
+@@ -70,9 +70,9 @@
+ 
+ 稳定时2个256px当前帧合计524,288 bytes（0.5MiB）、解码峰值并发2。上述帧数是两个资源的累计推进，不是UI FPS。新进程点采样PSS约337–368MiB，native PSS约46–53MiB；其中包括Flutter Debug VM、SDK、页面与已有媒体，不能把总数归给表情。旧包PSS点采样约387MiB，运行时机/GC/JIT不同，**不据此宣称内存降低了某个比例**。受限日志采样OOM/FATAL/Unhandled计数均0，未做长期泄漏/低端真机压力结论。
+ 
+-机器断言汇总：[runtime-acceptance.json](artifacts/2026-10-16/super-emoji-autoplay/runtime-acceptance.json)。
++机器断言汇总：[runtime-acceptance.json](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/super-emoji-autoplay/runtime-acceptance.json)。
+ 
+-![实际Android候选自动播放页面（单张截图只显示一帧，推进证据见JSON）](artifacts/2026-10-16/super-emoji-autoplay/new-autoplay.png)
++![实际Android候选自动播放页面（单张截图只显示一帧，推进证据见JSON）](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/super-emoji-autoplay/new-autoplay.png)
+ 
+ 交付结论：P1手动点击回归已修复并在Android实际main验收；建议保留动态表情，保留现有共享/可见性/后台资源控制。P1补充低内存Android与签名iPhone Profile/Release验证；P2再按测量结果引入较小源资源、减少动画选项或内存压力降级。正式APK/IPA下载渠道和更新弹窗没有由本任务改变。
+ 

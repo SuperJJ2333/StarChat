@@ -1,0 +1,126 @@
+{
+  "source": "8535e07f98e27047251f4f2c78202c24ad31a304",
+  "mainBefore": "5c83a08a09b985146bc507a1608cb2153d361e48",
+  "entries": [
+    {
+      "path": "docs/workflow/current-state.md",
+      "patch": "00.patch",
+      "candidate_sha256_lf": "0901d6493ffac15094f7f1fd2aecd9810c67afdbc0f39c6ac6b3797d1887b313",
+      "main_sha256_raw": "e9f87f3c11bce5777b56f4d46a457ebc33ab798a80f35c12afdc33c1d49b15c6",
+      "main_sha256_lf": "89d69c8cc9024efff70d6093af9727daab9f30809fa654156162dc65e54cb949",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/adr/2026-10-17-bounded-encrypted-startup-projection.md",
+      "patch": "01.patch",
+      "candidate_sha256_lf": "1de17af531e30674170cc69c116148f82bd0ee45e90945e8912d337f0d97d5a2",
+      "main_sha256_raw": "aba45ac9f5d9d315086d1b592c5e3aef8702bbc745d57af4222ef4449404a390",
+      "main_sha256_lf": "93847088bc5536eefd4719ad629e1c9279026ce0fc36d0f9f55bd2e00be58072",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-im-reliability-remediation.md",
+      "patch": "02.patch",
+      "candidate_sha256_lf": "6b8811db03b1160b2f8bb4587d50e88a01bf9e2fc8fca0f7b252fc6e8d032ba5",
+      "main_sha256_raw": "3ee92658aad68b95e340fb053f4eb4dbb1dd3d4eac8c7a4429878038c176107d",
+      "main_sha256_lf": "3ee92658aad68b95e340fb053f4eb4dbb1dd3d4eac8c7a4429878038c176107d",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-17-startup-local-projection.md",
+      "patch": "03.patch",
+      "candidate_sha256_lf": "b7347fc483782b84a43e53233c63ee501e7079a1fc5ee60fa24b9f648b62f304",
+      "main_sha256_raw": "5589ca2ad205254ac013951aee9e2f49db0b6cacce9cd295519c1e3a441115cf",
+      "main_sha256_lf": "7c86f725202101f08ec5b1935c46e9e40064361f666119ee81170ee632bacdfb",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-11-e2e-architecture-performance-review.md",
+      "patch": "04.patch",
+      "candidate_sha256_lf": "7835ef997a44d357ec9aa3a11089becd75e1c001921e88c5e089b0f7a9b526a7",
+      "main_sha256_raw": "f4153d4a68a97ec5c667f7c75a4b77e3743fe26297ef4a2e61152deb11f68cf4",
+      "main_sha256_lf": "f4153d4a68a97ec5c667f7c75a4b77e3743fe26297ef4a2e61152deb11f68cf4",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-11-server-runtime-followup.md",
+      "patch": "05.patch",
+      "candidate_sha256_lf": "b3ed941ce667358301b29b53e5ae15ed5ec021ad471f7bafe23a40b33d2939e3",
+      "main_sha256_raw": "6e3edc967c84c9512a02a177d824393a0c9046fee4b888734b2d4fe8a5f1a91d",
+      "main_sha256_lf": "6e3edc967c84c9512a02a177d824393a0c9046fee4b888734b2d4fe8a5f1a91d",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-16-android2216-release.md",
+      "patch": "06.patch",
+      "candidate_sha256_lf": "1d75c2c23c2e832ae2cb3158548284059eb00b516aa565eebc8cc3bb53553179",
+      "main_sha256_raw": "91b88b8a3eee5f9f232c368be0fdc490f4508715b09e030c67ed3f63b2945f08",
+      "main_sha256_lf": "0c5e3057ba5a8c8f0bb5319c156c416f4f7501cf7bfeb879945f3e51767ed48b",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-16-mobile-experience-2216.md",
+      "patch": "07.patch",
+      "candidate_sha256_lf": "5cdc4918f8382e1952f9c03de51414ff0542e8595ef6d148379eac7e27325fe6",
+      "main_sha256_raw": "7f4f85f79090313100cb2b81d14725d592b91cf3c1fc1b7b2927ff9f1be30b74",
+      "main_sha256_lf": "1287954739533fc0b87474e907374c050506efc16c003e159d376d0b05ad40f4",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-16-super-emoji-autoplay.md",
+      "patch": "08.patch",
+      "candidate_sha256_lf": "af706bcd1f0011e292c7439844cfe729d5f51ab483a3e107c6de74ee21ef678f",
+      "main_sha256_raw": "71e0c752697f548c2aefdb1e262b1880a992abcde4089ae6632df5ee17822703",
+      "main_sha256_lf": "71e0c752697f548c2aefdb1e262b1880a992abcde4089ae6632df5ee17822703",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-17-startup-feedback.md",
+      "patch": "09.patch",
+      "candidate_sha256_lf": "7bf95e2877890c2df32751ad6b069325b568601b250a5770d65eb390e449541a",
+      "main_sha256_raw": "550dfde9d65f60825449b3f10d605624350385fe682e93512212e3d2dbe691fc",
+      "main_sha256_lf": "550dfde9d65f60825449b3f10d605624350385fe682e93512212e3d2dbe691fc",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/verification/2026-10-17-startup-local-projection.md",
+      "patch": "10.patch",
+      "candidate_sha256_lf": "6c868dce83dc686e4dc07f9a0045c7208f6458a1a28888f86c5f3df260e05743",
+      "main_sha256_raw": "0fd76e03d4f9b5b3a9f578cac0ea67c1a61fdd44f69517b8fd382ececf91b651",
+      "main_sha256_lf": "0fd76e03d4f9b5b3a9f578cac0ea67c1a61fdd44f69517b8fd382ececf91b651",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/workflow/tasks/2026-10-16-android-antivirus-review.md",
+      "patch": "11.patch",
+      "candidate_sha256_lf": "e9dcbb181dd505a02d61fdc31e8807ebf46decf6694cf9babf9f917d7ca82367",
+      "main_sha256_raw": "bbc013f418a0d1326c06199ece912212147208d58cf8e99a3510db6bd4a51b33",
+      "main_sha256_lf": "bbc013f418a0d1326c06199ece912212147208d58cf8e99a3510db6bd4a51b33",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/workflow/tasks/2026-10-16-android2217-candidate-download.md",
+      "patch": "12.patch",
+      "candidate_sha256_lf": "2e170c81a9d013106ad037e0defe3a4a2b17aaa26ae64fc8a55ae0f1023c74f7",
+      "main_sha256_raw": "0c61fb44296696089332e8245fd20c970a0c67d97119a2a6883f63d37f69cffb",
+      "main_sha256_lf": "dbfb1be9156bc39389a44c1093547aedd0635a7929889fb018ae7c2c71f5a0f9",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/workflow/tasks/2026-10-16-interactive-cache-startup.md",
+      "patch": "13.patch",
+      "candidate_sha256_lf": "31fe9016482e75cc9469247096de06b5828ec8121deaebb3a187cb81c55d520c",
+      "main_sha256_raw": "bf62feae5cd13ff15150da88562ada4e68aafe468985f6c69e97df6d4035f11a",
+      "main_sha256_lf": "e6164f78474807da9520b685e016b46d5d3718161ec6e685d099f28e2a8491fd",
+      "owner": "unmatched-review-required"
+    },
+    {
+      "path": "docs/workflow/tasks/2026-10-16-mobile-experience-2216.md",
+      "patch": "14.patch",
+      "candidate_sha256_lf": "e49bd453a31296e71c664001ed5920303ba3fc53f2326a5644fd5f85eeb5c108",
+      "main_sha256_raw": "abed4a8bf3fecee37461e4d9048015e822ae275c171de7609d561195bfd7842d",
+      "main_sha256_lf": "5f21ec522aa823959e6d7c4869b84dc8946f62ed7b5b41e952e1d26a0c1ea41f",
+      "owner": "unmatched-review-required"
+    }
+  ]
+}

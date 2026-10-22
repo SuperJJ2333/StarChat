@@ -1,0 +1,12 @@
+--- a/docs/verification/2026-10-11-e2e-architecture-performance-review.md
++++ b/docs/verification/2026-10-11-e2e-architecture-performance-review.md
+@@ -1,9 +1,4 @@
+ # StarChat 双端即时通讯端到端架构与性能评审
+-
+-> 本文保留初始评审时点；本轮修复和实际发布进展见[修复发布结果](2026-10-11-im-reliability-release-result.md)，未验设备和长期指标仍保持未知。
+-
+-> 本文保留2026-10-11修复前的评审/只读快照。后续代码行号和生产状态可能已变；当前实施与发布事实以[可靠性修复任务](../workflow/tasks/2026-10-11-im-reliability-implementation.md)及其精确SHA证据为准。
+-
+ 
+ 评审日期：2026-10-11（UTC+08）。结论：当前架构具备持续演进的基础，但尚无证据支持“双端主流设备、弱网及长时间后台均稳定达标”。发布产物身份、Android 后台策略、通知可靠性、客户端历史扫描与媒体处理、服务端阻塞及端到端观测是主要风险。P0 表示应立即闭合的发布/数据安全门禁；P1 表示核心体验或可靠性风险；P2 表示容量、成本和维护优化。风险分级不等于已发生事故。
+ 

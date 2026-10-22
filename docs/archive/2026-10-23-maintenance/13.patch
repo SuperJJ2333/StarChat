@@ -1,0 +1,48 @@
+--- a/docs/workflow/tasks/2026-10-16-interactive-cache-startup.md
++++ b/docs/workflow/tasks/2026-10-16-interactive-cache-startup.md
+@@ -4,10 +4,10 @@
+ 
+ - 用户要求：冷启动直接使用本地会话列表，恢复期间可切页/进房；入房先展示缓存气泡，可滚动/发送；改进 Debug 安装模拟器供用户测试。
+ - 授权范围：客户端改进及模拟器 Debug 安装；未要求公开发布。
+-- 当前阶段：实现及Debug交付完成；0.4.49+2218已保数据安装emulator-5556，用户人工功能验收待反馈。
++- 当前阶段：只读调查完成，具体设计待确认；没有产品代码修改、构建或安装。
+ - 源码基线：活动树 `C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat`，HEAD `74cf7217`，分支 `codex/android-consent-20261016`。primary main `5c83a08a` 不是最新移动基线。两树均有其他任务文档改动，实施须隔离。
+-- 负责人：root；工作树 `C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat`，分支 `codex/interactive-cache-startup-20261016`。计划：[交互缓存实施](../../superpowers/plans/2026-10-16-interactive-cache-startup.md)。下一步：用户在模拟器强停冷启、切页入房、恢复期间滚动与发送文字；按反馈继续复现，不重复构建已验证包。
+-- 更新时间：2026-10-16T23:21:28+08:00。开始精确时间未知；调查工具在本轮聊天留存，未估算耗时。
++- 负责人：root；本轮仅拥有本记录。下一步确认交互缓存设计，建立本任务计划/隔离工作树后测试先行。
++- 更新时间：2026-10-16T20:51:22+08:00。开始精确时间未知；调查工具在本轮聊天留存，未估算耗时。
+ 
+ ## 已核实事实
+ 
+@@ -26,25 +26,16 @@
+ 
+ 设计边界：正常已登录且有缓存路径减少整页加载；冷进程仍须读取磁盘/安全存储，不承诺所有设备绝对零延迟。发送点击可立即入队，不意味着恢复前已完成网络投递。
+ 
+-用户已批准上述方案实施。新工作树interactive-cache-startup，分支codex/interactive-cache-startup-20261016，基线74cf7217。Task1房间→Task2启动→Task3交付。根负责文档/构建，实施代理单写，独立审查。
++2026-10-16T21:22:40.7050500+08:00：用户已批准并正在实施。活动工作树 C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat，分支codex/interactive-cache-startup-20261016。Task1房间缓存与文字发送衔接44f079ba+981ac950已通过独立规格/质量复审（初审两P1均修复，74项修复回归通过）。Task2启动首页实施中。候选预留0.4.49+2218；尚未构建或安装，模拟器仍0.4.47/2216。完整进度以活动树docs/verification/artifacts/2026-10-16/interactive-cache-startup/progress.md为准。
+ 
+-2026-10-16T21:36:52.8318365+08:00 Task1 commits44f079ba+981ac950；Task2单写进行中。证据：[交付验证](../../verification/2026-10-16-interactive-cache-startup.md)，详细时间账本在 artifacts/2026-10-16/interactive-cache-startup/progress.md。Debug目标0.4.49+2218，无生产发布。
++2026-10-16T21:54:54.2079379+08:00 隔离工作树 interactive-cache-startup 的候选源码e163acd9已冻结；Task1规格/质量复核通过，Task2专项71PASS、分析clean且独立复核中；移动边界377PASS23SKIP。完整Flutter回归开始，尚未构建/安装。实际证据入口仍为该工作树 docs/verification/artifacts/2026-10-16/interactive-cache-startup/progress.md；本任务最终Debug计划0.4.49+2218，安装保数据，无生产发布。
+ 
+-2026-10-16T22:57:39.1246897+08:00 Task1/Task2 independently reviewed; final-review fixes2f6b625c plus pinned-window continuation c29597e0 (78focusedPASS) await scoped re-review. Next: frozen full Flutter/analyze, then conventional rebuilt/signed Debug2218 install-r. Full runs2/3 interrupted, no passing full gate or new APK yet. Root owns V mapping while scoped tests complete.
++2026-10-16T22:47:42.1817835+08:00 交互缓存任务继续在独立工作树 interactive-cache-startup：源码2f6b625c已修复本地队列竞态、首屏40条解密结果合并、按钮缓存刷新及过期租约回调；专项63PASS/分析clean。完整门禁发现夹具与滚动适配后已修正，但最终复核仍发现固定滚动窗口的解密结果未同步，正在原范围内补齐。之前full-2(6025PASS9SKIP23error+1挂起)和full-3均不是通过门禁；最终源码须复核通过后再全量。尚未构建/安装任何2218新包，模拟器仍2216。证据/后续操作以工作树 progress.md 为准，V盘映射由本任务持有。
++## 2026-10-16 23:21+08 最新恢复入口：交付完成
+ 
+-## 最终交付（2026-10-16 23:19+08）
++0.4.49+2218 Debug已保数据install-r至emulator-5556，UID10090/firstInstall2026-09-26 04:06:20保持，设备APK SHA与验证成品一致，启动ok及当前进程fatal0，消息列表可见。产品源码c29597e0（interactive-cache-startup工作树），最终6075PASS9SKIP0FAIL/fullanalyze0，独立SPEC→QUALITY通过；固定75b31签名、常规重建、语义/资产/清单检查全部通过。APK SHA e5de14ae36afbdf8f465ac5411ba8d76b39cc3a762c8a56d88e2f7e8b86115a6，125983066字节。
+ 
+-产品源码c29597e0，Debug0.4.49+2218，固定75b31签名x86_64成品SHA e5de14ae36afbdf8f465ac5411ba8d76b39cc3a762c8a56d88e2f7e8b86115a6，125983066字节。full-4完整6075PASS9SKIP0FAIL/fullanalyze0，独立SPEC→QUALITY通过；Apktool常规重建及代码/资产/清单一致性、验签、对齐均通过。安装2216→2218，UID10090/首次安装时间保留，设备APK哈希一致，主入口启动ok；当前进程fatal0，截图确认原消息列表可见。
+-
+-| 验收 | 实现/自动证据 | 人工缺口 |
+-|---|---|---|
+-| S1缓存首页/导航 | Task2及fix1专项与全量通过 | 用户冷启动真实体验 |
+-| S2气泡/滚动/恢复 | Task1、最终固定窗口78项及全量通过 | 用户当前房间体验 |
+-| S3持久文字排队 | 队列开启/验证竞争、派发前readiness、同txid回归通过 | 用户实际发送与收件端 |
+-| S4隔离/取消 | 账号/owner/generation/销毁/撤回边界与全量通过 | 实体机/完整设备矩阵 |
+-| D1重建安装 | 成品/安装收据/被动运行通过 | 正式发布未授权；无iOS包 |
+-
+-构建7分2.772秒、最终全量12分12.880秒、安装启动21.059秒；前序返工及计时见报告/progress。必要本地安全检查仍可能显示初始加载；早期队列仅文字。HTML全量6项既有基线失败、verify缺.env未启动、P3诊断归因延期均在报告说明。无运行命令或自有映射/服务；保留工作树及APK，不合并、不发布、不清数据。
++[完整交付报告](C:/Users/Administrator/.codex/worktrees/interactive-cache-startup/StarChat/docs/verification/2026-10-16-interactive-cache-startup.md)。下一步由用户在模拟器冷启、切页入房、滚动及恢复期间发送文字验收；未发送真人消息、未发布、无iOS构建。必要本地安全检查仍保留。源码/成品保持，自己创建的V/W映射、浏览器服务及构建测试进程均已结束，不需重复构建或清数据。
+ 
+ ## 2026-10-17 用户验收反馈：S1冷启动加载感未达标
+ 
