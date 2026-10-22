@@ -2,7 +2,7 @@
 
 状态：Current（维护入口），更新于 2026-10-23；具体版本、生产状态需现场检查。
 
-本指南补充[根 AGENTS.md](../../AGENTS.md)，不覆盖它及下级规则，也不自动授予发布、财务或受保护变更权限。[项目梳理](../reports/2026-10-22-project-map.md)解释模块与调用链；[最新验证](../verification/2026-10-23-project-maintenance-completion.md)记录本轮结果，前两轮失败仍保留在各自历史报告中。
+本指南补充[根 AGENTS.md](../../AGENTS.md)，不覆盖它及下级规则，也不自动授予发布、财务或受保护变更权限。[合并后 CodeGraph 梳理](../reports/2026-10-23-codegraph-merged.md)解释当前模块与调用关系；[最新验证](../verification/2026-10-23-project-maintenance-completion.md)记录本轮结果，前两轮失败仍保留在各自历史报告中。
 
 ## 1. 项目和文档入口
 
@@ -29,7 +29,7 @@ StarChat/畅聊是 Flutter + Matrix 加密通信、FastAPI 业务服务、Python
 | `infra/`、`docker-compose*.yml`、`scripts/` | 运行配置、渲染、验证和发布 |
 | `tests/`、`apps/mobile_flutter/test/`、`frontend/tests/` | Python/PowerShell、Dart、Node 测试 |
 
-存在 `.codegraph/` 时先用 CodeGraph 定位代码，再按需读源文件；无索引时跳过，不自动建索引。2026-10-22 第二轮经用户明确授权已完成 main 索引：2,602 files / 53,036 nodes / 218,898 edges，状态 complete。详见[实际图分析补充](../reports/2026-10-22-codegraph-supplement.md)。入口示例：
+存在 `.codegraph/` 时先用 CodeGraph 定位代码，再按需读源文件；无索引时跳过，不自动建索引。2026-10-23 合并后的 main 索引为 2,731 files / 56,393 nodes / 234,850 edges，状态 complete、待处理项 0；本轮已执行 10 次真实查询。详见[当前图分析](../reports/2026-10-23-codegraph-merged.md)。入口示例：
 
 ```powershell
 codegraph status --json
@@ -157,7 +157,9 @@ py -3.12 scripts/export_openapi.py --check
 npm --prefix frontend test
 ```
 
-第一轮实际结果如下；[第二轮隔离环境复核](../verification/2026-10-22-project-maintenance-followup.md)保留完整结果，不覆盖首次失败：
+最新门禁已通过：Infra 915 pass/20 skip，Getui 51 pass，Bot 9 pass，业务 4,055 pass/127 skip，移动边界 399 pass/1 skip，前端 570 pass；合并后定向 235 pass。其他专用 PostgreSQL 和 Ruby 条件跳过、依赖弃用警告、AST stdin 补验及 Flutter 证据复用边界见[最新验证](../verification/2026-10-23-project-maintenance-completion.md)。本地合并提交 `b729766f`，没有推送。
+
+以下表格仅为第一轮历史结果；[第二轮隔离环境复核](../verification/2026-10-22-project-maintenance-followup.md)保留后续复现，不覆盖首次失败：
 
 | 检查 | 结果/限制 |
 | --- | --- |

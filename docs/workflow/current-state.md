@@ -2,7 +2,7 @@
 
 ## 2026-10-23 项目维护与资料保全
 
-候选源码为 `codex/interactive-cache-startup-20261016` / `8535e07f`。主树独有资料及双方冲突的保全入口见[整合索引](../archive/2026-10-23-maintenance/README.md)。本轮仅做已授权的诊断契约与门禁维护；Android2233/iOS2215既有工件与发布状态保留。最终门禁和合并状态以[本轮记录](../verification/2026-10-23-project-maintenance-completion.md)为准。
+维护已完成：来源 `codex/interactive-cache-startup-20261016@8535e07f` 经最小修复与完整门禁后，合并为 `main@b729766f`，未推送。主树独有资料及双方冲突保全于[整合索引](../archive/2026-10-23-maintenance/README.md)。Android2233/iOS2215既有工件与发布状态保留；9 个 worktree 已归档清理，测试实例及本任务容器残留已收尾。[本轮记录](../verification/2026-10-23-project-maintenance-completion.md) · [合并后 CodeGraph](../reports/2026-10-23-codegraph-merged.md)。条件跳过及未执行的平台验收继续按报告列明，不重复本次合并。
 
 ## Android 0.4.64 (2233) 正式更新已发布 · 2026-10-22
 

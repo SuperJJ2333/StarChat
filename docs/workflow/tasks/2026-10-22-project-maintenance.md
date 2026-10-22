@@ -3,10 +3,10 @@
 ## 当前恢复入口 · 2026-10-23 续办
 
 - 用户已要求完成剩余事项，并批准诊断契约的最小修复、15 个列明文档冲突按双边保全方案整合、本机 Docker 引擎重启。
-- 工作树：`C:/Users/Administrator/.codex/worktrees/maintenance-completion/StarChat`；分支 `codex/maintenance-completion-20261023`，起点 `8535e07f`。主树原有 78 份文件已逐字节归档并保全于 `2e6cbcef`；最小修复提交 `c1ca0636`，合并待完整门禁完成。
-- 已完成：修复后相关 222 项、前端全量 570 项、独立 PostgreSQL 18.3 Worker 并发 14 项通过；Docker 恢复，旧测试容器已删除并独立确认不存在。15 份冲突修订及哈希纳入[资料整合索引](../../archive/2026-10-23-maintenance/README.md)。
+- 主工作树已合并至 `b729766f`；来源 `8535e07f`、主树 78 份文件保全提交 `2e6cbcef`、最小修复 `c1ca0636`、Redis 测试夹具修复 `fb6537aa` 均保留历史。独立维护分支 `codex/maintenance-completion-20261023` 仍在 C 盘工作树，因含未推送提交而保留。
+- 已完成：完整 verify 退出 0，业务 4,055 pass、移动边界 399 pass，前端 570 pass，合并后定向 235 pass；PG 18.3/16.9 Worker 专项各 14 pass。15 份冲突修订及哈希纳入[资料整合索引](../../archive/2026-10-23-maintenance/README.md)。Docker、临时容器/匿名卷及本任务 PostgreSQL 实例已收尾，9 个工作树归档复核通过。
 - 文件所有权及逐项证据见[本任务计划](../../superpowers/plans/2026-10-22-project-maintenance.md)和[本轮验证](../../verification/2026-10-23-project-maintenance-completion.md)。主 Agent 实施，使用独立审查 Agent；没有生产发布或改变资金逻辑。
-- 当前阶段：完整候选门禁运行中；规格与质量安全审查、主树保全提交已完成。通过后合并，关闭本任务 PostgreSQL 实例，刷新主树 CodeGraph 并查询。
+- 当前阶段：维护完成。合并后 CodeGraph complete（2,731 files / 56,393 nodes / 234,850 edges），已按入口/风险执行 10 次查询，见[新图报告](../../reports/2026-10-23-codegraph-merged.md)。其他专用 PostgreSQL/Ruby 条件跳过和平台验收限制继续保留，不当作通过；无需重做本次合并，没有远程发布。
 - 时间：新轮第一份可核实环境探测始于 2026-10-23T04:57:06+08:00；各命令精确起止及退出码存于主树 `docs/verification/artifacts/2026-10-23/project-maintenance-completion/`。旧失败证据保留，不改为通过。
 
 ## 第二轮恢复入口（历史）
