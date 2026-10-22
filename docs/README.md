@@ -5,6 +5,7 @@
 | 要做的工作 | 从这里开始 |
 | --- | --- |
 | 恢复当前任务 | [当前状态](workflow/current-state.md)、[任务模板](workflow/task-template.md)、[根规则](../AGENTS.md) |
+| Agent 与仓库维护 | [维护者指南](runbooks/agent-maintenance.md)、[2026-10-22 项目梳理](reports/2026-10-22-project-map.md)、[本次 Git/worktree 审计](verification/2026-10-22-project-maintenance.md) |
 | 开发、修复、移动交付 | [交付总流程](runbooks/mobile-delivery-workflow.md)、[批准计划](superpowers/plans/) |
 | Android/iOS构建 | [构建与Actions](runbooks/mobile-release.md)、[Android固定打包](runbooks/android-apk-rebuild.md) |
 | 官网、安装包、更新弹窗 | [轻量发布唯一入口](runbooks/release-metadata.md)、[传输与备份](runbooks/app-release-deployment.md) |

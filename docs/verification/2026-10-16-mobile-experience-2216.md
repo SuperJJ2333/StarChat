@@ -1,0 +1,76 @@
+# 畅聊 0.4.47（2216）五项体验修复与验证
+
+状态：五项客户端实现与独立审查完成；Android Debug 已安装并通过原生及实际媒体操作验证，iOS 无签名包已构建。匹配回签、真机通知及性能分位数仍待验收。本页不是发布公告。线上 Android/iOS 于 2026-10-16 05:27+08 只读确认仍为 0.4.46（2215），最低版本均为 3。
+
+## 交付范围
+
+用户批准按五项方案实施，并允许模拟器安装 Debug。复用工作树 `im-reliability`，分支 `codex/mobile-experience-2216-20261016`，基线 `92846f60c6097c211fff012bac513a97903fe687`。所有共享实现保留 Matrix 加密、账户隔离、认证/安装检查、固定事务 ID 及已有发送队列；没有修改财务状态或生产凭据。
+
+| 问题 / 平台 / 优先级 | 已实施的关键路径 | 验证与边界 |
+| --- | --- | --- |
+| 1 冷启动 / Android+iOS / P1 | 安全条件满足时先绘制可滚动的本地会话快照；缓存跨启动资源连接阶段衔接；可选用户资料加载后移。点击会话、搜索、菜单等操作继续受就绪状态控制；身份变化立即撤回旧快照。 | 初始 164 项相关测试；新增缓存衔接 7 项及相邻 82 项通过，不能相加为独立总数。Debug 单次启动诊断 1102 ms；会话本地时间线 211 ms、打开总计 248 ms，不能声称完全移除安全初始化或达到发行版 P95。 |
+| 2 历史消息 / Android+iOS / P1 | 优先展示本地最近消息（真实 SDK 首次读取 30 条，初始 UI 上限 40 条）；复用有界分页及最多 200 条视图模型；加载、空列表、读取失败可区分，失败可重试；滚动锚点与旧租约失效保持。 | 延迟加载、读取失败后点击重试并显示缓存、连续分页/账号切换由专项覆盖。真实 SQLCipher 历史、精确 200 条窗口边界移动、可见事件像素锚点、旧租约撤销与重进已通过 Android 原生测试。 |
+| 3 图片/GIF/超级表情 / Android+iOS / P1 | 即时 SVG/Unicode 兜底，超级表情先静态、点击播放；GIF 使用独立版本键缓存静态首帧；加密磁盘预览、4 路读队列和全局串行解码；账号代际检查。 | 初始 97 项通过；审查发现的动画内存命中绕过首帧问题已修复，31 项相关通过。阅后即焚不写持久预览。实际重启重进保留预览；断网实验触发模拟器 shell 无响应，恢复后未重试，离线设备验收仍缺失。 |
+| 4 多图/视频发送 / Android+iOS / P1 | 选中媒体立即进入消息流，复用相册缩略图/视频封面并显示阶段和进度；移除房间内待发附件条。稳定事务 ID 联结持久任务、重试/取消/ACK；加密预览上限 512 KiB，缓存失败不阻断发送；页面退出不丢已接受任务，账号失效阻止晚到结果。 | 初始 96 项通过，审查修复后 75/46 项相关回归通过（不可直接累加）。覆盖未完成原文件解析的取消、其他附件继续发送、失败行操作、晚到预览、重开恢复。实际相册发送 9 JPEG + GIF + MP4，冷重启后 11 条均 sent/服务端 ACK，11 个唯一消息 ID/事务 ID。 |
+| 5 按需权限 / iOS为主、共享Android流程 / P1 | 通知初始化不自动请求；在前台、合适页面、无通话时单飞申请，仅完成原生请求后记录；延期仍可再触发。检测完整通知状态并在设置返回时刷新。语音请求麦克风；视频请求麦克风+摄像头，拒绝后提供降级/设置路径。 | 24 项专项及 11 文件分析通过；iOS 构建验证真实权限实现和用途声明。真实系统授权弹窗、生产 APNs、锁屏/专注/静音及旧包升级仍需匹配签名后的 iPhone。 |
+
+## 共享门禁
+
+- 最终运行时代码已完成逐任务规格符合性审查、质量/安全审查及整分支审查。iOS 原生持久预览覆盖缺口已用真实存储目标补齐到 CI，测试契约 RED→GREEN 3 项通过。
+- 全量 Flutter 分析：0 问题；移动边界：377 通过、23 跳过；UI 契约：34 组件 / 540 页面通过；改变的前端交互测试 12 项通过并做了浏览器实测。
+- 修正 Windows 原生运行库环境后的全量：6035 通过、9 跳过、2 错误，退出码 1，耗时 769316 ms。错误分别为媒体测试夹具未关闭共享索引，以及钱包测试固定 2026-10-15 日期已经过期。两处及偶发 SDK 测试时钟边界已在测试提交 `a3dde0e6` 修正；最终三个文件 18 项通过、分析 0 问题，规格→质量审查通过。运行时代码与全量/CI 输入一致，复用未改变用例证据，不把原全量命令的退出码改写为 0。
+- `scripts/verify.ps1` 已执行仓库/部署规则与模板门禁，随后因本工作树缺少 `.env` 停止。没有为测试导入生产秘密，不宣称整仓门禁通过。
+- 前端更大范围 562/567：5 项旧发布页面期望仍固定 2213/2205；已记录基线同源文件 SHA，未修改不相关发布测试来制造通过。
+- 初次全量因 Windows FFI 环境缺库失败；随后从最近成功门禁找到并校验 Olm 3.2.15 与 SQLCipher 4.10.0 的原始 DLL 和 SHA，使用进程内 PATH 与自有短路径重新运行。运行手册补充此预检，避免重复长门禁。
+
+完整命令、退出码、源码和依赖身份见 [证据目录](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/)。[任务时间账本](../workflow/tasks/2026-10-16-mobile-experience-2216.md)记录阶段、返工及下一步。
+
+## 平台产物与实测
+
+Android：实际 main Debug 125,966,682 字节，SHA256 `ae7e9eabd7bd1fb56eafd1e5907c279fea2232e688654656aa7791a1f5d9d619`，源码 `a3dde0e6`。已安装 2216 并保持 UID 10090 和原安装日期。单成员加密房间的 11 条合成媒体发送、重启回读及视频播放通过；视频/GIF 发送指令后约 1 秒的采样截图已经显示预览和上传状态，不是精确首帧或 P95。专用原生聚合 5 个注册用例通过（驱动 exit 0）；原测试混用主机时钟的失败记录保留。断网实验触发模拟器 shell 无响应，已重启该测试实例并恢复 wifi/data 原设置、核验原安装身份，尚未验收离线场景。仅 API 28 / x86_64 模拟器可用；采用固定证书、常规 DEX/资源/清单重建并只使用 `adb install -r`，禁止卸载、清数据、降级。Debug 模拟器的样本不能代表 ARM64 发行版、主流 ROM、功耗或 P95/P99。
+
+Android 原生证据：修订源码 `27b00b9f` 的诊断 APK SHA256 `da3c1812838710be46df6f256b13eb05cec32c0d5948216b5eeebef014dc5833`；08:13:38–08:14:41+08 执行、driver 11.078 秒、退出 0 并收到 `allTestsPassed`。5 个注册用例覆盖原生文件保护、两种冷打开顺序、真实加密历史分页/锚点与旧租约撤销。结果 JSON 为可选报告数据 `null`，不冒充逐用例矩阵；驱动实现的成功分支及冻结入口共同证明聚合通过。08:15 已保数据恢复实际 main 包，再次读取 11 条唯一 ACK 消息；模拟器最终保留 main Debug。详见[实际操作证据](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/main-ui-runtime.md)和[原生测试修正与结果](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/android-native-harness-fix.md)。
+
+iOS：CI `38817420484`、源码 `79e0843680cd15fa5e6d6669ba0efb13a5830372` 的 arm64 device job 成功。未签名 IPA 34,981,074 字节，SHA256 `be466573ed7716d2444bf1b8f69ce00fc46fca77c85986eca59fb2a2cd7e4da9`。本地核验 46 framework、29 生产插件、480 payload 文件、SQLCipher 原生导出、权限/后台模式、版本和归档完整性。
+
+同轮原生模拟器 4 个目标、21 项通过；新增 outbox 目标 2 项均在原生受保护目录检查失败，尚未创建 scope 或打开数据库，job 退出失败。历史同版 iOS 26.2/23C54 存在 Data Protection 属性无法读回的证据，但本次通用异常没有内部原因，不能直接归因为同一问题。已于 07:10+08 派发现有独立能力探针工作流 `38821916056`（同一源码），无产品改动、无重复 device IPA 构建；探针结果 4 PASS / 4 SKIP / 0 FAIL，独立证明本次新 iOS 26.2 模拟器无法读回 Data Protection 属性，且产品保持拒绝不安全存储与原内容保护；这支持平台能力限制判断，但不能反推先前通用异常的确切内部分支，也不能将原 2 ERROR 改记通过。真实 iPhone 的两种 outbox 打开顺序仍待验。[独立诊断](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/ios-native-outbox-triage.md)说明现有证据和严格判定条件。
+
+## 签名、回退与未覆盖项
+
+用户明确要求沿用服务器原 APNs 身份：Team `HY9Q7Q35S5`，Bundle/topic `com.liuhetong.liuhetongMobile`，`aps-environment=production`。源码一致；生产 Sygnal 只读检查运行、零重启、配置匹配。未修改服务器凭据。
+
+当前公开 IPA 的 Team `7XL5R8V6RC` 与上述身份不同。必须取得匹配原身份的最终分发签名，再验证真实 APNs 到达及不卸载覆盖安装后的登录、Keychain 和聊天数据。仅改用途声明、源码 entitlements 或服务器 topic 不能证明推送可用。详见[签名交接要求](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/ios-signing-requirements.txt)。
+
+本任务没有发布 2216 或调整更新弹窗。回退优先回退对应客户端改动、递增 build 重建并保留兼容数据；不通过降级、卸载、清库恢复。预览缓存属于可丢弃派生数据，版本键隔离；发送任务、事务 ID 和加密源不能作为普通缓存清除。
+
+另记录现有 P2：超长相册名称在选择菜单溢出，见截图 08，未扩展本次五项改动范围。
+
+仍需：匹配签名后的真实 iPhone；保数据跨签名升级；Android 13+ 通知权限、主流厂商 ROM/省电/锁屏；弱网及独立接收端端到端样本；Profile/Release 启动、帧率、内存及功耗分位数。当前测试不能替代这些验收。
+
+## 实施取舍与误判代价
+
+以下对应任务账本中按时间排列的六项 Ruling，保留决策依据供复查。
+
+1. 沿用用户已批准的五项设计，直接实施并拆为可独立验收的任务；若理解范围有误，会产生额外功能变更，因此按批准规格逐项独审。
+2. 采用仓库规定的 PowerShell 和验证目录，并串行交接源码、独立只读审查；若路径或所有权判断错误，可能覆盖其他任务，因此限定文件清单并记录 SHA。
+3. 绕开 Flutter drive 默认可能卸载应用的安装/结束流程，使用 `adb install -r` 和现有 VM driver；若自有执行器行为有误，可能漏掉原生验收，因此分别核验安装身份、driver 退出码及结果，禁止卸载/清库后备路径。
+4. 按用户最新要求固定服务器原 APNs Team/Bundle；如果签名方无法提供该身份，将阻断匹配签名、生产推送和跨 Team 升级验收，不能用另一身份代替并宣布通知可用。
+5. 扩展启动任务到 AppHome 的缓存衔接，避免安全预览在资源加载期间重新消失；误判可能造成启动或撤销会话回归，以延迟依赖/账户变化测试和独立审查约束。
+6. 修正过时的离线失败文案测试，并增加实际点击重试后出现缓存消息的断言；Windows 原生环境不完整时重跑完整门禁，纯测试夹具修改后只补受影响用例。误判会漏掉回归，因此保留每次失败、精确输入身份和源代码闭包一致证据，不追改失败命令的状态。
+
+## 可交付文件与阶段时间
+
+- [Android 模拟器 x86_64 Debug APK](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/android-main-debug/final.apk)，实际安装包；不适用于直接分发给 ARM64 手机。
+- [iOS arm64 待签名 IPA](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/ios-unsigned-79e08436/ChatFlow-0.4.47-build2216-unsigned.ipa)；须遵守前述原 APNs 身份要求。
+- [最终运行时输入与成品 SHA](C:/Users/Administrator/.codex/worktrees/im-reliability/StarChat/docs/verification/artifacts/2026-10-16/mobile-experience-2216/final-runtime-and-artifacts.json)。iOS79e08436、Android主程序a3dde0e6与原生测试27b00b9f之间，lib/android/ios/assets/third_party/pubspec及锁文件无运行时差异，后两提交仅测试修正。
+
+| 阶段 | 可核实时间（+08） | 结果 |
+| --- | --- | --- |
+| 五项实现与任务级审查 | 03:06 开始，06:16 冻结 | 逐任务 RED/GREEN 与独审；精确主动工时未知 |
+| 修正环境后共享全量 | 769316 ms，06:58前结束 | 6035PASS/2fixtureERROR/9SKIP，修复后18专项PASS |
+| 实际 Android main 构建 | 07:22:07–07:27:44 | 固定签名重建及验包通过 |
+| 修订 Android native 构建 | 08:05:30–08:12:43 | 原生测试 APK 通过验包 |
+| 修订原生执行 | 08:13:38–08:14:41，driver11.078s | 聚合通过 |
+| 最终主程序恢复 | 08:15:27–08:15:38 | install-r、SHA/UID/安装日期及11ACK复核 |
+
+工具构建、测试、等待与返工交错发生，不累加这些区间为主动工时。Windows环境纠正、测试夹具修正、主机/设备测试隔离及模拟器离线失联均已留痕。独立 iOS CI 的运行标识和结果保留在证据目录，不将模拟器成功等同于真机通知成功。

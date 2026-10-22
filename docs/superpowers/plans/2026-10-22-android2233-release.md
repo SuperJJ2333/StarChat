@@ -1,0 +1,7 @@
+# Android 0.4.64 (2233) formal update publication
+
+User explicitly authorized 2026-10-22: 发布正式更新弹窗. Root owns this release task/plan/report, artifacts/2026-10-22/android2233-release and later exact frontend/download.html and frontend/downloads/android-release.json backfill. No mobile runtime edits. Source HEAD 6cbc09d5; accepted test runtime fb15a9a8. Native real-room scroll feedback remains unobserved; no inferred user acceptance.
+
+Execute established Android2232 publication plan with fresh baselines and version2233: source ARM64 build, conventional rebuild, fixed signer, gates; snapshot HK/SG settings/static/runtime; prepare immutable artifact-bound package; specification then independent quality review; upload/checksum, exact CDN route, alias, static and transactional SettingService audits; public TLS HEAD/small metadata, platform preservation and cleanup. Preserve current minimum and all iOS state. No service deployment. No repeated full Flutter gate if exact inputs match 6378 PASS /9 SKIP /0 FAIL evidence.
+
+Acceptance: R1 formal package verified; R2 current baseline and ordered review; R3 audited optional popup publication; R4 platform/public/rollback checks; R5 source/doc sync and cleanup. Status: preparation/build running; no production mutation. Next: collect current baseline, complete build and reviews.
