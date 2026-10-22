@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 from redis import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 
 def test_dedicated_atomic_admission_exists():
@@ -40,7 +41,7 @@ def redis_client():
                 try:
                     if client.ping():
                         break
-                except RedisConnectionError:
+                except (RedisConnectionError, RedisTimeoutError):
                     pass
                 time.sleep(.02)
             else:
@@ -50,6 +51,27 @@ def redis_client():
             client.close()
             process.terminate()
             process.wait(timeout=5)
+
+
+def test_isolated_redis_startup_retries_a_connect_timeout(monkeypatch):
+    original_ping = Redis.ping
+    attempts = 0
+
+    def delayed_ping(client, *args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RedisTimeoutError('simulated cold-start connection timeout')
+        return original_ping(client, *args, **kwargs)
+
+    monkeypatch.setattr(Redis, 'ping', delayed_ping)
+    startup = redis_client.__wrapped__()
+    try:
+        client = next(startup)
+        assert client.ping()
+        assert attempts >= 2
+    finally:
+        startup.close()
 
 
 @pytest.fixture
