@@ -130,7 +130,12 @@ OperationWire = Literal[
 ]
 
 PerformanceStageWire = Literal[
-    'user_action', 'identity_lookup_done', 'local_room_lookup_done', 'route_enter', 'route_push_started',
+    'association_preparation_started', 'association_preparation_done',
+    'outbox_preparation_started', 'outbox_preparation_done',
+    'room_preparation_started', 'room_preparation_done',
+    'room_display_cache_hit', 'room_display_cache_miss',
+    'local_timeline_sql_started', 'local_timeline_sql_done',
+    'user_action', 'identity_lookup_started', 'identity_lookup_done', 'local_room_lookup_done', 'route_enter', 'route_push_started',
     'first_frame_rendered', 'room_attach_started', 'room_attach_done', 'timeline_local_started', 'local_timeline_ready', 'remote_sync_ready', 'content_ready',
     'cache_load_started', 'cache_load_done', 'remote_refresh_started', 'remote_refresh_done', 'composer_submit',
     'outbox_persist', 'send_admission', 'matrix_send_start', 'matrix_send_finish', 'ack',

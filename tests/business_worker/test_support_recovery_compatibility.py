@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 
 def load_probe():
-    path=Path(__file__).resolve().parents[2]/'docs/verification/artifacts/2026-09-30/support-worker-compatibility/worker_probe.py'
+    path=Path(__file__).resolve().parents[2]/'tests/fixtures/support_worker_probe.py'
     spec=importlib.util.spec_from_file_location('support_worker_probe',path)
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
