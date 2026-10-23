@@ -29,7 +29,7 @@ StarChat/畅聊是 Flutter + Matrix 加密通信、FastAPI 业务服务、Python
 | `infra/`、`docker-compose*.yml`、`scripts/` | 运行配置、渲染、验证和发布 |
 | `tests/`、`apps/mobile_flutter/test/`、`frontend/tests/` | Python/PowerShell、Dart、Node 测试 |
 
-存在 `.codegraph/` 时先用 CodeGraph 定位代码，再按需读源文件；无索引时跳过，不自动建索引。2026-10-23 合并后的 main 索引为 2,731 files / 56,393 nodes / 234,850 edges，状态 complete、待处理项 0；本轮已执行 10 次真实查询。详见[当前图分析](../reports/2026-10-23-codegraph-merged.md)。入口示例：
+存在 `.codegraph/` 时先用 CodeGraph 定位代码，再按需读源文件；无索引时跳过，不自动建索引。[架构图分析](../reports/2026-10-23-codegraph-merged.md)保留合并后的 10 次真实查询。环境维护合入后 main 增量索引为 2,734 files / 56,430 nodes / 234,921 edges，状态 complete、待处理项 0；新增入口真实查询及身份见[环境维护报告](../verification/2026-10-23-maintenance-environment.md)。入口示例：
 
 ```powershell
 codegraph status --json
@@ -78,6 +78,8 @@ pwsh -NoProfile -File scripts/verify.ps1 -Python $python -PreflightOnly
 `verify.ps1` 现在直接调用同一个 venv 解释器，验证版本、系统包隔离、锁定依赖、pip check、UTF-8 stdin、业务配置及 `app`/`tests` 导入归属。不要设置 `PYTHONOPTIMIZE` 或使用 `-O`；入口会拒绝优化模式，避免关闭断言改变测试语义。无需激活 venv，也不定义 `py`/`python` 包装函数。完整门禁为每次运行建立唯一的 `docs/verification/artifacts/<日期>/verify-.../pytest`，按正斜杠及引号设置 PYTEST_ADDOPTS；结束恢复调用者的 PATH、PYTHONPATH、PYTHONHOME、PYTHONNOUSERSITE 和 PYTEST_ADDOPTS。完整门禁不继承调用者的测试筛选参数。
 
 短信配置必须符合既有校验 `BUSINESS_SMS_ALIYUN_CODE_VALID_MINUTES=15`。只在独立本地工作树从 `.env.example` 创建 `.env`；已有本地配置须由维护者核对，脚本不覆盖、不自动纠正、不读取生产秘密。临时进程覆盖也须记录，不能将其视为源配置已修复。`-PreflightOnly` 仅表示前置检查通过，不表示业务测试通过。新环境/锁/入口的实测和限制见[本轮环境维护](../verification/2026-10-23-maintenance-environment.md)。
+
+本轮实际 venv 位于维护工作树 `.venv312`；新工作区先执行 bootstrap，或用 `-Python` 指向已核对的绝对解释器路径。主树合入后的前置检查已用该环境和显式短信进程值 15 通过，不表示主树原 `.env` 已被改写。
 
 ## 4. 启动与构建命令
 

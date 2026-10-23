@@ -2,7 +2,7 @@
 
 ## 2026-10-23 开发环境与维护门禁固定
 
-维护工具验证完成：新建 Python 3.12 锁定环境、真实 stdin/配置前置检查、Windows 测试临时目录及[模块条件门禁](../testing/maintenance-gates.md)。7 项入口测试、最终 infra 919 项、独立 PG 专项 39+1 项通过，完整门禁退出 0，规格与质量/安全审查通过；待合入和普通推送。九个历史 worktree 归档已有工作树之外的受限哈希一致副本，原件保留，任务测试容器/卷已清理。Android2233/iOS2215 身份不变。恢复时先读[任务](tasks/2026-10-23-maintenance-environment.md)及[验证报告](../verification/2026-10-23-maintenance-environment.md)，勿重复已完成的分支整合或删除归档承载树。
+维护工具 `da86cf77` 已快进合入并普通推送 main：独立 Python 3.12、真实 stdin/配置检查、安全临时目录及[模块条件门禁](../testing/maintenance-gates.md)。7 项入口测试、最终 infra 919 项、独立 PG 专项 39+1 项通过，完整门禁退出 0，规格与质量/安全审查通过；主树 CodeGraph 增量索引 complete。九个历史 worktree 归档已有工作树之外的受限哈希一致副本，原件保留，任务测试容器/卷已清理。Android2233/iOS2215 身份不变。推送触发的三项 CI 仍待结果，不视为新发布验收；恢复时先读[任务](tasks/2026-10-23-maintenance-environment.md)及[验证报告](../verification/2026-10-23-maintenance-environment.md)，勿重复合入或删除归档承载树。
 
 ## 2026-10-23 项目维护与资料保全
 

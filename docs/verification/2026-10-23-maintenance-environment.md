@@ -1,6 +1,6 @@
 # 可复现环境、模块门禁与归档维护
 
-状态：环境、门禁、审查与归档保管验证完成，待合入及普通远程同步。基线 `22706244b287667ec8c39d354f2f3dc94ada7d6b`；[计划](../superpowers/plans/2026-10-23-maintenance-environment.md) · [任务](../workflow/tasks/2026-10-23-maintenance-environment.md) · [模块矩阵](../testing/maintenance-gates.md)。
+状态：环境、门禁、审查、归档保管及普通远程同步完成。实现提交 `da86cf7732f20a90a80d237404c1f8287af2be15`，基线 `22706244b287667ec8c39d354f2f3dc94ada7d6b`；[计划](../superpowers/plans/2026-10-23-maintenance-environment.md) · [任务](../workflow/tasks/2026-10-23-maintenance-environment.md) · [模块矩阵](../testing/maintenance-gates.md)。远端推送触发的 CI 与下述条件/platform 缺口仍分别验收。
 
 ## 已完成的环境修复
 
@@ -27,10 +27,13 @@
 | 完整 verify | exit 0，末行 Verification: PASS；11:53:21.850 → 12:42:40.632 UTC+08，49m18.78s；full-verify.json/log |
 | 长门禁分组 | 初始 infra 921/20 skip、Getui 51、Bot 9、API/Worker 4,040/142 skip（2,766.71s）、移动边界 399/1 skip |
 | 长门禁后段 | UI 34 components/540 screens，API import、AST 288 文件、Alembic 单 head/offline SQL、OpenAPI、Compose 均通过 |
+| 合入后主树 preflight | exit 0；复用已验证 venv，进程短信值显式为 15，主树 `.env` 不变；main-preflight.json/log |
 
 新入口测试区分两种条件：`tests/infra/test_python_environment.py` 不要求开发环境已安装，适用于现有普通 CI；`tests/development/test_python_preflight.py` 由 verify 在前置环境检查后执行，要求完整锁定 venv。避免让现有使用全局 Python 的 CI 因开发环境正向集成测试而产生假失败。
 
 完整 verify 启动后，审查要求将三项依赖已安装 venv 的测试移至 development、增加独立执行步骤，并将安全条件改为显式分支、拒绝优化模式。最终入口及 infra 单独补验；不变的业务源码、生产/开发锁和业务测试命令复用同次长门禁证据，不称最终版脚本原样重复运行了全部流程。依赖固定到精确版本；本轮未建立包含构建工具链和 wheel 哈希的逐字节可复现安装。
+
+暂存检查另整理了新测试文件的尾空行/换行；final-reviewed-inputs.json 可重建整理前 SHA，确认 AST 完全一致，并记录最终身份，不将格式整理误记为重新执行测试。
 
 规格审查的两项 P2（优化模式绕过断言、示例未检查前置命令退出码）均已修复并复核关闭；随后独立质量/安全审查未发现 P0/P1/P2。最终输入核对确认业务/移动/前端/契约未改、主树 `.env` 与 Android 最终 APK 哈希保持。新增文档链接全部可解析；扫描 current-state 全部历史正文时另发现 19 处原有引用在此工作树未解析（含未复制的忽略工件和历史相对路径），均已与 HEAD 正文确认原有，保留清单于 all-doc-links-baseline-findings.json，本轮不改写历史资料。代码差异空白检查通过。
 
@@ -58,7 +61,13 @@
 
 独立只读审阅确认：仓库内 main 触发的 Actions 没有生产部署；iOS CI 可能使用配置的签名资料生成 CI 候选 IPA，但 App Store 上传禁用。Android 生产上传仅 tag/manual 触发。本次普通同步只推显式 main，不带 tags；未检查外部 webhook/托管集成。Android2233/iOS2215 发布身份、移动输入和静态发布元数据与原验收一致。
 
-完整门禁及规格、质量/安全审查已通过；本轮合入和普通推送待最终远程漂移复核。不强推、不改写历史，不发布生产。
+最终 fetch 无漂移，主树干净；本轮 14 文件实现提交 `da86cf77` 经 `git merge --ff-only` 合入 main，无冲突。显式普通推送 `refs/heads/main:refs/heads/main`（`--no-follow-tags`）成功，范围 `be207f0f..da86cf77` 共 281 提交（原 280 + 本轮 1）。最终扫描 3,018 新可达 blob，5 个合成测试命中与原审阅相同，无新命中。`git ls-remote` 与本地 SHA 相等，ahead/behind=0/0；本回执随后以文档提交正常同步。最终同步身份记录在本轮证据根的 git-sync-final.json。不强推、不改写历史，不发布生产。
+
+推送实际触发三项 CI；查询时均 in_progress：[android-ci](https://github.com/SuperJJ2333/StarChat/actions/runs/39902309671)、[iPhone 15 native compatibility](https://github.com/SuperJJ2333/StarChat/actions/runs/39902309606)、[iOS signed compatibility candidate](https://github.com/SuperJJ2333/StarChat/actions/runs/39902309601)。remote-ci-snapshot.json 保留该时点状态；本地完整门禁通过不等于远端平台 CI 已通过，也不等于新包发布。
+
+## CodeGraph 增量复核
+
+主树合入后执行 sync 并查状态：索引时间 2026-10-23 12:48:37.941 UTC+08，2,734 files / 56,430 nodes / 234,921 edges，complete、pendingRefs=0、文件待处理=0。真实 explore 返回 `main → check_environment → locked_requirements` 与两个权威锁的引用；原文在 codegraph-environment.md，状态在 codegraph-after-sync.json。跨进程测试不被该图自动识别为调用边，覆盖依据仍是实际 7 项测试。项目级动态分派与风险分析继续参考[架构图报告](../reports/2026-10-23-codegraph-merged.md)，不以本维护报告替代它。
 
 ## 本地资源
 
