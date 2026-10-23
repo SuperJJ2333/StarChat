@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-23 开发环境与维护门禁固定
+
+维护工具验证完成：新建 Python 3.12 锁定环境、真实 stdin/配置前置检查、Windows 测试临时目录及[模块条件门禁](../testing/maintenance-gates.md)。7 项入口测试、最终 infra 919 项、独立 PG 专项 39+1 项通过，完整门禁退出 0，规格与质量/安全审查通过；待合入和普通推送。九个历史 worktree 归档已有工作树之外的受限哈希一致副本，原件保留，任务测试容器/卷已清理。Android2233/iOS2215 身份不变。恢复时先读[任务](tasks/2026-10-23-maintenance-environment.md)及[验证报告](../verification/2026-10-23-maintenance-environment.md)，勿重复已完成的分支整合或删除归档承载树。
+
 ## 2026-10-23 项目维护与资料保全
 
 维护已完成：来源 `codex/interactive-cache-startup-20261016@8535e07f` 经最小修复与完整门禁后，合并为 `main@b729766f`，未推送。主树独有资料及双方冲突保全于[整合索引](../archive/2026-10-23-maintenance/README.md)。Android2233/iOS2215既有工件与发布状态保留；9 个 worktree 已归档清理，测试实例及本任务容器残留已收尾。[本轮记录](../verification/2026-10-23-project-maintenance-completion.md) · [合并后 CodeGraph](../reports/2026-10-23-codegraph-merged.md)。条件跳过及未执行的平台验收继续按报告列明，不重复本次合并。

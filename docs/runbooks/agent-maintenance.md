@@ -2,7 +2,7 @@
 
 状态：Current（维护入口），更新于 2026-10-23；具体版本、生产状态需现场检查。
 
-本指南补充[根 AGENTS.md](../../AGENTS.md)，不覆盖它及下级规则，也不自动授予发布、财务或受保护变更权限。[合并后 CodeGraph 梳理](../reports/2026-10-23-codegraph-merged.md)解释当前模块与调用关系；[最新验证](../verification/2026-10-23-project-maintenance-completion.md)记录本轮结果，前两轮失败仍保留在各自历史报告中。
+本指南补充[根 AGENTS.md](../../AGENTS.md)，不覆盖它及下级规则，也不自动授予发布、财务或受保护变更权限。[合并后 CodeGraph 梳理](../reports/2026-10-23-codegraph-merged.md)解释当前模块与调用关系；[环境与归档维护](../verification/2026-10-23-maintenance-environment.md)记录当前维护结果，[上一轮验证](../verification/2026-10-23-project-maintenance-completion.md)及更早失败记录保留。
 
 ## 1. 项目和文档入口
 
@@ -63,16 +63,21 @@ Set-Location -LiteralPath 'D:\pythonProject\outsource\StarChat'
 | Android | Android SDK、项目 Gradle wrapper、适配 JDK | 本机 JDK 17 路径可发现；TODO：实际构建前按当前 Gradle 校验匹配，不视为编译通过 |
 | iOS | macOS/Xcode、相应 CI 与签名资料 | TODO：Windows 无法执行原生 iOS 构建/签名，使用对应 macOS 门禁 |
 
-使用隔离 Python 3.12 环境。本次已在验证目录创建 venv，消除了外部 `tests` 包遮蔽。原始业务锁含 `uvloop==0.22.1`，在 Windows 安装失败，在固定镜像 Linux Python 3.12.11 中原样安装及 `pip check` 通过。不要把下面的 Windows 初始化理解为可以直接安装 Linux 锁：
+使用仓库统一入口创建独立 Python 3.12 环境。生产锁原样保留；开发安装清单从生产锁加 `scripts/requirements-dev.lock` 派生，Windows 只排除不支持该平台的 `uvloop`。其他平台保留 uvloop；不会用取消版本锁定的方式解决安装问题。
+
+Windows 的新环境安装已实测。TODO：Linux/macOS 的“生产锁 + 开发额外依赖”完整组合仍需在对应平台验证；已有 Linux 生产锁安装证据不能替代开发组合或原生 iOS 验收。
 
 ```powershell
-$venv = 'docs/verification/artifacts/<日期>/<任务>/py312' # 用尚不存在的任务路径替换
-py -3.12 -m venv $venv
-# Linux：原样安装 services/business-api/requirements.lock，然后 pip check。
-# Windows：先确认平台锁策略；本次仅在临时锁排除了 uvloop，未改生产锁。
+pwsh -NoProfile -File scripts/bootstrap-python.ps1
+# 默认 .venv312，已存在则拒绝覆盖；新环境可显式指定 -VenvPath。
+$python = (Resolve-Path -LiteralPath '.venv312/Scripts/python.exe').Path
+& $python scripts/python_environment.py check
+pwsh -NoProfile -File scripts/verify.ps1 -Python $python -PreflightOnly
 ```
 
-运行前检查构建依赖；新环境必须排除 Git 跟踪，不提交它。不要卸载或修改其他项目的全局包。`verify.ps1` 显式调用 `py -3.12` 和 `python`，仅激活 venv 不保证两者都命中目标解释器，须分别检查 `sys.executable`、`app.__file__` 和 `tests.__path__`。本次用临时 PowerShell wrapper 将两个命令路由到同一独立解释器，并只在进程内设置短信有效期 15 分钟；未改根 `.env` 或业务代码。具体脚本、锁 SHA 和日志见[第二轮验证](../verification/2026-10-22-project-maintenance-followup.md)。TODO：项目尚未提供经过统一维护的 Windows 平台锁/解释器入口，应在独立任务中决定，不在本轮顺带修复。
+`verify.ps1` 现在直接调用同一个 venv 解释器，验证版本、系统包隔离、锁定依赖、pip check、UTF-8 stdin、业务配置及 `app`/`tests` 导入归属。不要设置 `PYTHONOPTIMIZE` 或使用 `-O`；入口会拒绝优化模式，避免关闭断言改变测试语义。无需激活 venv，也不定义 `py`/`python` 包装函数。完整门禁为每次运行建立唯一的 `docs/verification/artifacts/<日期>/verify-.../pytest`，按正斜杠及引号设置 PYTEST_ADDOPTS；结束恢复调用者的 PATH、PYTHONPATH、PYTHONHOME、PYTHONNOUSERSITE 和 PYTEST_ADDOPTS。完整门禁不继承调用者的测试筛选参数。
+
+短信配置必须符合既有校验 `BUSINESS_SMS_ALIYUN_CODE_VALID_MINUTES=15`。只在独立本地工作树从 `.env.example` 创建 `.env`；已有本地配置须由维护者核对，脚本不覆盖、不自动纠正、不读取生产秘密。临时进程覆盖也须记录，不能将其视为源配置已修复。`-PreflightOnly` 仅表示前置检查通过，不表示业务测试通过。新环境/锁/入口的实测和限制见[本轮环境维护](../verification/2026-10-23-maintenance-environment.md)。
 
 ## 4. 启动与构建命令
 
@@ -106,7 +111,7 @@ TODO：仅在隔离本地配置与迁移/事件处理范围确认后执行。API
 ```powershell
 Push-Location -LiteralPath 'services/business-api'
 try {
-    py -3.12 -m uvicorn app.main:create_default_app --factory --host 127.0.0.1 --port 8082
+    & $python -m uvicorn app.main:create_default_app --factory --host 127.0.0.1 --port 8082
 } finally { Pop-Location }
 
 # 另一个 PowerShell 会话，从仓库根运行；默认 127.0.0.1:4173
@@ -134,30 +139,32 @@ iOS 按 [mobile-release](mobile-release.md) 和对应 `.github/workflows/ios-*.y
 
 ## 5. 测试、lint 和契约
 
-从仓库根执行，Python 服务的 `app` 包同名，按测试组隔离 `PYTHONPATH`：
+从仓库根执行。完整入口已包含以下 Python 检查；定向维护时按需选择对应组，不在输入不变时重复所有命令。Python 服务的 `app` 包同名，按组隔离 `PYTHONPATH`；真实 PostgreSQL 条件与临时目录设置见[模块门禁](../testing/maintenance-gates.md)。
 
 ```powershell
 pwsh -NoProfile -File scripts/verify.ps1
 
-$env:PYTHONPATH = 'services/business-api;services/business-worker/app;' + (Get-Location).Path
-py -3.12 -m pytest tests/business_api tests/business_worker -q
+$python = (Resolve-Path -LiteralPath '.venv312/Scripts/python.exe').Path
+$env:PYTHONPATH = @('services/business-api','services/business-worker/app',(Get-Location).Path) -join [IO.Path]::PathSeparator
+& $python -m pytest tests/business_api tests/business_worker -q
 
 $env:PYTHONPATH = 'services/getui-bridge'
-py -3.12 -m pytest tests/getui_bridge -q
+& $python -m pytest tests/getui_bridge -q
 
 $env:PYTHONPATH = 'services/matrix-bot'
-python -m pytest tests/matrix_bot -q
+& $python -m pytest tests/matrix_bot -q
 
-py -3.12 -m pytest tests/infra -q
-py -3.12 -m pytest tests/mobile -q
-py -3.12 scripts/verify_ui_contract.py
+$env:PYTHONPATH = @('services/business-api','services/business-worker/app',(Get-Location).Path) -join [IO.Path]::PathSeparator
+& $python -m pytest tests/infra -q
+& $python -m pytest tests/mobile -q
+& $python scripts/verify_ui_contract.py
 
-$env:PYTHONPATH = 'services/business-api;' + (Get-Location).Path
-py -3.12 scripts/export_openapi.py --check
+$env:PYTHONPATH = @('services/business-api',(Get-Location).Path) -join [IO.Path]::PathSeparator
+& $python scripts/export_openapi.py --check
 npm --prefix frontend test
 ```
 
-最新门禁已通过：Infra 915 pass/20 skip，Getui 51 pass，Bot 9 pass，业务 4,055 pass/127 skip，移动边界 399 pass/1 skip，前端 570 pass；合并后定向 235 pass。其他专用 PostgreSQL 和 Ruby 条件跳过、依赖弃用警告、AST stdin 补验及 Flutter 证据复用边界见[最新验证](../verification/2026-10-23-project-maintenance-completion.md)。本地合并提交 `b729766f`，没有推送。
+上一轮门禁通过：Infra 915 pass/20 skip，Getui 51 pass，Bot 9 pass，业务 4,055 pass/127 skip，移动边界 399 pass/1 skip，前端 570 pass；合并后定向 235 pass。其他专用 PostgreSQL 和 Ruby 条件跳过、依赖弃用警告、AST stdin 补验及 Flutter 证据复用边界见[上一轮验证](../verification/2026-10-23-project-maintenance-completion.md)。该轮本地合并为 `b729766f`，当时未推送；当前结果与同步状态以[环境维护报告](../verification/2026-10-23-maintenance-environment.md)为准。
 
 以下表格仅为第一轮历史结果；[第二轮隔离环境复核](../verification/2026-10-22-project-maintenance-followup.md)保留后续复现，不覆盖首次失败：
 
@@ -182,11 +189,13 @@ Flutter lint 用 `flutter analyze`；前端没有 `npm run lint`/`build` script�
 
 ## 6. 常见修改流程
 
-2026-10-23 续办状态见[最新维护验证](../verification/2026-10-23-project-maintenance-completion.md)。上文第二轮失败数字为历史基线；本轮修复了测试夹具、诊断枚举、未签名 CI 版本和旧发布断言，不能沿用历史失败推断当前结果。完整门禁以最新报告的真实退出码为准。
+2026-10-23 续办状态见[环境与归档维护](../verification/2026-10-23-maintenance-environment.md)。上文第二轮失败数字为历史基线；上一轮修复了测试夹具、诊断枚举、未签名 CI 版本和旧发布断言，不能沿用历史失败推断当前结果。完整门禁以最新报告的真实退出码为准。
 
 Windows 的 `PYTEST_ADDOPTS` 会按 shell 规则拆分：`--basetemp` 使用正斜杠路径（例如 `D:/.../docs/verification/artifacts/<日期>/<任务>/pytest`），否则反斜杠会丢失。只在本任务的隔离工作树从 `.env.example` 创建测试副本，结束时验证哈希后清理；不要覆盖原主树 `.env`。
 
-自定义 PowerShell `py`/`python` 包装函数还必须转发管道 stdin；不能仅检查参数调用。`verify.ps1` 的 AST 阶段将 here-string 传给 `python -`，包装器丢失输入时可能空执行并退出 0。本轮已用同一检查直连解释器，得到 288 文件 PASS；没有输出的空运行不作为证据。
+不要恢复旧的 PowerShell `py`/`python` 包装函数。原包装器丢失 here-string 输入时会空执行并退出 0；当前入口通过直接解释器调用和实际 UTF-8 stdin 哨兵检查防止此类假通过。旧轮次的 AST 288 文件补验作为历史证据保留。
+
+按修改范围选择额外的[模块条件门禁](../testing/maintenance-gates.md)。该表精确列出 PostgreSQL 变量、数据库名、迁移要求和 SQLite/Ruby 适用性；根 verify 的默认通过不等于这些条件场景已执行。
 
 1. 领取有边界的任务，声明文件所有权；记录 HEAD、工作树、已有改动、验收 ID 与授权来源。共享文件不得并行编辑。
 2. 行为修改先写失败用例并确认失败原因，再最小实现。纯文档无需制造运行时测试，做链接/事实/规范一致性检查。

@@ -13,7 +13,7 @@
 | 钱包、资金、安全操作 | [钱包索引](runbooks/wallet.md) |
 | Flutter / HTML界面 | [UI交付](runbooks/ui-development.md)；Figma门禁已退役 |
 | 全部专题手册 | [运行手册目录](runbooks/README.md) |
-| Agent 与仓库维护 | [维护者指南](runbooks/agent-maintenance.md)、[合并后 CodeGraph 梳理](reports/2026-10-23-codegraph-merged.md)、[初轮静态报告](reports/2026-10-22-project-map.md)、[最新维护验证](verification/2026-10-23-project-maintenance-completion.md) |
+| Agent 与仓库维护 | [维护者指南](runbooks/agent-maintenance.md)、[模块条件门禁](testing/maintenance-gates.md)、[环境与归档维护](verification/2026-10-23-maintenance-environment.md)、[合并后 CodeGraph 梳理](reports/2026-10-23-codegraph-merged.md)、[初轮静态报告](reports/2026-10-22-project-map.md)、[上一轮维护验证](verification/2026-10-23-project-maintenance-completion.md) |
 
 ## 资料分层
 
