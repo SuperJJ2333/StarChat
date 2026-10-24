@@ -1,5 +1,8 @@
 # 当前工作状态
 
+## 2026-10-24 iOS2234 未签名候选交接
+统计助手输入/缓存注入与导航边界已修复，用户批准后源码构建 e25b664f，0.4.65+2234 IPA SHA5cb97209…71768b1288，待用户企业签名；没有改生产，Android2233/iOS2215保持。共享同源闭合6382PASS/9条件SKIP、移动404PASS、设备编译验包及统计WKWebView PASS；原生总22PASS/2 Outbox ERROR（MEDIA_STORAGE_UNAVAILABLE），整体CI FAIL，保留未验收，不称全门禁通过。回签需代码/权益比对及真机Outbox、保数据升级、推送验证。[任务](tasks/2026-10-24-ios2234-signing-handoff.md) · [报告](../verification/2026-10-24-ios2234-signing-handoff.md)。源码在独立候选分支，main未合并；主树509项既有删除保留。
+
 ## 2026-10-23 开发环境与维护门禁固定
 
 维护工具 `da86cf77` 已快进合入并普通推送 main：独立 Python 3.12、真实 stdin/配置检查、安全临时目录及[模块条件门禁](../testing/maintenance-gates.md)。7 项入口测试、最终 infra 919 项、独立 PG 专项 39+1 项通过，完整门禁退出 0，规格与质量/安全审查通过；主树 CodeGraph 增量索引 complete。九个历史 worktree 归档已有工作树之外的受限哈希一致副本，原件保留，任务测试容器/卷已清理。Android2233/iOS2215 身份不变。推送触发的三项 CI 仍待结果，不视为新发布验收；恢复时先读[任务](tasks/2026-10-23-maintenance-environment.md)及[验证报告](../verification/2026-10-23-maintenance-environment.md)，勿重复合入或删除归档承载树。
