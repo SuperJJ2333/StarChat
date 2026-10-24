@@ -9,6 +9,19 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'statistics_state_store.dart';
 
+/// Only the offline Flutter asset may receive conversation state or bridge access.
+bool isStatisticsAssetUrl(String url) {
+  final uri = Uri.tryParse(url);
+  return uri != null &&
+      uri.scheme == 'file' &&
+      uri.host.isEmpty &&
+      !uri.hasQuery &&
+      (uri.path ==
+              '/android_asset/flutter_assets/assets/html/statistics_tools_combined_v2.html' ||
+          uri.path.endsWith(
+              '/Runner.app/Frameworks/App.framework/flutter_assets/assets/html/statistics_tools_combined_v2.html'));
+}
+
 /// 统计助手：全屏 WebView 页面，加载本地 H5 资源，并通过 JS 通道与会话缓存桥接。
 ///
 /// - 页面加载完成后注入会话状态（roomId + 主题 + 缓存的工具状态）。
@@ -32,6 +45,7 @@ final class _StatisticsAssistantPageState
   Brightness _brightness = Brightness.light;
   int _progress = 0;
   bool _pageFinished = false;
+  String? _assetUrl;
   String? _pendingJson;
   Timer? _saveDebounce;
 
@@ -46,11 +60,22 @@ final class _StatisticsAssistantPageState
       )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (_) {
-            _pageFinished = true;
-            unawaited(_injectInitState());
+          onNavigationRequest: (request) => request.isMainFrame &&
+                  isStatisticsAssetUrl(request.url) &&
+                  (_assetUrl == null || request.url == _assetUrl)
+              ? NavigationDecision.navigate
+              : NavigationDecision.prevent,
+          onPageStarted: (url) {
+            _pageFinished = false;
+            if (_assetUrl == null && isStatisticsAssetUrl(url)) _assetUrl = url;
           },
-          onProgress: (progress) => setState(() => _progress = progress),
+          onPageFinished: (url) {
+            _pageFinished = isStatisticsAssetUrl(url) && url == _assetUrl;
+            if (_pageFinished) unawaited(_injectInitState());
+          },
+          onProgress: (progress) {
+            if (mounted) setState(() => _progress = progress);
+          },
         ),
       )
       ..loadFlutterAsset('assets/html/statistics_tools_combined_v2.html');
@@ -74,6 +99,11 @@ final class _StatisticsAssistantPageState
   /// 页面加载完成 → 读会话缓存 → 注入状态与主题。
   Future<void> _injectInitState() async {
     final stored = await StatisticsStateStore.read(widget.roomId);
+    if (!mounted ||
+        !_pageFinished ||
+        await _controller.currentUrl() != _assetUrl) {
+      return;
+    }
     final init = <String, Object?>{
       'roomId': widget.roomId,
       'theme': _brightness == Brightness.dark ? 'dark' : 'light',
@@ -83,8 +113,13 @@ final class _StatisticsAssistantPageState
   }
 
   /// JS 通道：HTML 每次操作后防抖推送 `{type:'save', state:<json字符串>}`。
-  void _handleBridgeMessage(JavaScriptMessage message) {
+  Future<void> _handleBridgeMessage(JavaScriptMessage message) async {
     try {
+      if (!mounted ||
+          !_pageFinished ||
+          await _controller.currentUrl() != _assetUrl) {
+        return;
+      }
       final decoded = jsonDecode(message.message);
       if (decoded is Map<String, Object?> && decoded['type'] != 'save') return;
       final stateJson =
@@ -110,6 +145,9 @@ final class _StatisticsAssistantPageState
   /// 页面销毁前尝试读回一次最新状态（运行期防抖保存为主，此为安全网）。
   Future<void> _finalReadback() async {
     try {
+      if (!_pageFinished || await _controller.currentUrl() != _assetUrl) {
+        return;
+      }
       final result = await _controller
           .runJavaScriptReturningResult('window.__statsGetState()');
       final json = _unwrapJsString(result);

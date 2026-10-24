@@ -1111,7 +1111,12 @@ function appConfirm(opts){
         let opt = lastInput.opt=="add"?"✅ 加金额":lastInput.opt=="sub"?"➖ 减金额":"无操作";
         let t = lastInput.text||"无";
         let m = lastInput.money?lastInput.money+"元":"无金额";
-        el.innerHTML = `最后操作：<strong>${opt}</strong>｜内容：${t}｜金额：${m}`;
+        const operation = document.createElement("strong");
+        operation.textContent = opt;
+        el.replaceChildren(
+            document.createTextNode("最后操作："), operation,
+            document.createTextNode(`｜内容：${t}｜金额：${m}`)
+        );
         el.className = "last-input "+(lastInput.opt=="add"?"add-bg":lastInput.opt=="sub"?"sub-bg":"def-bg");
     }
     function renderNumPanel(){
@@ -1437,12 +1442,30 @@ function appConfirm(opts){
     // 会话桥恢复：由宿主注入的 state 恢复①的状态
     window.t1_restoreState = function(s){
         if(!s) return;
+        // Previous versions could persist HTML through the input renderer.
+        // Treat restored numeric state as untrusted, including object keys.
+        const validNum = n => Number.isInteger(n) && n >= 1 && n <= 49;
+        const validAmount = n => typeof n === "number" && Number.isFinite(n) && n > 0 && n <= MAX_MONEY;
+        numCount = {};
         initNumCount();
-        if(Array.isArray(s.records)) recordArr = s.records;
-        if(s.numCount) Object.assign(numCount, s.numCount);
-        if(s.lastInput) lastInput = s.lastInput;
-        pageNow = s.pageNow || 1;
-        selectedSet = new Set(Array.isArray(s.selected) ? s.selected : []);
+        for(const key of Object.keys(numCount)){
+            const value = s.numCount && s.numCount[key];
+            if(typeof value === "number" && Number.isFinite(value) && value >= 0) numCount[key] = value;
+        }
+        recordArr = (Array.isArray(s.records) ? s.records : []).slice(-MAX_SAVE_NUM).filter(r =>
+            r && (r.type === "加" || r.type === "减") && Array.isArray(r.list) && r.list.length > 0 &&
+            r.list.every(it => it && validNum(it.num) && validAmount(it.amount))
+        ).map(r => ({
+            type:r.type, time:typeof r.time === "string" ? r.time : "",
+            list:r.list.map(it => ({num:it.num, amount:it.amount})),
+            totalChange:(r.type === "加" ? 1 : -1)*r.list.reduce((sum,it)=>sum+it.amount,0)
+        }));
+        const last = s.lastInput || {};
+        lastInput = {text:typeof last.text === "string" ? last.text : "",
+            money:typeof last.money === "string" ? last.money : "",
+            opt:last.opt === "add" || last.opt === "sub" ? last.opt : ""};
+        pageNow = Number.isInteger(s.pageNow) && s.pageNow > 0 ? Math.min(s.pageNow, Math.max(1, Math.ceil(recordArr.length/PAGE_SIZE))) : 1;
+        selectedSet = new Set((Array.isArray(s.selected) ? s.selected : []).filter(k => typeof k === "string" && Object.hasOwn(numCount,k)));
         renderLastTip();
         renderAll();
     };

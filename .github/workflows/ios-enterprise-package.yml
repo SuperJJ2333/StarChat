@@ -93,7 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           flutter build ios --release --no-codesign --no-pub \
-            --build-name=0.4.64 --build-number=2233 --no-tree-shake-icons \
+            --build-name=0.4.65 --build-number=2234 --no-tree-shake-icons \
             --dart-define=CHATFLOW_PERFORMANCE_METRICS=true \
             --dart-define=LIUHETONG_IN_APP_UPDATE=true \
             --dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com \
@@ -136,18 +136,18 @@ jobs:
           ditto --norsrc --noextattr apps/mobile_flutter/build/ios/iphoneos/Runner.app "$stage/Payload/Runner.app"
           export COPYFILE_DISABLE=1
           ditto -c -k --keepParent --norsrc --noextattr "$stage/Payload" \
-            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.64-build2233-unsigned.ipa"
+            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.65-build2234-unsigned.ipa"
           python3 scripts/prepare_ios_unsigned_ipa.py \
             --app apps/mobile_flutter/build/ios/iphoneos/Runner.app \
-            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.64-build2233-unsigned.ipa" \
+            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.65-build2234-unsigned.ipa" \
             --source-root apps/mobile_flutter \
             --output-dir "$RUNNER_TEMP/unsigned-ios" \
             --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" \
-            --version 0.4.64 --build 2233 \
+            --version 0.4.65 --build 2234 \
             --toolchain-report "$RUNNER_TEMP/device-evidence/toolchain.txt" \
             2>&1 | tee "$RUNNER_TEMP/device-evidence/unsigned-package-gate.log"
-          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.64-build2233-unsigned.ipa" \
+          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.65-build2234-unsigned.ipa" \
             > "$RUNNER_TEMP/device-evidence/ipa-sha256.txt"
       - name: Capture generated device inputs even on failure
         if: always()
@@ -180,7 +180,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ChatFlow-0.4.64-build2233-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ChatFlow-0.4.65-build2234-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/unsigned-ios/
           if-no-files-found: error
           retention-days: 14
@@ -269,6 +269,7 @@ jobs:
           import json, os, pathlib, signal, subprocess, sys, time
           folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'simulator-evidence'
           targets = [
+              'integration_test/ios_statistics_security_native_test.dart',
               'integration_test/ios_conversation_notification_native_test.dart',
               'integration_test/ios_timeline_storage_migration_native_test.dart',
               'integration_test/sqlcipher_readonly_native_test.dart',
