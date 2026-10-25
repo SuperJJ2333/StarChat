@@ -6106,7 +6106,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final towardEarlier = offset > previousOffset + .5;
     final towardLater = offset < previousOffset - .5;
     if (position.extentBefore > 80) {
-      controller?.pinWindow();
+      controller?.pinWindow(
+          retainEventId: TimelineScrollAnchor.capture(
+                  _stableMessageKeys, _timelineViewportKey)
+              ?.eventId);
     }
     _observeVisibleMentions();
     if (towardLater && position.extentBefore < 120) {
@@ -6298,7 +6301,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       // A forward page can append newer rows before this user gesture ends.
       // Pin first so refresh preserves the visible window until the guarded
       // guarded shift can run after finger release, including ballistic motion.
-      currentController.pinWindow();
+      currentController.pinWindow(
+          retainEventId: TimelineScrollAnchor.capture(
+                  _stableMessageKeys, _timelineViewportKey)
+              ?.eventId);
       await currentController.loadFutureHistory();
     } catch (_) {
       return;
@@ -6860,18 +6866,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                       ),
                     )
                   else ...[
-                    SizedBox(
-                      key: const Key('local-text-composer'),
-                      child: !_canDispatch
-                          ? const Padding(
-                              padding: EdgeInsets.only(top: 6),
-                              child: Text('文字将在本机保存，连接恢复后发送；其他功能等待验证',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: CupertinoColors.systemGrey)),
-                            )
-                          : null,
-                    ),
                     ChatComposerBar(
                       key: const ValueKey('room-composer'),
                       controller: input,

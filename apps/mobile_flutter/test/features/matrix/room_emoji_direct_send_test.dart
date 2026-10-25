@@ -110,6 +110,9 @@ final class _NudgeTimeline extends Fake implements Timeline {
   bool get canRequestHistory => false;
 
   @override
+  bool get canRequestFuture => false;
+
+  @override
   Future<void> setReadMarker({String? eventId, bool? public}) async {}
 
   @override

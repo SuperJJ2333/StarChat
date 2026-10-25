@@ -90,6 +90,7 @@ import 'local_search_id_snapshot.dart';
 import 'bounded_history_search.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
+import 'timeline_presentation_order.dart';
 import 'matrix_recovery_service.dart';
 import 'matrix_recovery_vault.dart';
 import 'recent_history_coordinator.dart';
@@ -3691,8 +3692,7 @@ final class _SdkRoomTimelineCapability
     if (_sourceStamp == stamp) return;
     _sourceStamp = stamp;
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
-    final entries = <Object>[];
-    final pending = <Event>[];
+    final entries = <Event>[];
     for (final event in _timeline.events.reversed) {
       if (!(event.type == EventTypes.Message ||
               (event.type == EventTypes.Encrypted && event.redacted) ||
@@ -3706,25 +3706,19 @@ final class _SdkRoomTimelineCapability
               false)) {
         continue;
       }
-      if (event.status.isSending || event.status.isError) {
-        pending.add(event);
-      } else {
-        entries.add(event);
-      }
+      entries.add(event);
     }
-    for (final event in pending) {
-      final at = entries.indexWhere((other) =>
-          (other as Event).originServerTs.isAfter(event.originServerTs));
-      entries.insert(at < 0 ? entries.length : at, event);
-    }
+    // Cached/history events can arrive out of timestamp order. Select the
+    // latest window only after ordering references, without projecting history
+    // eagerly or mutating the SDK list used by its pagination cursors.
+    sortTimelineChronologically(entries, (event) => event.originServerTs);
     if (!_lease._activeRoom.isDirectChat) {
       final notices = deriveGroupJoinNotices(_membershipFacts(_timeline),
           resolveName: (id) => _lease._activeRoom
               .unsafeGetUserFromMemoryOrFallback(id)
               .calcDisplayname());
-      // Group using the existing policy, then merge without reordering SDK
-      // messages. Notices precede messages at equal timestamps, as in the
-      // non-windowed timeline. A single cursor avoids rescanning/shifting the
+      // Group using the existing policy. Notices precede messages at equal
+      // timestamps, as in the non-windowed timeline. A cursor avoids shifting the
       // entire history for every membership notice.
       final grouped = <GroupJoinNotice>[
         for (final notice in mergeNoticesIntoTimeline(const [], notices))
@@ -3740,7 +3734,7 @@ final class _SdkRoomTimelineCapability
         final merged = <Object>[];
         var noticeIndex = 0;
         for (final entry in entries) {
-          final timestamp = (entry as Event).originServerTs;
+          final timestamp = entry.originServerTs;
           while (noticeIndex < grouped.length &&
               !grouped[noticeIndex].timestamp.isAfter(timestamp)) {
             merged.add(grouped[noticeIndex++]);
@@ -3861,15 +3855,19 @@ final class _SdkRoomTimelineCapability
     if (_newestStamp == stamp) return _newestCached;
     _newestStamp = stamp;
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
-    // SDK timelines keep the newest event at the head. Context paging must not
-    // make a controller refresh scan the complete live history just to retain
-    // this one tail projection.
+    // Arrival order is not timestamp order after cache reconciliation. Scan
+    // references once per live revision, retaining only one projected model.
+    Event? newest;
+    DateTime? newestTimestamp;
     for (final event in _liveTimeline.events) {
-      if (_visibleDateEvent(event, hidden)) {
-        return _newestCached = _cachedMessage(event);
+      if (!_visibleDateEvent(event, hidden)) continue;
+      final timestamp = event.originServerTs;
+      if (newestTimestamp == null || timestamp.isAfter(newestTimestamp)) {
+        newest = event;
+        newestTimestamp = timestamp;
       }
     }
-    return _newestCached = null;
+    return _newestCached = newest == null ? null : _cachedMessage(newest);
   }
 
   @override
@@ -4012,10 +4010,9 @@ final class _SdkRoomTimelineCapability
       _refreshWindowSource();
       final stamp = (_sourceStamp, _windowRevision, _outgoingRevision);
       if (_snapshotStamp == stamp) return _windowSnapshot;
-      // A background item belongs to the newest conversation state. It must
-      // not appear in the middle of an anchored older history window.
-      _windowSnapshot = _mergeAccountOutgoingWork(_viewport!.snapshot(),
-          includePending: !_viewport!.hasLater && !isViewingHistoryContext);
+      // Pending work belongs to its original time range, including pinned
+      // history; it must not jump across unloaded intermediate pages.
+      _windowSnapshot = _mergeAccountOutgoingWork(_viewport!.snapshot());
       _snapshotStamp = stamp;
       return _windowSnapshot;
     }
@@ -4054,8 +4051,7 @@ final class _SdkRoomTimelineCapability
     if (projectionChanged) {
       _pendingMessages = pending;
       final ordered = List<RoomMessageViewModel>.of(_serverMessages);
-      // Only unsent entries are timestamp-positioned. Server rows preserve
-      // timeline order rather than sorting across SDK history gaps.
+      sortTimelineChronologically(ordered, (message) => message.timestamp);
       for (final message in pending) {
         final at =
             ordered.indexWhere((m) => m.timestamp.isAfter(message.timestamp));
@@ -4121,13 +4117,11 @@ final class _SdkRoomTimelineCapability
   }
 
   List<RoomMessageViewModel> _mergeAccountOutgoingWork(
-      List<RoomMessageViewModel> timelineMessages,
-      {bool includePending = true}) {
+      List<RoomMessageViewModel> timelineMessages) {
     final work = _outgoingWork;
     final outgoing = work.itemsForRoom(_lease.roomId);
     if (outgoing.isEmpty) return timelineMessages;
     _deferMatchingOutgoingEchoAcknowledgements(outgoing);
-    if (!includePending) return timelineMessages;
     final pending = <(MatrixOutgoingWorkItem, RoomMessageViewModel)>[
       for (final item in outgoing)
         (
@@ -4165,6 +4159,14 @@ final class _SdkRoomTimelineCapability
     };
     final additions = <RoomMessageViewModel>[];
     for (final (item, message) in pending) {
+      if (_viewport != null &&
+          !timelineWindowContains(message.timestamp,
+              first: timelineMessages.firstOrNull?.timestamp,
+              last: timelineMessages.lastOrNull?.timestamp,
+              hasEarlier: _viewport!.hasEarlier || canLoadHistory,
+              hasLater: _viewport!.hasLater || hasFutureHistory)) {
+        continue;
+      }
       if (existingTransactions.contains(message.transactionId) ||
           existingIds.contains(message.id) ||
           (item.eventId != null && existingIds.contains(item.eventId))) {

@@ -238,7 +238,8 @@ void main() {
     }
     expect(
         (tester.state(find.byType(RoomPage)) as dynamic).controller, isNotNull);
-    expect(find.byKey(const Key('local-text-composer')), findsOneWidget);
+    expect(find.textContaining('文字将在本机保存'), findsNothing);
+    expect(find.byKey(const Key('composer-input')), findsOneWidget);
     await tester.enterText(
         find.byKey(const Key('composer-input')), 'durable pending text');
     await tester.pump();

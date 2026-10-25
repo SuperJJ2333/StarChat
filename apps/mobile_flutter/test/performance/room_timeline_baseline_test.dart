@@ -72,7 +72,8 @@ void main() {
             type: EventTypes.Message,
             eventId: 'synthetic-new',
             senderId: 'member-1',
-            originServerTs: DateTime.utc(2026),
+            originServerTs:
+                DateTime.utc(2026).add(const Duration(seconds: 50000)),
             content: {'msgtype': 'm.text', 'body': 'synthetic fixture'}));
     final appended = adapter.snapshot();
     expect(appended.last.id, 'synthetic-new');

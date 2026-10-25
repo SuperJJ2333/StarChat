@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'room_paged_history_source.dart';
+import 'timeline_presentation_order.dart';
 import 'dart:io';
 
 import 'room_history_date_capability.dart';
@@ -430,8 +431,11 @@ final class RoomTimelineController extends ChangeNotifier
       _windowSource = adapter as RoomWindowedTimelineSource;
       _windowSource!.enableWindow();
     }
-    messages = List.unmodifiable(adapter.snapshot());
-    _sourceSnapshot = messages;
+    _sourceSnapshot = List.unmodifiable(adapter.snapshot());
+    final initial = List<RoomMessageViewModel>.of(_sourceSnapshot);
+    sortTimelineChronologically(initial, (message) => message.timestamp);
+    _boundWindow(initial);
+    messages = List.unmodifiable(initial);
     _publishedNewestId = newestMessage?.id;
     _publishedHasLater = hasLaterWindow;
     _publishedViewingHistory = isViewingHistoryContext;
@@ -514,8 +518,13 @@ final class RoomTimelineController extends ChangeNotifier
   final Duration sendDispatchTimeout;
   late List<RoomMessageViewModel> messages;
   RoomWindowedTimelineSource? _windowSource;
-  bool get hasEarlierWindow => _windowSource?.hasEarlierWindow ?? false;
-  bool get hasLaterWindow => _windowSource?.hasLaterWindow ?? false;
+  String? _retainedWindowEventId;
+  bool _clippedEarlier = false, _clippedLater = false;
+  bool? _overflowTowardEarlier;
+  bool get hasEarlierWindow =>
+      _clippedEarlier || (_windowSource?.hasEarlierWindow ?? false);
+  bool get hasLaterWindow =>
+      _clippedLater || (_windowSource?.hasLaterWindow ?? false);
   bool get hasFutureHistory =>
       adapter is RoomFutureHistoryStatus &&
       (adapter as RoomFutureHistoryStatus).hasFutureHistory;
@@ -645,7 +654,16 @@ final class RoomTimelineController extends ChangeNotifier
       : messages.lastOrNull;
   DateTime? previousTimestamp(String id) =>
       _windowSource?.previousTimestamp(id);
-  void pinWindow() => _windowSource?.pinWindow();
+  void pinWindow({String? retainEventId}) {
+    final retained =
+        retainEventId ?? _retainedWindowEventId ?? messages.firstOrNull?.id;
+    if (retained != _retainedWindowEventId) {
+      _retainedWindowEventId = retained;
+      _echoRevision++;
+    }
+    _windowSource?.pinWindow();
+  }
+
   void setHiddenFilter(bool Function(String id, DateTime? timestamp)? hidden) =>
       _windowSource?.setHiddenFilter(hidden);
   Future<bool> openAnchor(String id) async {
@@ -670,6 +688,7 @@ final class RoomTimelineController extends ChangeNotifier
       found = _windowSource?.selectAnchor(id) ?? indexOf(id) != null;
     }
     if (found) {
+      _retainedWindowEventId = id;
       historyExhausted = adapter is RoomHistoryStatus
           ? !(adapter as RoomHistoryStatus).canLoadHistory
           : false;
@@ -696,6 +715,8 @@ final class RoomTimelineController extends ChangeNotifier
   }
 
   void _restoreLatest() {
+    _retainedWindowEventId = null;
+    _overflowTowardEarlier = null;
     cancelPendingEventLookup();
     _timelineOperationGeneration++;
     _activeHistoryRequest = null;
@@ -710,13 +731,21 @@ final class RoomTimelineController extends ChangeNotifier
   }
 
   Future<void> showEarlierWindow({String? retainEventId}) async {
-    _windowSource?.selectEarlier(retainEventId: retainEventId);
+    _retainedWindowEventId = retainEventId;
+    _overflowTowardEarlier = true;
+    if (!_clippedEarlier) {
+      _windowSource?.selectEarlier(retainEventId: retainEventId);
+    }
     _echoRevision++;
     await refresh();
   }
 
   Future<void> showLaterWindow({String? retainEventId}) async {
-    _windowSource?.selectLater(retainEventId: retainEventId);
+    _retainedWindowEventId = retainEventId;
+    _overflowTowardEarlier = false;
+    if (!_clippedLater) {
+      _windowSource?.selectLater(retainEventId: retainEventId);
+    }
     _echoRevision++;
     await refresh();
   }
@@ -1239,26 +1268,36 @@ final class RoomTimelineController extends ChangeNotifier
       }
       add(message);
     }
-    // Authoritative rows keep SDK order, including equal timestamps and gaps.
-    // Insert only pending sends by their original device insertion timestamp;
-    // later incoming rows must not move a failed send to the end on refresh.
+    sortTimelineChronologically(result, (message) => message.timestamp);
+    final firstTimestamp = result.firstOrNull?.timestamp;
+    final lastTimestamp = result.lastOrNull?.timestamp;
+    // Preserve original pending timestamps, but do not splice weeks-old
+    // failures into a latest window before intermediate history is visited.
     for (final local in [
       ...pending,
-      if (!hasLaterWindow)
-        ...{
-          ..._localEchoes,
-          ..._mediaEchoes,
-        }.values.where((m) => !_canceledMedia.contains(m.stableId))
+      ...{
+        ..._localEchoes,
+        ..._mediaEchoes,
+      }.values.where((m) => !_canceledMedia.contains(m.stableId))
     ]) {
       if (seen.contains(local.stableId)) continue;
+      if (!timelineWindowContains(local.timestamp,
+          first: firstTimestamp,
+          last: lastTimestamp,
+          hasEarlier: (_windowSource?.hasEarlierWindow ?? false) ||
+              (_windowSource != null &&
+                  adapter is RoomHistoryStatus &&
+                  (adapter as RoomHistoryStatus).canLoadHistory),
+          hasLater:
+              (_windowSource?.hasLaterWindow ?? false) || hasFutureHistory)) {
+        continue;
+      }
       final index =
           result.indexWhere((m) => m.timestamp.isAfter(local.timestamp));
       add(local);
       if (index >= 0) result.insert(index, result.removeLast());
     }
-    if (_windowSource != null && result.length > 200) {
-      result.removeRange(0, result.length - 200);
-    }
+    _boundWindow(result);
     if (result.length == messages.length) {
       var same = true;
       for (var i = 0; i < result.length; i++) {
@@ -1270,6 +1309,28 @@ final class RoomTimelineController extends ChangeNotifier
       if (same) return messages;
     }
     return List.unmodifiable(result);
+  }
+
+  void _boundWindow(List<RoomMessageViewModel> rows) {
+    _clippedEarlier = _clippedLater = false;
+    if (_windowSource == null || rows.length <= 200) return;
+    final excess = rows.length - 200;
+    final earlier = _overflowTowardEarlier ??
+        ((_windowSource?.hasLaterWindow ?? false) || isViewingHistoryContext);
+    var start = earlier ? 0 : excess;
+    final anchor = rows.indexWhere((message) =>
+        message.id == _retainedWindowEventId ||
+        message.stableId == _retainedWindowEventId);
+    if (anchor >= 0) {
+      start =
+          start.clamp((anchor - 199).clamp(0, excess), anchor.clamp(0, excess));
+    }
+    // Keep one contiguous chronological slice and the actual reading anchor
+    // when pending hydration increases a full source window beyond its bound.
+    _clippedEarlier = start > 0;
+    _clippedLater = start < excess;
+    rows.removeRange(start + 200, rows.length);
+    if (start > 0) rows.removeRange(0, start);
   }
 
   // Pending/failed entries have no server timestamp yet. Anchor the insertion
@@ -1841,19 +1902,8 @@ final class RoomTimelineController extends ChangeNotifier
     _echoRevision++;
     _localEchoes[tx] = local;
     if (!foreign) _armDurableRetry(row);
-    // BUG 回归（真机）：按原始时间戳插入历史位置，而不是 append 到底——
-    // 失败行重进房间后必须停留在它原本的 Chronological 位置。
-    final insertIndex =
-        messages.indexWhere((m) => m.timestamp.isAfter(local.timestamp));
-    messages = hasLaterWindow
-        ? _snapshot()
-        : insertIndex >= 0
-            ? [
-                ...messages.sublist(0, insertIndex),
-                local,
-                ...messages.sublist(insertIndex)
-              ]
-            : [...messages, local];
+    // Use the same deduplication, timestamp and window policy as refresh.
+    messages = _snapshot();
     _publish();
   }
 

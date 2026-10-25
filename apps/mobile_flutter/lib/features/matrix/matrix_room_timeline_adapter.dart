@@ -5,6 +5,7 @@ import 'room_timeline_controller.dart';
 import 'room_history_date_capability.dart';
 import 'room_event_context_capability.dart';
 import 'room_timeline_viewport.dart';
+import 'timeline_presentation_order.dart';
 import 'room_paged_history_source.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
@@ -145,7 +146,8 @@ final class MatrixRoomTimelineAdapter
   List<RoomMessageViewModel> snapshot() {
     final fallback = _fallbackWindow;
     if (fallback != null) {
-      final all = _capability.snapshot();
+      final all = List<RoomMessageViewModel>.of(_capability.snapshot());
+      sortTimelineChronologically(all, (message) => message.timestamp);
       fallback.update(_hiddenFilter == null
           ? all
           : all.where((m) => !_hiddenFilter!(m.id, m.timestamp)).toList());
@@ -173,7 +175,7 @@ final class MatrixRoomTimelineAdapter
     } else {
       _fallbackWindow =
           RoomTimelineViewport(idOf: (m) => m.id, project: (m) => m);
-      _fallbackWindow!.update(_capability.snapshot());
+      snapshot();
     }
   }
 

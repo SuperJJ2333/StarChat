@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
@@ -313,8 +314,8 @@ class _Fixture {
                     ? 'retired-page-marker'
                     : null);
             if (row['event_id'] == visibilityTargetId) {
-              // Visibility-only fixture: keep canonical position, but make the
-              // target eligible after any neighboring row's monotonic receipt.
+              // The target is chronologically newest, so it remains eligible
+              // after any visible older neighbor's monotonic receipt.
               row['origin_server_ts'] =
                   DateTime.utc(2026, 2, 1).millisecondsSinceEpoch;
             }
@@ -565,6 +566,20 @@ void main() {
       // Optional service status can change the viewport height. Complete that
       // existing work while receipts are disabled before placing the edge.
       await settlePageWork();
+      // Leave layout space below the newest server event without advancing
+      // the server receipt. Equal-time local rows retain their insertion order
+      // after that event and remain present when the history window is pinned.
+      final pendingTime = DateTime.utc(2026, 2, 1);
+      for (var i = 0; i < 20; i++) {
+        _controller(tester).restoreOutboxMessage(OutboxMessage(
+            localId: 'padding-local-$i',
+            txid: 'padding-local-$i',
+            receiverId: 'fixture',
+            content: 'synthetic pending $i',
+            createdAt: pendingTime,
+            updatedAt: pendingTime,
+            status: OutboxStatus.failed));
+      }
       await _controller(tester).showEarlierWindow();
       await tester.pump();
       final listFinder = find.byType(AnchoredTimelineList);
@@ -612,8 +627,8 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
       await settlePageWork();
-      expect(fixture.client.readMarkers, isNotEmpty,
-          reason: 'visible neighboring bodies must exercise the receipt path');
+      expect(fixture.client.readMarkers, isEmpty,
+          reason: 'only local pending bodies and server padding are visible');
       expect(fixture.client.readMarkers, isNot(contains(targetId)),
           reason: 'padding is layout space, not a viewed message body');
       expect(rowBounds().overlaps(viewportBounds()), isTrue,
@@ -648,8 +663,8 @@ void main() {
                 tester, () => fixture.store.getTimelineEventCount(fixture.a),
                 phase: 'persisted count N=$n'),
             n);
-        expect(
-            fixture.store.retainedCache[fixture.a.id]!.length, lessThanOrEqualTo(1000));
+        expect(fixture.store.retainedCache[fixture.a.id]!.length,
+            lessThanOrEqualTo(1000));
         expect(_controller(tester).messages.length, lessThanOrEqualTo(200));
         fixture.store.retainedCache[fixture.a.id]!.reads = 0;
         fixture.store.resetCounts();

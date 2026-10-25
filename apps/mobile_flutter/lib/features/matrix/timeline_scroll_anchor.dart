@@ -48,6 +48,7 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
   final _viewportKey = GlobalKey();
   String? _centerId;
   bool _followLatestBeforePaint = false;
+  double? _viewportHeight;
 
   bool _shouldFollowLatest() =>
       widget.followLatest &&
@@ -210,14 +211,32 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
 
     return SizedBox(
       key: _viewportKey,
-      child: CustomScrollView(
-        controller: widget.controller,
-        physics:
-            _FollowTimelineLatestPhysics(shouldFollow: _shouldFollowLatest),
-        reverse: true,
-        center: centerKey,
-        slivers: [if (split > 0) sliver(before: true), sliver(before: false)],
-      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final previousHeight = _viewportHeight;
+        _viewportHeight = constraints.maxHeight;
+        if (previousHeight != null &&
+            previousHeight != constraints.maxHeight &&
+            widget.controller.hasClients) {
+          final position = widget.controller.position;
+          if (position.hasContentDimensions &&
+              position.extentBefore >= .5 &&
+              !_shouldFollowLatest()) {
+            // Reverse layout is positioned from the bottom. Apply the change
+            // once before layout, rebasing both an active simulation and the
+            // owner's reading coordinates without cancelling a held drag.
+            _correctLayoutPosition(position,
+                position.pixels + previousHeight - constraints.maxHeight);
+          }
+        }
+        return CustomScrollView(
+          controller: widget.controller,
+          physics:
+              _FollowTimelineLatestPhysics(shouldFollow: _shouldFollowLatest),
+          reverse: true,
+          center: centerKey,
+          slivers: [if (split > 0) sliver(before: true), sliver(before: false)],
+        );
+      }),
     );
   }
 }

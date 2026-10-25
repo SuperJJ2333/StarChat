@@ -193,10 +193,13 @@ void main() {
     expect(controller.messages.single.id, 'background');
   });
 
-  testWidgets('retired source rejects queued and direct refresh before disposal', (tester) async {
+  testWidgets(
+      'retired source rejects queued and direct refresh before disposal',
+      (tester) async {
     final adapter = FakeTimelineAdapter();
     var active = true;
-    final controller = RoomTimelineController(adapter, isSourceActive: () => active);
+    final controller =
+        RoomTimelineController(adapter, isSourceActive: () => active);
     addTearDown(controller.dispose);
     controller.scheduleRefresh();
     final reads = adapter.snapshotReads;
@@ -206,7 +209,8 @@ void main() {
     controller.scheduleRefresh();
     await tester.pump(const Duration(milliseconds: 60));
     expect(adapter.snapshotReads, reads);
-    expect(adapter.disposed, 0, reason: 'the lease retires before the widget disposes');
+    expect(adapter.disposed, 0,
+        reason: 'the lease retires before the widget disposes');
     active = true;
     await controller.refresh();
     expect(adapter.snapshotReads, greaterThan(reads));
@@ -370,7 +374,8 @@ void main() {
     controller.dispose();
   });
 
-  test('refresh preserves SDK order across nonmonotonic timestamps', () async {
+  test('cold snapshot and refresh order nonmonotonic timestamps stably',
+      () async {
     final adapter = FakeTimelineAdapter();
     for (final i in [2, 1, 3]) {
       adapter.items.add(RoomMessageViewModel(
@@ -382,8 +387,11 @@ void main() {
           timestamp: DateTime.utc(2026).add(Duration(seconds: i))));
     }
     final controller = RoomTimelineController(adapter);
+    expect(controller.messages.map((m) => m.id), ['1', '2', '3']);
+    adapter.items.add(adapter.items[0].copyWith(id: 'same-time'));
     await controller.refresh();
-    expect(controller.messages.map((m) => m.id), ['2', '1', '3']);
+    expect(controller.messages.map((m) => m.id), ['1', '2', 'same-time', '3']);
+    expect(adapter.items.map((m) => m.id), ['2', '1', '3', 'same-time']);
     controller.dispose();
   });
 

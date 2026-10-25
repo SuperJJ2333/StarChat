@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.da
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_outgoing_work_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 
 final class NoticeClient extends RetryClient {
   @override
@@ -16,8 +17,11 @@ final class NoticeClient extends RetryClient {
 }
 
 class RetryTimeline extends Fake implements Timeline {
+  bool moreHistory = false;
   @override
-  bool get canRequestHistory => false;
+  bool get canRequestHistory => moreHistory;
+  @override
+  bool get canRequestFuture => false;
   @override
   void cancelSubscriptions() {}
   @override
@@ -691,7 +695,8 @@ void main() {
     expect(identical(adapter.snapshot(), first), isTrue);
   });
 
-  test('SDK snapshot reuses unchanged rows and preserves SDK order', () async {
+  test('SDK snapshot orders ordinary cached rows and reuses unchanged models',
+      () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();
     final older = RetryEvent(room, timeline,
@@ -703,7 +708,7 @@ void main() {
     final first = adapter.snapshot();
     final second = adapter.snapshot();
     expect(identical(first, second), isTrue);
-    expect(first.map((m) => m.id), ['older', 'newer']);
+    expect(first.map((m) => m.id), ['newer', 'older']);
     newer.setRedactionEvent(Event(
         room: room,
         type: EventTypes.Redaction,
@@ -712,15 +717,278 @@ void main() {
         originServerTs: DateTime.utc(2026),
         content: {}));
     final redacted = adapter.snapshot();
-    expect(redacted.last.isRecalled, isTrue);
-    expect(identical(redacted.first, first.first), isTrue);
+    expect(redacted.first.isRecalled, isTrue);
+    expect(identical(redacted.last, first.last), isTrue);
     timeline.events.insert(
         0,
         RetryEvent(room, timeline,
             id: 'append', minute: 3, status: EventStatus.synced));
     final appended = adapter.snapshot();
-    expect(appended.map((m) => m.id), ['older', 'newer', 'append']);
+    expect(appended.map((m) => m.id), ['newer', 'older', 'append']);
     expect(identical(appended[1], redacted[1]), isTrue);
+  });
+
+  test('late restored ordinary old rows do not displace the latest window',
+      () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    Event row(String id, DateTime time) => Event(
+        room: room,
+        eventId: id,
+        senderId: '@peer:test',
+        type: EventTypes.Message,
+        status: EventStatus.synced,
+        originServerTs: time,
+        content: {'msgtype': 'm.text', 'body': 'fixture'});
+    timeline.events.addAll([
+      row('sep-27-b', DateTime.utc(2026, 9, 27, 12)),
+      row('sep-27-a', DateTime.utc(2026, 9, 27, 11)),
+      for (var i = 299; i >= 0; i--)
+        row('oct-21-$i', DateTime.utc(2026, 10, 21).add(Duration(seconds: i))),
+    ]);
+    final raw = List<Event>.of(timeline.events);
+    final adapter = await openAdapter(room, timeline);
+    final controller = RoomTimelineController(adapter, windowed: true);
+    addTearDown(controller.dispose);
+    expect(controller.messages, hasLength(40));
+    expect(controller.messages.first.id, 'oct-21-260');
+    expect(controller.messages.last.id, 'oct-21-299');
+    expect(controller.newestMessage!.id, 'oct-21-299');
+    expect(
+        controller.messages
+            .every((m) => m.deliveryState == RoomDeliveryState.sent),
+        isTrue);
+    await controller.showEarlierWindow(retainEventId: 'oct-21-260');
+    expect(controller.messages.any((m) => m.id.startsWith('sep-27')), isFalse);
+    await controller.showEarlierWindow();
+    await controller.showEarlierWindow();
+    expect(controller.messages.take(3).map((m) => m.id),
+        ['sep-27-a', 'sep-27-b', 'oct-21-0']);
+    expect(timeline.events, orderedEquals(raw),
+        reason: 'presentation must not mutate the SDK pagination order');
+  });
+
+  test('restored failed outbox row appears only in its historical window',
+      () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.addAll([
+      for (var i = 299; i >= 0; i--)
+        RetryEvent(room, timeline,
+            id: 'event-$i', minute: i, status: EventStatus.synced),
+    ]);
+    final controller = RoomTimelineController(await openAdapter(room, timeline),
+        windowed: true);
+    addTearDown(controller.dispose);
+    final created = DateTime.utc(2026, 9, 6, 10, 25, 30);
+    controller.restoreOutboxMessage(OutboxMessage(
+        localId: 'old-failed',
+        txid: 'old-failed',
+        receiverId: 'fixture',
+        content: 'failed fixture',
+        createdAt: created,
+        updatedAt: created,
+        status: OutboxStatus.failed));
+    expect(controller.messages.first.id, 'event-260');
+    expect(controller.messages.any((m) => m.id == 'old-failed'), isFalse);
+    await controller.showEarlierWindow();
+    expect(controller.messages.any((m) => m.id == 'old-failed'), isFalse);
+    await controller.showEarlierWindow();
+    await controller.showEarlierWindow();
+    final index = controller.messages.indexWhere((m) => m.id == 'old-failed');
+    expect(index, greaterThan(0));
+    expect(controller.messages[index - 1].id, 'event-25');
+    expect(controller.messages[index + 1].id, 'event-26');
+    expect(controller.messages[index].deliveryState, RoomDeliveryState.failed);
+    expect(controller.messages[index].timestamp, created);
+    await controller.showLatest();
+    expect(controller.messages.any((m) => m.id == 'old-failed'), isFalse);
+    expect(room.sends, isEmpty,
+        reason: 'viewing a restored failure must not resend');
+  });
+
+  test(
+      'account failed work respects the historical window without being discarded',
+      () async {
+    final room = RetryRoom(client: OutgoingRetryClient());
+    final timeline = RetryTimeline();
+    timeline.events.addAll([
+      for (var i = 299; i >= 0; i--)
+        RetryEvent(room, timeline,
+            id: 'event-$i', minute: i, status: EventStatus.synced),
+    ]);
+    (room.client as RetryClient).room = room;
+    room.timeline = timeline;
+    final owner = MatrixSdkE2eeClient(room.client,
+        homeserver: Uri.parse('https://test'),
+        readContinuityMetadata: _continuity);
+    final lease = await owner.openRoomLease(room.id);
+    final controller = RoomTimelineController(
+        MatrixRoomTimelineAdapter(
+            await lease.openRoomTimeline(onUpdate: () {})),
+        windowed: true);
+    addTearDown(controller.dispose);
+    await owner.outgoingWork.enqueue(MatrixOutgoingWorkJob(
+        id: 'old-work',
+        source: MatrixOutgoingWorkSource(
+            id: 'source',
+            retainedBytes: 0,
+            prepare: (_) async {},
+            release: () async {}),
+        items: [
+          MatrixOutgoingWorkItem(
+              id: 'item',
+              targetRoomId: room.id,
+              txid: 'old-work-tx',
+              presentation: MatrixOutgoingWorkPresentation(
+                  kind: MatrixOutgoingPresentationKind.text,
+                  text: 'fixture',
+                  createdAt: DateTime.utc(2026, 9, 6, 10, 25, 30)),
+              send: (_) async => throw StateError('offline'))
+        ]));
+    await owner.outgoingWork.drain();
+    await controller.refresh();
+    expect(controller.messages.any((m) => m.transactionId == 'old-work-tx'),
+        isFalse);
+    controller.pinWindow();
+    await controller.showEarlierWindow();
+    expect(controller.messages.any((m) => m.transactionId == 'old-work-tx'),
+        isFalse);
+    await controller.showEarlierWindow();
+    await controller.showEarlierWindow();
+    final index =
+        controller.messages.indexWhere((m) => m.transactionId == 'old-work-tx');
+    expect(index, greaterThan(0));
+    expect(controller.messages[index - 1].id, 'event-25');
+    expect(controller.messages[index + 1].id, 'event-26');
+    expect(controller.messages[index].deliveryState, RoomDeliveryState.failed);
+    expect(owner.outgoingWork.itemsForRoom(room.id), hasLength(1));
+    await controller.showLatest();
+    expect(controller.messages.any((m) => m.transactionId == 'old-work-tx'),
+        isFalse);
+  });
+
+  test('unloaded history does not admit an old failure into a short cold head',
+      () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline()..moreHistory = true;
+    timeline.events.addAll([
+      for (var i = 209; i >= 200; i--)
+        RetryEvent(room, timeline,
+            id: 'event-$i', minute: i, status: EventStatus.synced),
+    ]);
+    final controller = RoomTimelineController(await openAdapter(room, timeline),
+        windowed: true);
+    addTearDown(controller.dispose);
+    final created = DateTime.utc(2026, 9, 6, 10, 25, 30);
+    controller.restoreOutboxMessage(OutboxMessage(
+        localId: 'old-failed',
+        txid: 'old-failed',
+        receiverId: 'fixture',
+        content: 'fixture',
+        createdAt: created,
+        updatedAt: created,
+        status: OutboxStatus.failed));
+    expect(controller.hasEarlierWindow, isFalse);
+    expect(controller.messages.map((m) => m.id), isNot(contains('old-failed')));
+    timeline.events.addAll([
+      for (var i = 199; i >= 0; i--)
+        RetryEvent(room, timeline,
+            id: 'event-$i', minute: i, status: EventStatus.synced),
+    ]);
+    timeline.moreHistory = false;
+    await controller.refresh();
+    await controller.showEarlierWindow();
+    await controller.showEarlierWindow();
+    final index = controller.messages.indexWhere((m) => m.id == 'old-failed');
+    expect(controller.messages[index - 1].id, 'event-25');
+    expect(controller.messages[index + 1].id, 'event-26');
+  });
+
+  test('late failed hydration keeps the pinned edge of a full history window',
+      () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.addAll([
+      for (var i = 299; i >= 0; i--)
+        RetryEvent(room, timeline,
+            id: 'event-$i', minute: i, status: EventStatus.synced),
+    ]);
+    final controller = RoomTimelineController(await openAdapter(room, timeline),
+        windowed: true);
+    addTearDown(controller.dispose);
+    expect(await controller.openAnchor('event-0'), isTrue);
+    controller.pinWindow();
+    expect(controller.messages, hasLength(200));
+    expect(controller.messages.first.id, 'event-0');
+    final created = DateTime.utc(2026, 9, 6, 10, 25, 30);
+    controller.restoreOutboxMessage(OutboxMessage(
+        localId: 'late-failed',
+        txid: 'late-failed',
+        receiverId: 'fixture',
+        content: 'fixture',
+        createdAt: created,
+        updatedAt: created,
+        status: OutboxStatus.failed));
+    expect(controller.messages.first.id, 'event-0');
+    expect(controller.messages, hasLength(200));
+    expect(controller.messages.map((m) => m.id), contains('late-failed'));
+    await controller.showEarlierWindow(retainEventId: 'event-199');
+    expect(controller.messages.last.id, 'event-199',
+        reason: 'the opposite retained edge must also survive bounded merging');
+    expect(controller.messages, hasLength(200));
+    expect(controller.hasEarlierWindow, isTrue,
+        reason: 'the clipped event-0 must still be reachable by scrolling');
+    await controller.showEarlierWindow();
+    expect(controller.messages.first.id, 'event-0');
+    await controller.showLaterWindow();
+    expect(controller.messages.last.id, 'event-199');
+    await controller.showLaterWindow();
+    expect(controller.messages.last.id, 'event-299');
+    controller.pinWindow(retainEventId: 'event-100');
+    final newer = DateTime.utc(2026, 9, 6, 10, 225, 30);
+    controller.restoreOutboxMessage(OutboxMessage(
+        localId: 'later-failed',
+        txid: 'later-failed',
+        receiverId: 'fixture',
+        content: 'fixture',
+        createdAt: newer,
+        updatedAt: newer,
+        status: OutboxStatus.failed));
+    expect(controller.messages.first.id, 'event-100');
+    expect(controller.hasLaterWindow, isTrue,
+        reason: 'the clipped event-299 must remain reachable at the live edge');
+    await controller.showLaterWindow();
+    expect(controller.messages.last.id, 'event-299');
+  });
+
+  test('pinning the live head keeps its pending tail through refresh',
+      () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.addAll([
+      for (var i = 59; i >= 0; i--)
+        RetryEvent(room, timeline,
+            id: 'event-$i', minute: i, status: EventStatus.synced),
+    ]);
+    final controller = RoomTimelineController(await openAdapter(room, timeline),
+        windowed: true);
+    addTearDown(controller.dispose);
+    final created = DateTime.utc(2026, 10, 25);
+    controller.restoreOutboxMessage(OutboxMessage(
+        localId: 'pending-tail',
+        txid: 'pending-tail',
+        receiverId: 'fixture',
+        content: 'fixture',
+        createdAt: created,
+        updatedAt: created,
+        status: OutboxStatus.failed));
+    expect(controller.messages.last.id, 'pending-tail');
+    controller.pinWindow(retainEventId: 'event-40');
+    await controller.refresh();
+    expect(controller.messages.last.id, 'pending-tail',
+        reason: 'pinning is not proof of newer unseen history');
+    expect(controller.messages.map((m) => m.id), contains('event-40'));
   });
 
   test('HTTP ack and sync expose different timestamp authority', () async {
