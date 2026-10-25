@@ -21,6 +21,7 @@ import 'package:liuhetong_mobile/features/matrix/group_announcement_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_announcement_service.dart';
 import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/message_timeline_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
@@ -127,15 +128,23 @@ class _LifecycleRoom extends Room {
   Completer<Timeline>? heldTimeline;
   bool direct = true;
   Future<Event?>? pendingAnnouncement;
+  final replyEvents = <String, Event?>{};
+  int replyLookups = 0;
   @override
   bool get isDirectChat => direct;
   @override
   String? get directChatMatrixID => direct ? '@peer:lifecycle.test' : null;
   @override
-  Future<Event?> getEventById(String eventID) =>
-      eventID == r'$synthetic-announcement' && pendingAnnouncement != null
-          ? pendingAnnouncement!
-          : super.getEventById(eventID);
+  Future<Event?> getEventById(String eventID) {
+    if (replyEvents.containsKey(eventID)) {
+      replyLookups++;
+      return Future.value(replyEvents[eventID]);
+    }
+    return eventID == r'$synthetic-announcement' && pendingAnnouncement != null
+        ? pendingAnnouncement!
+        : super.getEventById(eventID);
+  }
+
   @override
   Future<Timeline> getTimeline({
     void Function(int)? onChange,
@@ -237,6 +246,89 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+
+  for (final change in ['redaction', 'hidden', 'replacement']) {
+    testWidgets('quote card drops stale resolved content after $change',
+        (tester) async {
+      MessageTimelineCache.shared.clear();
+      final client = _LifecycleClient();
+      final room = client.localRoom;
+      Event target(String body) => Event(
+          room: room,
+          eventId: 'archived-reply',
+          senderId: '@peer:lifecycle.test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 9, 1),
+          content: {'msgtype': 'm.text', 'body': body});
+      room.replyEvents['archived-reply'] = target('old secret');
+      room.timeline.events
+        ..clear()
+        ..add(Event(
+            room: room,
+            eventId: 'reply-row',
+            senderId: '@peer:lifecycle.test',
+            type: EventTypes.Message,
+            originServerTs: DateTime.utc(2026, 10, 1),
+            content: {
+              'msgtype': 'm.text',
+              'body': 'visible reply',
+              'm.relates_to': {
+                'm.in_reply_to': {'event_id': 'archived-reply'}
+              }
+            }));
+      final lease = await _mountLifecycleRoom(tester, client);
+      try {
+        await tester.pump(const Duration(milliseconds: 100));
+        final page = tester.state(find.byType(RoomPage)) as dynamic;
+        expect(find.textContaining('old secret'), findsOneWidget);
+        expect(room.replyLookups, 1);
+        await page.controller.refresh();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(room.replyLookups, 1,
+            reason: 'unchanged refresh must reuse the reply');
+        if (change == 'hidden') {
+          page.controller.setHiddenFilter(
+              (String id, DateTime? timestamp) => id == 'archived-reply');
+        } else {
+          room.replyEvents['archived-reply'] =
+              change == 'replacement' ? target('new text') : null;
+          client.onEvent.add(EventUpdate(
+              roomID: room.id,
+              type: EventUpdateType.timeline,
+              content: {
+                'event_id': 'change',
+                'type': change == 'redaction'
+                    ? EventTypes.Redaction
+                    : EventTypes.Message,
+                if (change == 'redaction') 'redacts': 'archived-reply',
+                'content': {
+                  if (change == 'replacement')
+                    'm.relates_to': {
+                      'rel_type': 'm.replace',
+                      'event_id': 'archived-reply'
+                    }
+                }
+              }));
+          await tester.pump();
+        }
+        await page.controller.refresh();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.textContaining('old secret'), findsNothing);
+        expect(
+            change == 'replacement'
+                ? find.textContaining('new text')
+                : find.text('原消息不存在或已被删除'),
+            findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 1));
+        await lease.cancel();
+        await client.dispose();
+      }
+    });
+  }
 
   test('prepared room transfers once and abandoned entry closes once',
       () async {

@@ -35,8 +35,12 @@ final class MessageTimelineCache {
       '$accountId:$roomId:$eventId';
 
   RoomMessageViewModel? lookup(
-          String accountId, String roomId, String eventId) =>
-      _entries[_key(accountId, roomId, eventId)];
+      String accountId, String roomId, String eventId) {
+    final key = _key(accountId, roomId, eventId);
+    final message = _entries.remove(key);
+    if (message != null) _entries[key] = message;
+    return message;
+  }
 
   /// 写入并提升为最近使用；超出容量时淘汰最久未使用的一条。
   void remember(String accountId, String roomId, RoomMessageViewModel message) {

@@ -370,8 +370,18 @@ final class LogicalConversationTimelineCapability
   Iterable<RoomMessageViewModel> get allMessages =>
       _singleWindow?.allMessages ?? _mergedWindow?.all ?? _mergedSnapshot();
   @override
-  RoomMessageViewModel? findMessage(String id) =>
-      _singleWindow?.findMessage(id) ?? _mergedWindow?.find(id);
+  RoomMessageViewModel? findMessage(String id) {
+    final single = _singleWindow;
+    if (single != null) return single.findMessage(id);
+    final source = _sources[_eventSources[id]];
+    if (source is RoomWindowedTimelineSource) {
+      // Resolved replies may lie outside the merged window. Their original
+      // source remains authoritative for edits, redactions and local hiding.
+      return (source as RoomWindowedTimelineSource).findMessage(id);
+    }
+    return _mergedWindow?.find(id);
+  }
+
   @override
   RoomMessageViewModel? get newestMessage =>
       _singleWindow?.newestMessage ?? _mergedWindow?.newest;
@@ -675,7 +685,8 @@ final class LogicalConversationTimelineCapability
             await (source as RoomMessageLookupSource).lookupMessage(eventId);
         _checkActive();
         if (event != null) {
-          _eventSources[event.id] = entry.key;
+          // Keep bounded routing metadata across the next merged snapshot.
+          hintSource(event.id, entry.key);
           return event;
         }
       } catch (error, stack) {

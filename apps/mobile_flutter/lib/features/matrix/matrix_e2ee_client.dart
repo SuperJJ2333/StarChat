@@ -117,6 +117,23 @@ const _maxOutgoingVideoPosterBytes = 512 * 1024;
 const _maxOutgoingVideoReservationBytes =
     maxOriginalVideoBytes + _maxOutgoingVideoPosterBytes;
 
+// Both account-wide and open-room caches must invalidate the same identifiers.
+Iterable<String> _changedReplyEventIds(EventUpdate update) sync* {
+  final id = update.content['event_id'];
+  if (id is String && id.isNotEmpty) yield id;
+  final content = update.content['content'];
+  if (update.content['type'] == EventTypes.Redaction) {
+    final target = update.content['redacts'] ??
+        (content is Map ? content['redacts'] : null);
+    if (target is String && target.isNotEmpty) yield target;
+  }
+  final relation = content is Map ? content['m.relates_to'] : null;
+  if (relation is Map && relation['rel_type'] == 'm.replace') {
+    final target = relation['event_id'];
+    if (target is String && target.isNotEmpty) yield target;
+  }
+}
+
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
   bool get isLoggedIn;
@@ -3436,15 +3453,16 @@ final class _SdkRoomTimelineCapability
     _resolvedEventUpdates =
         _lease._activeRoom.client.onEvent.stream.listen((update) {
       if (update.roomID != _lease.roomId) return;
-      final id = update.content['event_id'];
-      _resolvedEvents.remove(id);
-      _resolvedMessages.remove(id);
-      _eventLookups.remove(id);
-      final redacts = update.content['redacts'] ??
-          (update.content['content'] as Map?)?['redacts'];
-      _resolvedEvents.remove(redacts);
-      _resolvedMessages.remove(redacts);
-      _eventLookups.remove(redacts);
+      var hasEventChange = false;
+      for (final id in _changedReplyEventIds(update)) {
+        hasEventChange = true;
+        _resolvedEvents.remove(id);
+        _resolvedMessages.remove(id);
+        _eventLookups.remove(id);
+        _messageCache.remove(id);
+      }
+      // Ephemeral receipts/typing have no message identity to invalidate.
+      if (hasEventChange && !_disposed) _onUpdate();
     });
     _memberUpdates =
         _lease._activeRoom.client.onRoomState.stream.listen((update) {
@@ -3500,8 +3518,16 @@ final class _SdkRoomTimelineCapability
   Object get _currentSourceStamp =>
       (_timeline, _revisionOf(_timeline), _visibilityStamp, _memberRevision);
   @override
-  Object get presentationRevision =>
-      (_currentSourceStamp, _windowRevision, _outgoingRevision);
+  Object get presentationRevision => (
+        _currentSourceStamp,
+        _windowRevision,
+        _outgoingRevision,
+        _outgoingBoundaryStamp
+      );
+  Object? get _outgoingBoundaryStamp =>
+      _outgoingWork.itemsForRoom(_lease.roomId).isEmpty
+          ? null
+          : (canLoadHistory, hasFutureHistory);
   final _resolvedEvents = <String, Event>{};
   final _eventLookups = <String, Future<Event?>>{};
   late final (String?, String?, Uri?) _eventOwner;
@@ -3800,11 +3826,19 @@ final class _SdkRoomTimelineCapability
   }
 
   @override
-  RoomMessageViewModel? findMessage(String id) =>
-      _viewport?.find(id) ??
-      _resolvedMessages[id] ??
-      MessageTimelineCache.shared
-          .lookup(_lease.owner._client?.userID ?? '', _lease.roomId, id);
+  RoomMessageViewModel? findMessage(String id) {
+    final message = _viewport?.find(id) ??
+        _resolvedMessages[id] ??
+        MessageTimelineCache.shared
+            .lookup(_lease.owner._client?.userID ?? '', _lease.roomId, id);
+    if (message == null) return null;
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    if ((hidden?.call(id, message.timestamp) ?? false) ||
+        (_windowHiddenFilter?.call(id, message.timestamp) ?? false)) {
+      return null;
+    }
+    return message;
+  }
 
   /// 已按 event_id 单独解析出来的消息（窗口之外的引用目标）。
   ///
@@ -4008,7 +4042,12 @@ final class _SdkRoomTimelineCapability
     _ensureActive();
     if (_viewport != null) {
       _refreshWindowSource();
-      final stamp = (_sourceStamp, _windowRevision, _outgoingRevision);
+      final stamp = (
+        _sourceStamp,
+        _windowRevision,
+        _outgoingRevision,
+        _outgoingBoundaryStamp
+      );
       if (_snapshotStamp == stamp) return _windowSnapshot;
       // Pending work belongs to its original time range, including pinned
       // history; it must not jump across unloaded intermediate pages.
@@ -4656,7 +4695,10 @@ final class _SdkRoomTimelineCapability
 
   bool _visibleAnchor(Event event) {
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
-    return !event.redacted && _visibleDateEvent(event, hidden);
+    return !event.redacted &&
+        _visibleDateEvent(event, hidden) &&
+        !(_windowHiddenFilter?.call(event.eventId, event.originServerTs) ??
+            false);
   }
 
   Future<bool> _locateEvent(String eventId, int generation) async {
@@ -10139,6 +10181,10 @@ final class MatrixSdkE2eeClient
     _decryptionSubscription?.cancel();
     _decryptionSubscription = client.onEvent.stream.listen((update) {
       if (_accessRevoked || !identical(client, _client)) return;
+      for (final id in _changedReplyEventIds(update)) {
+        MessageTimelineCache.shared
+            .forget(client.userID ?? '', update.roomID, id);
+      }
       final emoji = _emojiVaultBackend;
       if (emoji != null && emoji.matches(client)) emoji.eventChanged(update);
       final eventId = update.content['event_id']?.toString();

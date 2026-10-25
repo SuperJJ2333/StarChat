@@ -94,6 +94,7 @@ final class MatrixRoomTimelineAdapter
   MatrixRoomTimelineAdapter(this._capability);
 
   final RoomTimelineCapability _capability;
+  bool _disposed = false;
 
   @override
   Object get presentationRevision =>
@@ -164,6 +165,9 @@ final class MatrixRoomTimelineAdapter
   }
 
   RoomTimelineViewport<RoomMessageViewModel>? _fallbackWindow;
+  // Legacy capabilities have no authoritative findMessage cache of their own.
+  // Keep the former controller lookup budget here, behind the fallback window.
+  final _fallbackReplies = <String, RoomMessageViewModel>{};
   RoomWindowedTimelineSource? get _window =>
       _capability is RoomWindowedTimelineSource
           ? _capability as RoomWindowedTimelineSource
@@ -212,8 +216,16 @@ final class MatrixRoomTimelineAdapter
   }
 
   @override
-  RoomMessageViewModel? findMessage(String id) =>
-      _window?.findMessage(id) ?? _fallbackWindow?.find(id);
+  RoomMessageViewModel? findMessage(String id) {
+    if (_disposed) return null;
+    final window = _window;
+    if (window != null) return window.findMessage(id);
+    final message = _fallbackWindow?.find(id) ?? _fallbackReplies[id];
+    return message != null &&
+            !(_hiddenFilter?.call(id, message.timestamp) ?? false)
+        ? message
+        : null;
+  }
 
   /// 引用原消息的按需解析：能力侧实现（本地加密库 → 服务器单事件查询）；
   /// 未实现该能力时 [supportsMessageLookup] 为 false，控制器回退有界历史分页。
@@ -223,12 +235,27 @@ final class MatrixRoomTimelineAdapter
       (_capability as RoomMessageLookupSource).supportsMessageLookup;
 
   @override
-  Future<RoomMessageViewModel?> lookupMessage(String eventId) {
+  Future<RoomMessageViewModel?> lookupMessage(String eventId) async {
+    if (_disposed) return null;
     final capability = _capability;
     if (capability is RoomMessageLookupSource) {
-      return (capability as RoomMessageLookupSource).lookupMessage(eventId);
+      final message =
+          await (capability as RoomMessageLookupSource).lookupMessage(eventId);
+      if (_disposed ||
+          message == null ||
+          (_hiddenFilter?.call(eventId, message.timestamp) ?? false)) {
+        return null;
+      }
+      if (_fallbackWindow != null) {
+        _fallbackReplies.remove(eventId);
+        _fallbackReplies[eventId] = message;
+        while (_fallbackReplies.length > 128) {
+          _fallbackReplies.remove(_fallbackReplies.keys.first);
+        }
+      }
+      return message;
     }
-    return Future.value(null);
+    return null;
   }
 
   @override
@@ -384,5 +411,9 @@ final class MatrixRoomTimelineAdapter
       _dateCapability?.anchorForDay(localDay);
 
   @override
-  void dispose() => _capability.dispose();
+  void dispose() {
+    _disposed = true;
+    _fallbackReplies.clear();
+    _capability.dispose();
+  }
 }

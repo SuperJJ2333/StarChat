@@ -2324,7 +2324,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // Read receipts below continue to use the authoritative SDK newest message.
     latestMessageAnchor.update(timeline?.latestLocalSendIntent,
         outgoing: true, newSend: true);
+    final checkedReplies = <String>{};
     for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
+      final target = message.replyToEventId;
+      if (target != null &&
+          checkedReplies.add(target) &&
+          replyResolver?.stateOf(target)?.isLoaded == true &&
+          timeline?.findMessage(target) == null) {
+        replyResolver?.forget(target);
+      }
       if (message.isRecalled) {
         // A retained poster can be found before the async loader registers a
         // key (or before this room has built the video row at all).
@@ -6490,8 +6498,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ReplyMessageResolution _replyResolution(String targetEventId) {
     final local = controller?.findMessage(targetEventId);
     if (local != null) return ReplyMessageResolution.resolved(local);
-    return replyResolver?.stateOf(targetEventId) ??
-        const ReplyMessageResolution.loading();
+    final state = replyResolver?.stateOf(targetEventId);
+    // A loaded resolver entry cannot override source invalidation or hiding.
+    return state == null || state.isLoaded
+        ? const ReplyMessageResolution.loading()
+        : state;
   }
 
   void _replyResolutionChanged() {
@@ -6513,7 +6524,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (target == null || !seen.add(target)) continue;
       if (controller?.findMessage(target) != null) continue;
       final state = resolver.stateOf(target);
-      if (state != null && state.isSettled) continue;
+      if (state != null && state.isSettled && !state.isLoaded) continue;
       pending.add(target);
     }
     if (pending.isEmpty) return;
@@ -6522,6 +6533,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _replySweepScheduled = false;
       if (!mounted || _disposing) return;
       for (final target in pending) {
+        if (controller?.findMessage(target) != null) continue;
+        if (resolver.stateOf(target)?.isLoaded == true) resolver.forget(target);
         unawaited(resolver.resolve(target));
       }
     });

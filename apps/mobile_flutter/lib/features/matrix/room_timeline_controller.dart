@@ -590,7 +590,11 @@ final class RoomTimelineController extends ChangeNotifier
   RoomMessageViewModel? findMessage(String id) {
     final index = indexOf(id);
     if (index != null) return messages[index];
-    return _windowSource?.findMessage(id) ?? _resolvedReplyTargets[id];
+    // The window source owns its lookup cache and current visibility. Falling
+    // back to a controller copy would revive invalidated/hidden reply content.
+    return _windowSource != null
+        ? _windowSource!.findMessage(id)
+        : _resolvedReplyTargets[id];
   }
 
   /// 单条消息的按需解析（引用原消息恢复）。
@@ -609,7 +613,9 @@ final class RoomTimelineController extends ChangeNotifier
       final found =
           await (source as RoomMessageLookupSource).lookupMessage(eventId);
       if (_disposed) return found;
-      if (found != null) _rememberResolvedReplyTarget(found);
+      if (found != null && _windowSource == null) {
+        _rememberResolvedReplyTarget(found);
+      }
       await refresh();
       return found;
     }
@@ -774,6 +780,7 @@ final class RoomTimelineController extends ChangeNotifier
   late List<RoomMessageViewModel> _sourceSnapshot;
   int _echoRevision = 0;
   int _projectedEchoRevision = 0;
+  (bool, bool)? _projectedPendingBounds;
   bool _publishedViewingHistory = false;
   final _localEchoes = <String, RoomMessageViewModel>{};
 
@@ -1207,6 +1214,16 @@ final class RoomTimelineController extends ChangeNotifier
 
   List<RoomMessageViewModel> _snapshot() {
     final snapshot = adapter.snapshot();
+    // An empty final page can change pending eligibility without changing rows.
+    final pendingBounds = _localEchoes.isEmpty && _mediaEchoes.isEmpty
+        ? null
+        : (
+            (_windowSource?.hasEarlierWindow ?? false) ||
+                (_windowSource != null &&
+                    adapter is RoomHistoryStatus &&
+                    (adapter as RoomHistoryStatus).canLoadHistory),
+            (_windowSource?.hasLaterWindow ?? false) || hasFutureHistory,
+          );
     // Legacy adapters may return fresh models/lists. Compare before allocating
     // merge structures, including when pending sends have not changed.
     var sameSource = snapshot.length == _sourceSnapshot.length;
@@ -1218,9 +1235,14 @@ final class RoomTimelineController extends ChangeNotifier
         }
       }
     }
-    if (sameSource && _echoRevision == _projectedEchoRevision) return messages;
+    if (sameSource &&
+        _echoRevision == _projectedEchoRevision &&
+        pendingBounds == _projectedPendingBounds) {
+      return messages;
+    }
     if (!sameSource) _sourceSnapshot = List.unmodifiable(snapshot);
     _projectedEchoRevision = _echoRevision;
+    _projectedPendingBounds = pendingBounds;
     final result = <RoomMessageViewModel>[];
     final seen = <String>{};
     final pending = <RoomMessageViewModel>[];
@@ -1284,12 +1306,8 @@ final class RoomTimelineController extends ChangeNotifier
       if (!timelineWindowContains(local.timestamp,
           first: firstTimestamp,
           last: lastTimestamp,
-          hasEarlier: (_windowSource?.hasEarlierWindow ?? false) ||
-              (_windowSource != null &&
-                  adapter is RoomHistoryStatus &&
-                  (adapter as RoomHistoryStatus).canLoadHistory),
-          hasLater:
-              (_windowSource?.hasLaterWindow ?? false) || hasFutureHistory)) {
+          hasEarlier: pendingBounds?.$1 ?? false,
+          hasLater: pendingBounds?.$2 ?? false)) {
         continue;
       }
       final index =
