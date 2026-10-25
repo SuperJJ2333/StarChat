@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-25 iOS2234 聊天时间顺序源码候选
+
+用户选择本轮交付源码和验证，暂不生成 IPA。源码 `29384fed`、分支 `codex/ios2234-timeline-order-20261025` 修复普通旧缓存晚恢复排序、失败消息所属时间窗口、满窗口滚动可达性，并移除本机保存提示；冷启动高度切换保持阅读锚点。原全量 6388 PASS / 9 SKIP / 4 夹具 FAIL，补齐唯一 Fake 接口后整文件 4 PASS，其余输入哈希相同；诊断开启变体 9 PASS，移动 404 PASS / 1 Ruby SKIP，analyze/UI契约及规格→质量/安全复审通过。失败原记录保留，不能称全量一次通过。既有 2234 IPA 身份不变，尚不包含这些修复；未做新包或真机验收，主树既有 509 项删除保留，未合并/推送。[任务](tasks/2026-10-25-ios2234-timeline-chronology.md) · [报告](../verification/2026-10-25-ios2234-timeline-chronology.md)。
+
 ## 2026-10-24 iOS2234 未签名候选交接
 统计助手输入/缓存注入与导航边界已修复，用户批准后源码构建 e25b664f，0.4.65+2234 IPA SHA5cb97209…71768b1288，待用户企业签名；没有改生产，Android2233/iOS2215保持。共享同源闭合6382PASS/9条件SKIP、移动404PASS、设备编译验包及统计WKWebView PASS；原生总22PASS/2 Outbox ERROR（MEDIA_STORAGE_UNAVAILABLE），整体CI FAIL，保留未验收，不称全门禁通过。回签需代码/权益比对及真机Outbox、保数据升级、推送验证。[任务](tasks/2026-10-24-ios2234-signing-handoff.md) · [报告](../verification/2026-10-24-ios2234-signing-handoff.md)。源码在独立候选分支，main未合并；主树509项既有删除保留。
 
