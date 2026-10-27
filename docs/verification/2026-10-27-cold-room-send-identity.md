@@ -6,6 +6,8 @@
 
 基线 6853790df944fa60543dba93164ab9128d17ad94；候选分支 codex/cold-room-send-identity-20261027，工作树 C:/Users/Administrator/.codex/worktrees/maintenance-completion/StarChat。本轮交付源码与验证，不打包、不安装、不合并、不推送、不发布提醒或变更官网下载。Android 2235 / iOS 2215 的既有发布身份未由本任务改变。主工作区原有改动不纳入本次提交。
 
+已验证源码提交：7b6a894ba9b3a20e5ca43c19392b5c6cf251c8f6。后续提交仅补记该证据身份。
+
 ## 修复结果
 
 - RoomPage 在历史加载开始前接入账号级 outbox；文字按钮和历史控制器解耦。提交先持久化，写入未完成不会出现新气泡；失败保留输入并提示。同一失败提交重试复用事务 ID，写入期间二次提交不重复建行。
