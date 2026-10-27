@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
@@ -18,6 +19,62 @@ class _ServerError implements Exception {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('ACK evidence survives row deletion but never guesses missing rows',
+      () async {
+    final store = InMemoryOutboxStore();
+    final manager = PersistentOutboxManager(store, accountId: 'owner');
+    final other = PersistentOutboxManager(store, accountId: 'other');
+    final row = (await manager.save(receiverId: 'peer', content: 'text'))!;
+    expect((manager as dynamic).wasAcknowledged(row.localId), isFalse);
+    await manager.claim(row.localId);
+    final attempt = (await manager.byLocalId(row.localId))!;
+    await manager.settleAttempt(attempt, OutboxStatus.sent);
+    await manager.removeOrArchive(row.localId);
+    expect(await manager.byLocalId(row.localId), isNull);
+    expect((manager as dynamic).wasAcknowledged(row.localId), isTrue);
+    expect((other as dynamic).wasAcknowledged(row.localId), isFalse);
+    expect((manager as dynamic).wasAcknowledged('missing'), isFalse);
+    manager.dispose();
+    other.dispose();
+  });
+
+  test('SQLite reopen retains text metadata with the original transaction',
+      () async {
+    sqfliteFfiInit();
+    final path = '${Directory.current.path}/../../docs/verification/artifacts/'
+        '2026-10-27/cold-room-send-identity/metadata-${DateTime.now().microsecondsSinceEpoch}.db';
+    final metadata = {
+      'reply_to': 'reply',
+      'reply_excerpt': 'quote',
+      'mentions': ['@peer:test']
+    };
+    final now = DateTime.utc(2026);
+    final row = OutboxMessage.fromRow(OutboxMessage(
+      localId: 'one',
+      txid: 'same-tx',
+      receiverId: 'room',
+      accountId: 'owner',
+      content: 'text',
+      createdAt: now,
+      updatedAt: now,
+    ).toRow()
+      ..['text_metadata'] = jsonEncode(metadata));
+    var store = SqliteOutboxStore(databasePath: path);
+    try {
+      await store.insert(row);
+      await store.close();
+      store = SqliteOutboxStore(databasePath: path);
+      final restored = (await store.byTxid('same-tx'))!;
+      expect(restored.toRow()['text_metadata'], isNotNull);
+      expect(
+          jsonDecode(restored.toRow()['text_metadata']! as String), metadata);
+      expect(restored.content, 'text');
+    } finally {
+      await store.close();
+      await databaseFactoryFfi.deleteDatabase(path);
+    }
+  });
 
   test('retry policy rejects overflow-sized remote delay and negative budget',
       () {
@@ -62,50 +119,60 @@ void main() {
     expect((await owner.byLocalId(row.localId))!.retryCount, 0);
   });
 
-  test('SQLite v1 upgrade preserves identity and adds durable retry defaults',
-      () async {
-    sqfliteFfiInit();
-    final path = '${Directory.current.path}/../../docs/verification/artifacts/'
-        '2026-09-23/remaining-optimizations/outbox-migration-${DateTime.now().microsecondsSinceEpoch}.db';
-    final db = await databaseFactoryFfi.openDatabase(path,
-        options: OpenDatabaseOptions(
-            version: 1,
-            onCreate: (db, _) async {
-              await db.execute('CREATE TABLE outbox_messages ('
-                  'local_id TEXT PRIMARY KEY, txid TEXT UNIQUE, room_id TEXT, '
-                  'receiver_id TEXT, account_id TEXT, content TEXT, status TEXT, '
-                  'retry_count INTEGER, created_at INTEGER, updated_at INTEGER, last_error TEXT)');
-              await db.insert('outbox_messages', {
-                'local_id': 'old',
-                'txid': 'same-tx',
-                'room_id': 'room',
-                'receiver_id': 'peer',
-                'account_id': 'me',
-                'content': 'retained',
-                'status': 'waitingNetwork',
-                'retry_count': 2,
-                'created_at': 1,
-                'updated_at': 1,
-              });
-            }));
-    await db.close();
-    final store = SqliteOutboxStore(databasePath: path);
-    try {
-      final row = (await store.byLocalId('old'))!;
-      expect(row.txid, 'same-tx');
-      expect(row.content, 'retained');
-      expect(row.toRow()['server_retry_count'], 0);
-      final connection = await databaseFactoryFfi.openDatabase(path);
-      final columns =
-          await connection.rawQuery('PRAGMA table_info(outbox_messages)');
-      expect(columns.map((e) => e['name']), contains('next_server_retry_at'));
-      expect(await connection.getVersion(), 2);
-    } finally {
-      await store.close();
-      await databaseFactoryFfi.deleteDatabase(path);
-    }
-  });
-
+  for (final oldVersion in [1, 2]) {
+    test(
+        'SQLite v$oldVersion upgrade preserves identity and adds durable retry defaults',
+        () async {
+      sqfliteFfiInit();
+      final path =
+          '${Directory.current.path}/../../docs/verification/artifacts/'
+          '2026-09-23/remaining-optimizations/outbox-migration-${DateTime.now().microsecondsSinceEpoch}.db';
+      final db = await databaseFactoryFfi.openDatabase(path,
+          options: OpenDatabaseOptions(
+              version: oldVersion,
+              onCreate: (db, _) async {
+                await db.execute('CREATE TABLE outbox_messages ('
+                    'local_id TEXT PRIMARY KEY, txid TEXT UNIQUE, room_id TEXT, '
+                    'receiver_id TEXT, account_id TEXT, content TEXT, status TEXT, '
+                    'retry_count INTEGER, created_at INTEGER, updated_at INTEGER, last_error TEXT)');
+                if (oldVersion == 2) {
+                  await db.execute(
+                      'ALTER TABLE outbox_messages ADD COLUMN server_retry_count INTEGER NOT NULL DEFAULT 0');
+                  await db.execute(
+                      'ALTER TABLE outbox_messages ADD COLUMN next_server_retry_at INTEGER');
+                }
+                await db.insert('outbox_messages', {
+                  'local_id': 'old',
+                  'txid': 'same-tx',
+                  'room_id': 'room',
+                  'receiver_id': 'peer',
+                  'account_id': 'me',
+                  'content': 'retained',
+                  'status': 'waitingNetwork',
+                  'retry_count': 2,
+                  'created_at': 1,
+                  'updated_at': 1,
+                });
+              }));
+      await db.close();
+      final store = SqliteOutboxStore(databasePath: path);
+      try {
+        final row = (await store.byLocalId('old'))!;
+        expect(row.txid, 'same-tx');
+        expect(row.content, 'retained');
+        expect(row.toRow()['server_retry_count'], 0);
+        final connection = await databaseFactoryFfi.openDatabase(path);
+        final columns =
+            await connection.rawQuery('PRAGMA table_info(outbox_messages)');
+        expect(columns.map((e) => e['name']), contains('next_server_retry_at'));
+        expect(await connection.getVersion(), 3);
+        expect(columns.map((e) => e['name']), contains('text_metadata'));
+      } finally {
+        await store.close();
+        await databaseFactoryFfi.deleteDatabase(path);
+      }
+    });
+  }
   group('OutboxStatus 语义（产品词汇表）', () {
     test('五个状态与文案一一对应，网络问题绝不属于终局失败', () {
       expect(OutboxStatus.queued.label, '等待发送');

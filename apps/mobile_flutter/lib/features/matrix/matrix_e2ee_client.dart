@@ -2803,6 +2803,15 @@ final class MatrixRoomLease
               txid: txid) ??
           (throw StateError('Matrix room event was not accepted')));
 
+  /// Durable text transport needs the send gates, never a history timeline.
+  Future<String> sendTextWithTransaction(String text, String transactionId) =>
+      _withLeaseSend((room) async =>
+          await room.sendTextEvent(text,
+              txid: transactionId,
+              parseCommands: false,
+              onTiming: _sdkSendTimingObserver) ??
+          (throw const MessageSendNetworkException('消息发送失败')));
+
   Future<void> sendEncryptedAttachment({
     required Uint8List bytes,
     required String name,
@@ -4326,7 +4335,7 @@ final class _SdkRoomTimelineCapability
                       ? _redPacketClaimNoticeBody(
                           event, _lease._activeRoom.client.userID)
                       : event.text),
-      isOwn: event.senderId == _lease._activeRoom.client.userID,
+      isOwn: _eventOwner.$1 != null && event.senderId == _eventOwner.$1,
       deliveryState: status,
       timestamp: event.originServerTs.toLocal(),
       isSdkLocalEcho: !event.status.isSynced,

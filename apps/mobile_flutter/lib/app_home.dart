@@ -21,13 +21,13 @@ import 'core/app_connection_status.dart';
 import 'core/network_state_manager.dart';
 import 'core/performance_trace.dart';
 import 'core/outbox/message_send_scheduler.dart';
+import 'core/outbox/outbox_message.dart';
 import 'core/outbox/media_outbox_store.dart';
 import 'core/outbox/media_outbox_recovery_service.dart';
 import 'core/outbox/outbox_recovery_service.dart';
 import 'core/outbox/outbox_room_sender_registry.dart';
 import 'core/outbox/outbox_store.dart';
 import 'core/outbox/persistent_outbox_manager.dart';
-import 'features/matrix/matrix_room_timeline_adapter.dart';
 import 'core/app_config.dart';
 import 'core/permissions/blocked_contacts.dart';
 import 'core/local_notification_scheduler.dart';
@@ -1871,19 +1871,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   ///
   /// 与 `_openManagedRoomRoute` 的区别：不经过 `RoomOpeningPolicy`、不注册
   /// 路由、不 push 页面；发送完成后由调用方 [OutboxLease.release] 释放
-  /// （timeline.dispose + lease.cancel），因此不会留下资源。
+  /// （lease.cancel），因此不会留下资源；历史加载不参与文字派发。
   Future<OutboxLease> _openOutboxLease(String roomId) async {
     final lease = await widget.matrix.openRoomLease(roomId);
-    try {
-      final timeline = await lease.openRoomTimeline(onUpdate: () {});
-      return _MatrixOutboxLease(lease, timeline);
-    } catch (error) {
-      // 时间线打不开时也必须释放租约（无泄漏）。
-      try {
-        await lease.cancel();
-      } catch (_) {}
-      rethrow;
-    }
+    return _MatrixOutboxLease(lease);
   }
 
   MediaOutboxRecoveryService? _mediaOutbox;
@@ -4309,26 +4300,24 @@ final class AccountPrivacyPage extends StatelessWidget {
 ///
 /// 与 `RoomPage` 持有的租约语义一致（同一 SDK 资源管理），区别是这里不挂
 /// 时间线 UI、不注册导航路由；`release()` 幂等，成功/失败/取消三路都调用。
-final class _MatrixOutboxLease implements OutboxLease {
-  _MatrixOutboxLease(this._lease, this._timeline);
+final class _MatrixOutboxLease implements StructuredOutboxLease {
+  _MatrixOutboxLease(this._lease);
 
   final MatrixRoomLease _lease;
-  final RoomTimelineCapability _timeline;
   bool _released = false;
 
   @override
   Future<String> send(String text, String transactionId) =>
-      _timeline.sendTextWithTransaction(text, transactionId);
+      _lease.sendTextWithTransaction(text, transactionId);
+
+  @override
+  Future<String> sendMessage(OutboxMessage message) =>
+      _lease.sendMessageContent(message.textEventContent, txid: message.txid);
 
   @override
   Future<void> release() async {
     if (_released) return;
     _released = true;
-    try {
-      _timeline.dispose();
-    } catch (_) {
-      // 释放错误不得掩盖发送结果。
-    }
     try {
       await _lease.cancel();
     } catch (_) {

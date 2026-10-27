@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -108,6 +109,33 @@ final class _RaceRoom extends SnapshotRoom {
   bool get encrypted => true;
   @override
   bool get canSendDefaultMessages => true;
+  final sent = <String?>[];
+  final contents = <Map<String, dynamic>>[];
+  @override
+  Future<Timeline> getTimeline({
+    void Function(int)? onChange,
+    void Function(int)? onRemove,
+    void Function(int)? onInsert,
+    void Function()? onNewEvent,
+    void Function()? onUpdate,
+    String? eventContextId,
+  }) async =>
+      throw StateError('history unavailable');
+  @override
+  Future<String?> sendEvent(
+    Map<String, dynamic> content, {
+    String type = EventTypes.Message,
+    String? txid,
+    Event? inReplyTo,
+    String? editEventId,
+    String? threadRootEventId,
+    MatrixSendTimingObserver? onTiming,
+    String? threadLastEventId,
+  }) async {
+    sent.add(txid);
+    contents.add(content);
+    return r'$background-ack';
+  }
 }
 
 final class _Sender implements OutboxSender {
@@ -196,6 +224,8 @@ void main() {
       (tester) async {
     for (final boundary in [
       'authorized',
+      'background',
+      'background-rich',
       'epoch',
       'account',
       'failure',
@@ -203,17 +233,27 @@ void main() {
     ]) {
       final store = _HeldFirstQueryStore();
       final now = DateTime.utc(2026, 10, 16);
-      await store.inner.insert(OutboxMessage(
-          localId: 'local-original',
-          txid: 'tx-original',
-          receiverId: '!handoff:test',
-          roomId: '!handoff:test',
-          accountId: '@me:test',
-          content: 'durable pending text',
-          createdAt: now,
-          updatedAt: now));
+      await store.inner.insert(OutboxMessage.fromRow(OutboxMessage(
+              localId: 'local-original',
+              txid: 'tx-original',
+              receiverId: '!handoff:test',
+              roomId: '!handoff:test',
+              accountId: '@me:test',
+              content: 'durable pending text',
+              createdAt: now,
+              updatedAt: now)
+          .toRow()
+        ..['text_metadata'] = boundary == 'background-rich'
+            ? jsonEncode({
+                'reply_to': 'original-event',
+                'reply_excerpt': 'selected text',
+                'mentions': ['@peer:test'],
+              })
+            : null));
       final sender = _Sender(store);
-      OutboxRoomSenderRegistry.shared.register(sender);
+      if (!boundary.startsWith('background')) {
+        OutboxRoomSenderRegistry.shared.register(sender);
+      }
       PersistentOutboxManager.shared = null;
       NetworkStateManager.shared = NetworkStateManager();
       final client = SnapshotClient()..loggedIn = true;
@@ -277,19 +317,34 @@ void main() {
       for (var i = 0; i < 20; i++) {
         await tester.pump();
       }
-      if (boundary == 'authorized') {
+      if (boundary == 'authorized' || boundary.startsWith('background')) {
         expect(PersistentOutboxManager.shared!.store, same(store));
         NetworkStateManager.shared!.reportSuccess();
         for (var i = 0; i < 20; i++) {
           await tester.pump();
         }
-        expect(sender.sent, ['tx-original']);
+        final sent = boundary.startsWith('background')
+            ? (client.snapshotRooms.single as _RaceRoom).sent
+            : sender.sent;
+        expect(sent, ['tx-original'],
+            reason: 'dispatch must not open or wait for history');
+        if (boundary == 'background-rich') {
+          final content =
+              (client.snapshotRooms.single as _RaceRoom).contents.single;
+          expect(content['m.mentions'], {
+            'user_ids': ['@peer:test']
+          });
+          expect(content['m.relates_to'], {
+            'm.in_reply_to': {'event_id': 'original-event'}
+          });
+          expect(content['io.changliao.selected_quote'], 'selected text');
+        }
         expect(await store.inner.query(unsent: true), isEmpty);
         NetworkStateManager.shared!.reportSuccess();
         for (var i = 0; i < 8; i++) {
           await tester.pump();
         }
-        expect(sender.sent, ['tx-original'],
+        expect(sent, ['tx-original'],
             reason: 'recovery keeps the original txid and dispatches once');
       } else {
         expect(PersistentOutboxManager.shared, isNull,

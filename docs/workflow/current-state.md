@@ -1,5 +1,9 @@
 # 当前工作状态
 
+## 2026-10-27 冷启动文字入队与本人归属源码交付
+
+候选分支 codex/cold-room-send-identity-20261027，基线6853790d。文字入队/后台发送与历史解耦，落盘后发布右侧气泡，已确认账号稳定判定本人；失败保留输入，原事务、权限和E2EE门禁保留。补齐@/引用持久化、ACK删除/淘汰竞争、新输入/引用保护及历史重试。规格→质量审查发现项均红绿修复；最终16个Dart文件与完整验证输入一致。完整运行6421 PASS/9诊断SKIP/1 Windows目录清理失败，原样复跑失败文件12 PASS；诊断开启9 PASS，移动404 PASS/1 Ruby SKIP，analyze/UI/策略通过。原全量exit1保留，不称一次全绿；总verify缺.env停止。仅源码，本轮未打包/安装/合并/推送/发布，保留Android2235与iOS2215发布状态。下一步按后续打包授权及两端真机反馈验收。[任务](tasks/2026-10-27-cold-room-send-identity.md) · [报告](../verification/2026-10-27-cold-room-send-identity.md)。
+
 ## 2026-10-25 Android 0.4.66（2235）官网交付，不发布提醒
 
 源码52bbd8c5，候选分支codex/android2235-release-20261025；消息顺序/群聊缓存/统计HTML修复已打包为正式ARM64，固定75b31签名，APK SHA0e438bef…570a434。20构建步骤、版本16/3及Android边界37、mobile404/1 Ruby跳过、analyze、共享6410复用与构建/发布两组规格→质量审查通过。UTC07:56:46官网下载切换、08:03:37后验PASS；只变不可变2235文件、精确CDN路由、latest-arm64及两静态入口，更新提醒仍2233、最低3、iOS2215和35容器不变。未合并/推送，主树既有509删除保持。下一步ARM64真机覆盖升级、冷启动/分页/群聊反馈；本轮不自动开启提醒，不生成新IPA。[任务](tasks/2026-10-25-android2235-release.md) · [报告](../verification/2026-10-25-android2235-release.md)。

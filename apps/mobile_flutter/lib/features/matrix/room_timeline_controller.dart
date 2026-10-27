@@ -415,6 +415,7 @@ final class RoomTimelineController extends ChangeNotifier
       this.canDispatchNow,
       this.isSourceActive,
       this.outboxRoomId,
+      this.sendPersistedText,
       bool windowed = false,
       NetworkStateManager? networkStateManager,
       OutboxJournal? outboxJournal,
@@ -507,6 +508,7 @@ final class RoomTimelineController extends ChangeNotifier
   }
 
   final String? outboxRoomId;
+  final Future<String> Function(OutboxMessage)? sendPersistedText;
   final Set<String> _foreignOutboxTransactions = {};
 
   /// 单次派发的护栏超时（2026-09-19 房间瘫痪修复）。
@@ -1835,6 +1837,8 @@ final class RoomTimelineController extends ChangeNotifier
       rethrow;
     }
     final permitted = canSendNow?.call() ?? true;
+    replyToEventId ??= outboxRow?.replyToEventId;
+    replyExcerpt ??= outboxRow?.replyExcerpt;
     final local = RoomMessageViewModel(
         id: tx,
         transactionId: tx,
@@ -1855,10 +1859,12 @@ final class RoomTimelineController extends ChangeNotifier
     final transport = adapter;
     _senders[tx] = () => send != null
         ? send(tx)
-        : transport is RoomOptimisticTextAdapter
-            ? (transport as RoomOptimisticTextAdapter)
-                .sendTextWithTransaction(text, tx)
-            : adapter.sendText(text);
+        : outboxRow?.hasTextMetadata == true
+            ? _sendPersistedText(outboxRow!)
+            : transport is RoomOptimisticTextAdapter
+                ? (transport as RoomOptimisticTextAdapter)
+                    .sendTextWithTransaction(text, tx)
+                : adapter.sendText(text);
     _echoRevision++;
     _localEchoes[tx] = local;
     // Recovery and a page timer can revisit an existing durable identity.
@@ -1911,12 +1917,16 @@ final class RoomTimelineController extends ChangeNotifier
       timestamp: row.createdAt,
       // Source routing limits retries, not the actual delivery outcome.
       deliveryState: roomDeliveryStateOf(row.status),
+      replyToEventId: row.replyToEventId,
+      replyExcerpt: row.replyExcerpt,
     );
     final transport = adapter;
-    _senders[tx] = () => transport is RoomOptimisticTextAdapter
-        ? (transport as RoomOptimisticTextAdapter)
-            .sendTextWithTransaction(row.content, tx)
-        : adapter.sendText(row.content);
+    _senders[tx] = () => row.hasTextMetadata
+        ? _sendPersistedText(row)
+        : transport is RoomOptimisticTextAdapter
+            ? (transport as RoomOptimisticTextAdapter)
+                .sendTextWithTransaction(row.content, tx)
+            : adapter.sendText(row.content);
     _echoRevision++;
     _localEchoes[tx] = local;
     if (!foreign) _armDurableRetry(row);
@@ -1935,6 +1945,12 @@ final class RoomTimelineController extends ChangeNotifier
       if (_disposed) return;
       if (row != null) _reconcileOutboxMessage(row);
     }
+  }
+
+  Future<String> _sendPersistedText(OutboxMessage row) {
+    final send = sendPersistedText;
+    if (send == null) throw StateError('Structured text transport unavailable');
+    return send(row);
   }
 
   void _reconcileOutboxMessage(OutboxMessage row) {

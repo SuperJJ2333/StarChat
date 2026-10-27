@@ -888,7 +888,8 @@ void main() {
   testWidgets('background outbox failure updates the existing bubble',
       (tester) async {
     final client = _OfflineClient();
-    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+        accountId: client.userID!);
     final row = await outbox.save(
         receiverId: '@peer:offline.test',
         roomId: client.localRoom.id,

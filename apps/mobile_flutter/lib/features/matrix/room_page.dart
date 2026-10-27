@@ -1087,6 +1087,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// Offline First：本房间的持久化出站队列（可注入；组合根写入 shared）。
   PersistentOutboxManager? _readyOutbox;
   bool get _queueReady => widget.pendingOutbox == null || _readyOutbox != null;
+  bool get _textQueueReady =>
+      _textOwnerActive() &&
+      _outbox != null &&
+      !_outbox!.isDisposed &&
+      _outbox!.accountId == roomInfo.currentUserId;
+  bool Function() _textOwnerActive = () => false;
+  bool _persistingText = false;
+  (String, String)? _retryTextWrite;
+  final _earlyTextRows = <String, OutboxMessage>{};
+  bool get _canAdmitText =>
+      _textQueueReady &&
+      !_persistingText &&
+      !widget.readOnly &&
+      widget.roomLease.canQueueLocalText &&
+      InteractionPermission.resolve(
+        isFriend: _peerIsFriend(),
+        isBlocked: blockedContacts.isBlocked(_peerUserId()),
+      ).canSendMessage();
   PersistentOutboxManager? get _outbox =>
       _readyOutbox ??
       (widget.pendingOutbox != null
@@ -1142,7 +1160,88 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   void _outboxChanged() {
     if (!mounted || _disposing || widget.roomLease.canceled) return;
+    // Capture ACK evidence synchronously, before a slow read or another room's
+    // backlog can evict the manager's bounded evidence. Sent is monotonic.
+    final manager = _outbox;
+    var acknowledged = false;
+    for (final entry in _earlyTextRows.entries.toList()) {
+      if (entry.value.status != OutboxStatus.sent &&
+          manager?.wasAcknowledged(entry.value.localId) == true) {
+        _earlyTextRows[entry.key] =
+            entry.value.copyWith(status: OutboxStatus.sent);
+        acknowledged = true;
+      }
+    }
+    if (acknowledged) _timelineRevision.value++;
     unawaited(controller?.reconcileOutboxStatuses().catchError((Object _) {}));
+    unawaited(_refreshEarlyTextRows());
+  }
+
+  Future<void> _refreshEarlyTextRows() async {
+    final manager = _outbox;
+    if (manager == null || !_textOwnerActive()) return;
+    for (final tx in _earlyTextRows.keys.toList()) {
+      final row = await manager.byTxid(tx);
+      if (!_textOwnerActive() || !identical(_outbox, manager)) return;
+      final previous = _earlyTextRows[tx];
+      if (previous != null) {
+        _earlyTextRows[tx] = previous.status == OutboxStatus.sent ||
+                manager.wasAcknowledged(previous.localId)
+            ? previous.copyWith(status: OutboxStatus.sent)
+            : row ?? previous;
+      }
+    }
+    if (_earlyTextRows.isNotEmpty) _timelineRevision.value++;
+  }
+
+  // Queue readiness belongs to the account/lease, not to a history load attempt.
+  void _bindLocalTextOutbox() {
+    final lease = widget.roomLease;
+    final owner = lease.owner;
+    final identity = owner.sendPreparationIdentity;
+    final account = roomInfo.currentUserId;
+    final api = widget.api;
+    final epoch = api.sessionEpoch;
+    _textOwnerActive = () =>
+        mounted &&
+        !_disposing &&
+        identical(widget.roomLease, lease) &&
+        lease.isCurrentLocalOwner &&
+        owner.sendPreparationIdentity == identity &&
+        account != null &&
+        owner.userId == account &&
+        identical(widget.api, api) &&
+        api.sessionEpoch == epoch;
+    void attach(PersistentOutboxManager? manager) {
+      if (!_textOwnerActive() ||
+          manager == null ||
+          manager.isDisposed ||
+          manager.accountId != account) {
+        return;
+      }
+      _readyOutbox = manager;
+      _outboxJournal = _buildOutboxJournal();
+      controller?.attachOutboxJournal(_outboxJournal!);
+      _observedOutbox?.removeListener(_outboxChanged);
+      _observedOutbox = manager;
+      manager.addListener(_outboxChanged);
+      setState(() {});
+    }
+
+    final pending = widget.pendingOutbox;
+    if (pending == null) {
+      attach(_outbox);
+    } else {
+      unawaited(pending.then((manager) {
+        if (manager == null && _textOwnerActive()) {
+          _showMediaMessage('本机发送队列无法读取，请重新进入会话重试');
+          return;
+        }
+        if (identical(manager, PersistentOutboxManager.shared)) attach(manager);
+      }).catchError((Object _) {
+        if (_textOwnerActive()) _showMediaMessage('本机发送队列无法读取，请稍后重试');
+      }));
+    }
   }
 
   OutboxJournal? _buildOutboxJournal() {
@@ -1350,6 +1449,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 它属于房间打开流程，由组合根在 register/release 时统一登记与释放
     // （AppHome._openManagedRoomRoute），避免会话状态出现第二个真相源。
     ensureStatisticsToolRegistered();
+    _bindLocalTextOutbox();
     unawaited(_trackMatrixOperation(_load()));
   }
 
@@ -1743,6 +1843,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         canDispatchNow: () => sourceActive() && _canDispatch,
         outboxJournal: _outboxJournal,
         outboxRoomId: roomInfo.id,
+        sendPersistedText: (row) =>
+            lease.sendMessageContent(row.textEventContent, txid: row.txid),
         onOutboxCorrelation: widget.onOutboxCorrelation,
         outboxCorrelationFor: widget.outboxCorrelationFor,
         MatrixRoomTimelineAdapter(timeline),
@@ -1751,39 +1853,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       loadedController.addListener(_changed);
       controller = loadedController;
       _bindMediaTimeline();
-      _observedOutbox = _outbox;
-      _observedOutbox?.addListener(_outboxChanged);
-      final pendingOutbox = widget.pendingOutbox;
-      if (pendingOutbox != null) {
-        final owner = widget.roomLease.owner.sendPreparationIdentity;
-        final businessEpoch = widget.api.sessionEpoch;
-        unawaited(pendingOutbox.then((manager) async {
-          if (!sourceActive() ||
-              owner != widget.roomLease.owner.sendPreparationIdentity ||
-              businessEpoch != widget.api.sessionEpoch ||
-              manager == null ||
-              manager.isDisposed ||
-              !identical(manager, PersistentOutboxManager.shared) ||
-              manager.accountId != roomInfo.currentUserId ||
-              !identical(controller, loadedController)) {
-            return;
-          }
-          _readyOutbox = manager;
-          final journal = _buildOutboxJournal();
-          if (journal == null) {
-            _readyOutbox = null;
-            return;
-          }
-          controller!.attachOutboxJournal(journal);
-          _outboxJournal = journal;
-          _observedOutbox = manager;
-          manager.addListener(_outboxChanged);
-          await loadedController.reconcileOutboxStatuses();
-          if (sourceActive() && identical(controller, loadedController)) {
-            setState(() {});
-          }
-        }).catchError((Object _) {}));
+      for (final row in _earlyTextRows.values) {
+        loadedController.restoreOutboxMessage(row);
       }
+      _earlyTextRows.clear();
       final revisionBeforeInitialRefresh = _timelineRevision.value;
       await loadedController.refresh();
       if (!sourceActive()) {
@@ -2381,37 +2454,86 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _send() async {
+    if (!_canAdmitText) return;
     final text = input.text.trim();
-    if (text.isEmpty || controller == null || !_queueReady) return;
+    if (text.isEmpty) return;
+    final submittedValue = input.value;
     // R2 修复：先取得正文/回复关系/收件人的**不可变快照**，再清空输入。
     // （input.clear() 同步触发监听器→applyEdit 移除全部 token→
     // recipientUserIds 已空——旧顺序丢失 m.mentions。）
     final reply = replyingTo;
     final replyExcerpt = replyingTo == null ? null : _selectedReplyExcerpt;
     final mentions = mentionComposer.recipientUserIds();
+    final manager = _outbox;
+    if (_outboxJournal == null || manager == null) return;
+    controller?.beginLocalSend();
+    final signature = jsonEncode([text, reply?.id, replyExcerpt, mentions]);
+    final previousWrite = _retryTextWrite;
+    final txid =
+        previousWrite?.$1 == signature ? previousWrite!.$2 : manager.newTxid();
+    _retryTextWrite = (signature, txid);
+    OutboxMessage? row;
+    setState(() => _persistingText = true);
+    try {
+      row = await manager.save(
+          receiverId: _outboxReceiverId,
+          roomId: _outboxReceiverId == roomInfo.id ? roomInfo.id : null,
+          txid: txid,
+          content: text,
+          replyToEventId: reply?.id,
+          replyExcerpt: replyExcerpt,
+          mentionedUserIds: mentions);
+    } catch (_) {
+      // Never expose raw storage exceptions (paths or message content).
+    } finally {
+      if (mounted && !_disposing) setState(() => _persistingText = false);
+    }
+    if (!_textOwnerActive() || !identical(manager, _outbox)) return;
+    if (row == null) {
+      _showMediaMessage('消息无法保存到本机，请检查存储空间后重试；输入已保留');
+      return;
+    }
+    _retryTextWrite = null;
     // 规格取消场景：发送消息即取消文本选区与菜单（若处于选择模式）。
     MessageTextSelectionSession.dismissActive();
-    _programmaticComposerEdit = true;
-    try {
-      input.clear();
-      _lastComposerText = '';
-      // R6：clearAfterSend 同时清触发状态（未选联系人的 @兄 残留
-      // 不再导致下一条普通输入弹面板）。
-      mentionComposer.clearAfterSend();
-    } finally {
-      _programmaticComposerEdit = false;
+    // Editing remains usable during disk I/O. Clear only the submitted value.
+    if (input.text == submittedValue.text) {
+      _programmaticComposerEdit = true;
+      try {
+        input.clear();
+        _lastComposerText = '';
+        // R6：clearAfterSend 同时清触发状态（未选联系人的 @兄 残留
+        // 不再导致下一条普通输入弹面板）。
+        mentionComposer.clearAfterSend();
+      } finally {
+        _programmaticComposerEdit = false;
+      }
+      if (mounted &&
+          identical(replyingTo, reply) &&
+          _selectedReplyExcerpt == replyExcerpt) {
+        setState(() {
+          replyingTo = null;
+          _selectedReplyExcerpt = null;
+        });
+      }
+      _saveDraft();
+      unawaited(RoomDraftStore.shared.flush(_draftKey));
+      mentionDraft.clear();
     }
-    if (mounted) {
-      setState(() {
-        replyingTo = null;
-        _selectedReplyExcerpt = null;
-      });
+    final timeline = controller;
+    if (timeline == null) {
+      _earlyTextRows[row.txid] = row;
+      while (_earlyTextRows.length > 200) {
+        _earlyTextRows.remove(_earlyTextRows.keys.first);
+      }
+      _timelineRevision.value++;
+      unawaited(_refreshEarlyTextRows());
+      widget.requestOutboxDrain?.call();
+      return;
     }
-    _saveDraft();
-    unawaited(RoomDraftStore.shared.flush(_draftKey));
-    mentionDraft.clear();
-    await controller!.sendText(
+    await timeline.sendText(
       text,
+      outboxRow: row,
       replyToEventId: reply?.id,
       replyExcerpt: replyExcerpt,
       send: reply == null && mentions.isEmpty
@@ -6478,7 +6600,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   )>{};
 
   List<RoomMessageViewModel> _visibleMessages() {
-    final all = controller?.messages ?? const <RoomMessageViewModel>[];
+    final all = controller?.messages ??
+        [
+          for (final row in _earlyTextRows.values)
+            RoomMessageViewModel(
+                id: row.txid,
+                transactionId: row.txid,
+                senderId: row.accountId,
+                text: row.content,
+                isOwn: true,
+                timestamp: row.createdAt,
+                replyToEventId: row.replyToEventId,
+                replyExcerpt: row.replyExcerpt,
+                deliveryState: roomDeliveryStateOf(row.status)),
+        ];
     final messages = hiddenEvents?.visibleItems(roomInfo.id, all,
             eventId: (m) => m.id, eventTimestamp: (m) => m.timestamp) ??
         all;
@@ -6636,7 +6771,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       key: _timelineViewportKey,
       behavior: HitTestBehavior.translucent,
       onTap: _dismissComposerExtensions,
-      child: errorMessage != null
+      child: errorMessage != null && (controller != null || messages.isEmpty)
           ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
               Text(errorMessage!),
@@ -6800,6 +6935,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     builder: (_, __, ___) => _buildTimeline(),
                   ),
                 ),
+                if (controller == null &&
+                    errorMessage != null &&
+                    _earlyTextRows.isNotEmpty)
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text(errorMessage!),
+                    CupertinoButton(
+                        onPressed: () {
+                          if (_disposing ||
+                              widget.roomLease.canceled ||
+                              errorMessage == null) {
+                            return;
+                          }
+                          setState(() => errorMessage = null);
+                          unawaited(_trackMatrixOperation(_load()));
+                        },
+                        child: const Text('重试读取')),
+                  ]),
                 if (mediaMessage != null)
                   AnimatedOpacity(
                     opacity: mediaMessageVisible ? 1 : 0,
@@ -6887,9 +7039,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                       onMore: () => _togglePanel(ComposerPanel.more),
                       onVoice: _toggleVoice,
                       onEmoji: () => _togglePanel(ComposerPanel.emoji),
-                      onSend: controller == null || !_queueReady
-                          ? null
-                          : () => _trackAction(_send),
+                      onSend: !_canAdmitText ? null : () => _trackAction(_send),
                       onSubmitted: (_) => _send(),
                       voiceField: WeChatHoldToTalk(
                         controller: voiceRecording,

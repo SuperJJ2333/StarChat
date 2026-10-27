@@ -20,33 +20,35 @@ final class RecordingDriver implements CallAlertDriver {
 }
 
 void main() {
-  test('alerts ring immediately then loop on the interval', () async {
+  testWidgets('alerts ring immediately then loop on the interval',
+      (tester) async {
     final driver = RecordingDriver();
     final alerts =
         CallAlerts(driver: driver, interval: const Duration(milliseconds: 20));
+    addTearDown(alerts.dispose);
 
     expect(alerts.ringing, isFalse);
     alerts.start(SoundType.callVoiceIncoming);
     expect(alerts.ringing, isTrue);
-    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await tester.pump(const Duration(milliseconds: 5));
     expect(driver.ringtones, [SoundType.callVoiceIncoming],
         reason: '响铃即时触发一次（铃声+震动）');
     expect(driver.vibrations, 1);
 
-    await Future<void>.delayed(const Duration(milliseconds: 55));
+    await tester.pump(const Duration(milliseconds: 55));
     expect(driver.ringtones.length, greaterThanOrEqualTo(2), reason: '按间隔循环响铃');
     expect(driver.vibrations, driver.ringtones.length, reason: '铃声与震动成对出现');
 
     alerts.stop();
     final countAtStop = driver.ringtones.length;
     expect(alerts.ringing, isFalse);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
     expect(driver.ringtones.length, countAtStop, reason: '停止后不再响铃');
 
     // 二次 start 重新开始循环；重复 start 不会叠加循环。
     alerts.start(SoundType.callVideoIncoming);
     alerts.start(SoundType.callVideoIncoming);
-    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await tester.pump(const Duration(milliseconds: 5));
     expect(driver.ringtones.length, countAtStop + 1);
     alerts.dispose();
   });

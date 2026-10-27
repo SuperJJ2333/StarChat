@@ -194,6 +194,12 @@ void main() {
     }
     expect(firstClient.room.sent, hasLength(3));
     expect(
+        (tester.state(find.byType(RoomPage)) as dynamic)
+            .controller
+            .latestLocalSendIntent,
+        isNotNull,
+        reason: 'nudge retains its existing explicit return-to-latest intent');
+    expect(
         firstClient.room.sent.every((event) =>
             event.type == 'com.changliao.nudge' &&
             event.content['target_user_id'] == '@first-target:test'),

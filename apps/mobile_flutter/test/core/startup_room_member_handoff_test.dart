@@ -56,6 +56,81 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  test('cached messages keep verified ownership before SDK identity restores',
+      () async {
+    final client = LogoutTrackingClient('cold-ownership');
+    final room = _Room(client);
+    client.roomOverride = room;
+    final full = Completer<void>();
+    client.seedStartupRooms([room], full.future);
+    final epoch = base64Url.encode(List.filled(32, 1)).replaceAll('=', '');
+    final owner = MatrixSdkE2eeClient(client,
+        readContinuityMetadata: continuity,
+        homeserver: Uri.parse('https://synthetic.test'),
+        secureSessionStore: SecureSessionStore(MemorySecureKeyValueStore()),
+        startupProjection: StartupProjection([
+          StartupProjectionRoom(
+              id: room.id,
+              name: 'Cached group',
+              direct: false,
+              peer: null,
+              unread: 0,
+              pinned: false,
+              muted: false,
+              canSend: true,
+              activity: 0,
+              events: [
+                for (final sender in [
+                  '@self:synthetic.test',
+                  '@other:synthetic.test'
+                ])
+                  StartupProjectionEvent(
+                      id: 'event-$sender',
+                      sender: sender,
+                      body: 'synthetic cached text',
+                      timestamp: 1000,
+                      senderName: '')
+              ])
+        ]),
+        startupAdmission: StartupProjectionAdmission(
+            scope: '',
+            homeserver: 'https://synthetic.test',
+            userId: '@self:synthetic.test',
+            deviceId: 'DEVICE',
+            fingerprint: 'synthetic',
+            databaseGeneration: 'synthetic',
+            installationId: epoch,
+            epoch: epoch,
+            databaseKey: base64Url.encode(List.filled(32, 2)),
+            registrationKey: 'synthetic'));
+    final lease = await owner.openRoomLease(room.id);
+    final timeline = await lease.openRoomTimeline(onUpdate: () {});
+    try {
+      expect(client.userID, isNull);
+      final first = timeline.snapshot();
+      expect(first.singleWhere((m) => m.senderId.startsWith('@self')).isOwn,
+          isTrue);
+      expect(first.singleWhere((m) => m.senderId.startsWith('@other')).isOwn,
+          isFalse);
+      client.matrixUserId = '@self:synthetic.test';
+      client.matrixDeviceId = 'DEVICE';
+      client.loggedIn = true;
+      full.complete();
+      await client.initializationCompleted;
+      final restored = timeline.snapshot();
+      expect(restored.map((m) => (m.id, m.isOwn)),
+          first.map((m) => (m.id, m.isOwn)));
+      client.matrixUserId = '@replacement:synthetic.test';
+      expect(() => timeline.snapshot(), throwsStateError);
+    } finally {
+      timeline.dispose();
+      if (!full.isCompleted) full.complete();
+      await lease.cancel();
+      owner.outgoingWork.dispose();
+      await client.dispose();
+    }
+  });
+
   for (final pending in [false, true]) {
     test('member metadata hands off to canonical state (pending=$pending)',
         () async {

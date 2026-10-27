@@ -107,6 +107,7 @@ final class SqliteOutboxStore implements OutboxStore {
         'receiver_id TEXT NOT NULL, '
         'account_id TEXT NOT NULL DEFAULT \'\', '
         'content TEXT NOT NULL, '
+        'text_metadata TEXT, '
         'status TEXT NOT NULL, '
         'retry_count INTEGER NOT NULL DEFAULT 0, '
         'server_retry_count INTEGER NOT NULL DEFAULT 0, '
@@ -144,13 +145,17 @@ final class SqliteOutboxStore implements OutboxStore {
     final database = await _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onUpgrade: (db, oldVersion, _) async {
           if (oldVersion < 2) {
             await db.execute(
                 'ALTER TABLE $table ADD COLUMN server_retry_count INTEGER NOT NULL DEFAULT 0');
             await db.execute(
                 'ALTER TABLE $table ADD COLUMN next_server_retry_at INTEGER');
+          }
+          if (oldVersion < 3) {
+            await db
+                .execute('ALTER TABLE $table ADD COLUMN text_metadata TEXT');
           }
         },
         onCreate: (db, _) async {

@@ -13,7 +13,9 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
+import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'package:liuhetong_mobile/features/push/native_message_policy.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
@@ -87,6 +89,91 @@ final class _HomeTimeline extends Fake implements Timeline {
   }
 }
 
+class _ControlledStore extends Fake implements OutboxStore {
+  final inner = InMemoryOutboxStore();
+  bool failInsert = false;
+  Completer<void>? insertHold;
+  Completer<void>? readHold;
+  bool holdOneRead = false;
+  bool captureBeforeReadHold = false;
+  final attemptedTxids = <String>[];
+  @override
+  Future<void> insert(OutboxMessage row) async {
+    attemptedTxids.add(row.txid);
+    await insertHold?.future;
+    if (failInsert) throw StateError('synthetic disk write failure');
+    await inner.insert(row);
+  }
+
+  @override
+  Future<OutboxMessage?> byLocalId(String id) => inner.byLocalId(id);
+  @override
+  Future<OutboxMessage?> byTxid(String id) async {
+    final hold = readHold;
+    if (holdOneRead) readHold = null;
+    if (captureBeforeReadHold && hold != null) {
+      final captured = await inner.byTxid(id);
+      await hold.future;
+      return captured;
+    }
+    await hold?.future;
+    return inner.byTxid(id);
+  }
+
+  @override
+  Future<bool> delete(String id) => inner.delete(id);
+  @override
+  Future<List<OutboxMessage>> query(
+          {Set<OutboxStatus>? statuses,
+          bool unsent = false,
+          String? roomId,
+          String? receiverId,
+          String? accountId,
+          int? limit}) =>
+      inner.query(
+          statuses: statuses,
+          unsent: unsent,
+          roomId: roomId,
+          receiverId: receiverId,
+          accountId: accountId,
+          limit: limit);
+  @override
+  Future<int> deleteSent({String? accountId}) =>
+      inner.deleteSent(accountId: accountId);
+  @override
+  Future<void> close() => inner.close();
+  @override
+  Future<bool> updateStatus(
+    String localId,
+    OutboxStatus status, {
+    String? lastError,
+    int? retryCount,
+    int? serverRetryCount,
+    DateTime? nextServerRetryAt,
+    bool clearNextServerRetryAt = false,
+    int? expectedRetryCount,
+    String? accountId,
+    DateTime? dueAt,
+    bool incrementRetry = false,
+    DateTime? updatedAt,
+    Set<OutboxStatus>? from,
+    bool clearLastError = false,
+  }) =>
+      inner.updateStatus(localId, status,
+          lastError: lastError,
+          retryCount: retryCount,
+          serverRetryCount: serverRetryCount,
+          nextServerRetryAt: nextServerRetryAt,
+          clearNextServerRetryAt: clearNextServerRetryAt,
+          expectedRetryCount: expectedRetryCount,
+          accountId: accountId,
+          dueAt: dueAt,
+          incrementRetry: incrementRetry,
+          updatedAt: updatedAt,
+          from: from,
+          clearLastError: clearLastError);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final messenger =
@@ -149,136 +236,292 @@ void main() {
     channels.clear();
   });
 
-  testWidgets('local shell navigates tabs without starting live business work',
-      (tester) async {
-    final client = SnapshotClient()..loggedIn = true;
-    client.snapshotRooms.add(_CachedRoom(client, 0));
-    final matrix = MatrixSdkE2eeClient(client,
-        homeserver: Uri.parse('https://matrix.test'),
-        readContinuityMetadata: (active) async =>
-            MatrixClientContinuityMetadata(
-                isLoggedIn: true,
-                userId: active.userID,
-                deviceId: 'SYNTHETIC',
-                ed25519Fingerprint: 'synthetic-fingerprint',
-                databaseGeneration: 'synthetic-generation'));
-    final requests = <String>[];
-    final api = BusinessApiClient(
-        baseUri: Uri.parse('https://business.test'),
-        sessionStore: SecureSessionStore(MemorySecureKeyValueStore()),
-        client: MockClient((request) async {
-          requests.add(request.url.path);
-          return http.Response('{}', 503);
-        }));
-    final profile = ProfileRepository.forTesting(
-        accountKey: '@me:test', store: _ProfileStore());
-    final theme = ThemeController(store: _ThemeStore());
-    final localMode = ValueNotifier(true);
-    await tester.pumpWidget(CupertinoApp(
-        home: ValueListenableBuilder<bool>(
-      valueListenable: localMode,
-      builder: (_, local, __) => AppHome(
-        localOnly: local,
-        api: api,
-        matrix: matrix,
-        onLogout: () async {},
-        themeController: theme,
-        profileRepositoryFactory: (_, __) async => profile,
-        outboxStoreFactory: InMemoryOutboxStore.new,
-        syncWatchdogFactory: (_) => MatrixSyncWatchdog(target: _Target()),
-      ),
-    )));
-    for (var i = 0; i < 10; i++) {
+  for (final editWhileWriting in [
+    'text',
+    'caret',
+    'reply',
+    'ack',
+    'ack-stale',
+    'account',
+    'epoch',
+    'lease'
+  ]) {
+    testWidgets(
+        'local shell queues before history with $editWhileWriting editing',
+        (tester) async {
+      final client = SnapshotClient()..loggedIn = true;
+      client.snapshotRooms.add(_CachedRoom(client, 0));
+      final matrix = MatrixSdkE2eeClient(client,
+          homeserver: Uri.parse('https://matrix.test'),
+          readContinuityMetadata: (active) async =>
+              MatrixClientContinuityMetadata(
+                  isLoggedIn: true,
+                  userId: active.userID,
+                  deviceId: 'SYNTHETIC',
+                  ed25519Fingerprint: 'synthetic-fingerprint',
+                  databaseGeneration: 'synthetic-generation'));
+      final requests = <String>[];
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://business.test'),
+          sessionStore: SecureSessionStore(MemorySecureKeyValueStore()),
+          client: MockClient((request) async {
+            requests.add(request.url.path);
+            return http.Response('{}', 503);
+          }));
+      final profile = ProfileRepository.forTesting(
+          accountKey: '@me:test', store: _ProfileStore());
+      final theme = ThemeController(store: _ThemeStore());
+      final localMode = ValueNotifier(true);
+      final store = _ControlledStore();
+      await tester.pumpWidget(CupertinoApp(
+          home: ValueListenableBuilder<bool>(
+        valueListenable: localMode,
+        builder: (_, local, __) => AppHome(
+          localOnly: local,
+          api: api,
+          matrix: matrix,
+          onLogout: () async {},
+          themeController: theme,
+          profileRepositoryFactory: (_, __) async => profile,
+          outboxStoreFactory: () => store,
+          syncWatchdogFactory: (_) => MatrixSyncWatchdog(target: _Target()),
+        ),
+      )));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump();
+      }
+      expect(find.textContaining('Cached row 0'), findsOneWidget);
+      final home = tester.state(find.byType(AppHome));
+      await tester.tap(find.text('通讯录').last);
       await tester.pump();
-    }
-    expect(find.textContaining('Cached row 0'), findsOneWidget);
-    final home = tester.state(find.byType(AppHome));
-    await tester.tap(find.text('通讯录').last);
-    await tester.pump();
-    expect(find.byKey(const Key('local-contacts')), findsOneWidget);
-    await tester.tap(find.text('发现').last);
-    await tester.pump();
-    expect(find.byKey(const Key('local-discovery')), findsOneWidget);
-    await tester.tap(find.text('我').last);
-    await tester.pump();
-    expect(find.byKey(const Key('local-profile')), findsOneWidget);
-    expect(find.text('钱包'), findsNothing);
-    expect(requests, isEmpty);
-    expect(tester.state(find.byType(AppHome)), same(home));
-    await tester.tap(find.text('消息').last);
-    await tester.pump();
-    final heldRoom = client.snapshotRooms.single as _CachedRoom;
-    heldRoom.timelineHold = Completer<Timeline>();
-    await tester.tap(find.text('Cached row 0'));
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.byType(RoomPage), findsOneWidget);
-    expect((tester.state(find.byType(RoomPage)) as dynamic).controller, isNull);
-    expect(find.text('正在读取本机消息…'), findsNothing);
-    expect(find.text('暂无消息'), findsNothing,
-        reason: 'unread history must not masquerade as an empty conversation');
-    expect(heldRoom.timelineHold!.isCompleted, isFalse);
-    await tester.enterText(
-        find.byKey(const Key('composer-input')), 'draft while held');
-    await tester.pump();
-    final disabledSend = tester.widget<CupertinoButton>(find.descendant(
-        of: find.byKey(const Key('composer-send')),
-        matching: find.byType(CupertinoButton)));
-    expect(disabledSend.onPressed, isNull);
-    final heldState = tester.state(find.byType(RoomPage)) as dynamic;
-    await tester.testTextInput.receiveAction(TextInputAction.send);
-    await tester.pump();
-    expect((await PersistentOutboxManager.shared!.unsent()), isEmpty);
-    expect(heldState.input.text, 'draft while held');
-    await tester.enterText(find.byKey(const Key('composer-input')), '');
-    heldRoom.timelineHold!.complete(_HomeTimeline());
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(
-        (tester.state(find.byType(RoomPage)) as dynamic).controller, isNotNull);
-    expect(find.textContaining('文字将在本机保存'), findsNothing);
-    expect(find.byKey(const Key('composer-input')), findsOneWidget);
-    await tester.enterText(
-        find.byKey(const Key('composer-input')), 'durable pending text');
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('composer-send')));
-    for (var i = 0; i < 6; i++) {
+      expect(find.byKey(const Key('local-contacts')), findsOneWidget);
+      await tester.tap(find.text('发现').last);
       await tester.pump();
-    }
-    final rows = await PersistentOutboxManager.shared!.unsent();
-    expect(rows.map((row) => row.content), contains('durable pending text'));
-    expect(requests, isEmpty,
-        reason: 'cached room and pending send remain local');
-    final roomState = tester.state(find.byType(RoomPage));
-    final roomRoute = ModalRoute.of(tester.element(find.byType(RoomPage)));
-    final txid = rows.single.txid;
-    (client.snapshotRooms.single as _CachedRoom).refresh.complete(const []);
-    localMode.value = false;
-    for (var i = 0; i < 10; i++) {
+      expect(find.byKey(const Key('local-discovery')), findsOneWidget);
+      await tester.tap(find.text('我').last);
       await tester.pump();
-    }
-    expect(tester.state(find.byType(RoomPage)), same(roomState));
-    expect(
-        ModalRoute.of(tester.element(find.byType(RoomPage))), same(roomRoute));
-    expect(tester.state(find.byType(AppHome, skipOffstage: false)), same(home));
-    expect((await PersistentOutboxManager.shared!.unsent()).single.txid, txid);
-    expect(tester.takeException(), isNull,
-        reason: 'upgrade may rebuild a Navigator sibling');
+      expect(find.byKey(const Key('local-profile')), findsOneWidget);
+      expect(find.text('钱包'), findsNothing);
+      expect(requests, isEmpty);
+      expect(tester.state(find.byType(AppHome)), same(home));
+      await tester.tap(find.text('消息').last);
+      await tester.pump();
+      final heldRoom = client.snapshotRooms.single as _CachedRoom;
+      heldRoom.timelineHold = Completer<Timeline>();
+      await tester.tap(find.text('Cached row 0'));
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(RoomPage), findsOneWidget);
+      expect(
+          (tester.state(find.byType(RoomPage)) as dynamic).controller, isNull);
+      expect(find.text('正在读取本机消息…'), findsNothing);
+      expect(find.text('暂无消息'), findsNothing,
+          reason:
+              'unread history must not masquerade as an empty conversation');
+      expect(heldRoom.timelineHold!.isCompleted, isFalse);
+      await tester.enterText(
+          find.byKey(const Key('composer-input')), 'draft while held');
+      await tester.pump();
+      final enabledSend = tester.widget<CupertinoButton>(find.descendant(
+          of: find.byKey(const Key('composer-send')),
+          matching: find.byType(CupertinoButton)));
+      expect(enabledSend.onPressed, isNotNull,
+          reason: 'durable text admission must not wait for history');
+      final heldState = tester.state(find.byType(RoomPage)) as dynamic;
+      store.failInsert = true;
+      await tester.tap(find.byKey(const Key('composer-send')));
+      await tester.pump();
+      expect(heldState.input.text, 'draft while held');
+      expect(await store.inner.query(), isEmpty);
+      expect(find.textContaining('无法保存'), findsOneWidget);
+      store.failInsert = false;
+      store.insertHold = Completer<void>();
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      expect(heldState.input.text, 'draft while held');
+      expect(await store.inner.query(), isEmpty);
+      // A second submit while the write is held must not allocate another txid.
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      final nextReply = RoomMessageViewModel(
+          id: 'next-reply',
+          senderId: '@peer:test',
+          text: 'next reply',
+          isOwn: false,
+          timestamp: DateTime.utc(2026),
+          deliveryState: RoomDeliveryState.sent);
+      if (editWhileWriting == 'text') {
+        await tester.enterText(
+            find.byKey(const Key('composer-input')), 'next draft');
+      } else if (editWhileWriting == 'caret') {
+        heldState.input.selection = const TextSelection.collapsed(offset: 2);
+      } else if (editWhileWriting == 'reply') {
+        heldState.replyingTo = nextReply;
+      }
+      if (editWhileWriting == 'account') {
+        client.matrixUserId = '@replacement:test';
+      }
+      if (editWhileWriting == 'epoch') await api.clearLocalSession();
+      if (editWhileWriting == 'lease') {
+        unawaited((heldState.widget as RoomPage).roomLease.cancel());
+      }
+      store.insertHold!.complete();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump();
+      }
+      final admitted = (await PersistentOutboxManager.shared!.unsent()).single;
+      if (['account', 'epoch', 'lease'].contains(editWhileWriting)) {
+        expect(admitted.accountId, '@me:test');
+        expect(heldState.input.text, 'draft while held');
+        expect(heldState.controller, isNull);
+        expect(requests, isEmpty);
+        heldRoom.timelineHold!.complete(_HomeTimeline());
+        await tester.pumpWidget(const SizedBox());
+        for (var i = 0; i < 12; i++) {
+          await tester.pump();
+          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        }
+        await tester.pump(const Duration(seconds: 16));
+        await client.dispose();
+        theme.dispose();
+        return;
+      }
+      expect(store.attemptedTxids.toSet(), {admitted.txid},
+          reason:
+              'retrying an uncertain disk write must reuse its transaction');
+      expect(admitted.content, 'draft while held');
+      expect(
+          heldState.input.text, editWhileWriting == 'text' ? 'next draft' : '',
+          reason: 'retain new text, but a caret change is not a new draft');
+      if (editWhileWriting == 'reply') {
+        expect(heldState.replyingTo, same(nextReply));
+      }
+      expect(find.text('draft while held'), findsOneWidget);
+      expect(heldRoom.timelineHold!.isCompleted, isFalse);
+      if (editWhileWriting.startsWith('ack')) {
+        final manager = PersistentOutboxManager.shared!;
+        await manager.updateStatus(
+            admitted.localId, OutboxStatus.waitingNetwork);
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+        expect(
+            find.byKey(const Key('message-delivery-waiting')), findsOneWidget);
+        final delayedRead = Completer<void>();
+        store.readHold = delayedRead;
+        if (editWhileWriting == 'ack-stale') {
+          store.holdOneRead = true;
+          store.captureBeforeReadHold = true;
+          await manager.updateStatus(
+              admitted.localId, OutboxStatus.waitingNetwork);
+        }
+        await manager.updateStatus(admitted.localId, OutboxStatus.sent);
+        await manager.removeOrArchive(admitted.localId);
+        expect(await store.inner.query(), isEmpty);
+        // Other rooms can settle a large recovered backlog while this read waits.
+        for (var i = 0; i < 513; i++) {
+          final other = admitted.copyWith(
+              localId: 'other-$i',
+              txid: 'other-tx-$i',
+              roomId: '!other:test',
+              receiverId: '!other:test');
+          await store.inner.insert(other);
+          await manager.updateStatus(other.localId, OutboxStatus.sent);
+          await store.inner.delete(other.localId);
+        }
+        expect(manager.wasAcknowledged(admitted.localId), isFalse);
+        delayedRead.complete();
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+        expect(find.byKey(const Key('message-delivery-waiting')), findsNothing);
+      }
+      if (editWhileWriting == 'caret') {
+        heldRoom.timelineHold!
+            .completeError(StateError('synthetic history failure'));
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+        expect(find.text('draft while held'), findsOneWidget);
+        expect(find.text('重试读取'), findsOneWidget);
+        heldRoom.timelineHold = Completer<Timeline>();
+        await tester.tap(find.text('重试读取'));
+        await tester.pump();
+      }
+      heldRoom.timelineHold!.complete(_HomeTimeline());
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect((tester.state(find.byType(RoomPage)) as dynamic).controller,
+          isNotNull);
+      expect(find.textContaining('文字将在本机保存'), findsNothing);
+      expect(find.byKey(const Key('composer-input')), findsOneWidget);
+      final rows = await PersistentOutboxManager.shared!.unsent();
+      if (editWhileWriting.startsWith('ack')) {
+        expect(rows, isEmpty);
+      } else {
+        expect(rows.single.txid, admitted.txid);
+      }
+      final projected = (tester.state(find.byType(RoomPage)) as dynamic)
+          .controller
+          .messages
+          .single;
+      expect(projected.transactionId, admitted.txid);
+      expect(projected.isOwn, isTrue);
+      if (editWhileWriting == 'text') {
+        // The page must register send intent before disk I/O, then leave any
+        // later reader navigation alone when persistence completes.
+        final timeline = heldState.controller as RoomTimelineController;
+        store.insertHold = Completer<void>();
+        await tester.tap(find.byKey(const Key('composer-send')));
+        await tester.pump();
+        final intentDuringWrite = timeline.latestLocalSendIntent;
+        expect(intentDuringWrite, isNotNull);
+        store.insertHold!.complete();
+        for (var i = 0; i < 6; i++) {
+          await tester.pump();
+        }
+        expect(timeline.latestLocalSendIntent, intentDuringWrite);
+        expect(heldState.input.text, isEmpty);
+      }
+      expect(requests, isEmpty,
+          reason: 'cached room and pending send remain local');
+      final roomState = tester.state(find.byType(RoomPage));
+      final roomRoute = ModalRoute.of(tester.element(find.byType(RoomPage)));
+      final txid = admitted.txid;
+      (client.snapshotRooms.single as _CachedRoom).refresh.complete(const []);
+      localMode.value = false;
+      for (var i = 0; i < 10; i++) {
+        await tester.pump();
+      }
+      expect(tester.state(find.byType(RoomPage)), same(roomState));
+      expect(ModalRoute.of(tester.element(find.byType(RoomPage))),
+          same(roomRoute));
+      expect(
+          tester.state(find.byType(AppHome, skipOffstage: false)), same(home));
+      final remaining = await PersistentOutboxManager.shared!.unsent();
+      if (editWhileWriting.startsWith('ack')) {
+        expect(remaining, isEmpty);
+      } else {
+        expect(remaining.where((r) => r.txid == txid), hasLength(1));
+        expect(remaining, hasLength(editWhileWriting == 'text' ? 2 : 1));
+      }
+      expect(tester.takeException(), isNull,
+          reason: 'upgrade may rebuild a Navigator sibling');
 
-    Navigator.of(tester.element(find.byType(RoomPage)), rootNavigator: true)
-        .pop();
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpWidget(const SizedBox());
-    for (var i = 0; i < 12; i++) {
-      await tester.pump();
-      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-    }
-    await tester.pump(const Duration(seconds: 16));
-    await client.dispose();
-    theme.dispose();
-  });
+      Navigator.of(tester.element(find.byType(RoomPage)), rootNavigator: true)
+          .pop();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpWidget(const SizedBox());
+      for (var i = 0; i < 12; i++) {
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+      await tester.pump(const Duration(seconds: 16));
+      await client.dispose();
+      theme.dispose();
+    });
+  }
 
   for (final boundary in ['back', 'reentry', 'account', 'epoch', 'error']) {
     testWidgets('early room owns delayed preparation exactly: $boundary',

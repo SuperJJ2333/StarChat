@@ -23,6 +23,11 @@ abstract interface class OutboxLease {
   Future<void> release();
 }
 
+/// Optional richer text transport; legacy plain rows retain the same API.
+abstract interface class StructuredOutboxLease implements OutboxLease {
+  Future<String> sendMessage(OutboxMessage message);
+}
+
 /// 打开某个房间的临时租约；抛错表示当前租约不可用（会话未就绪、房间本地
 /// 不存在等），调用方必须把行保持在"等待网络"而不是判为终局失败。
 typedef OutboxLeaseFactory = Future<OutboxLease> Function(String roomId);
@@ -708,8 +713,15 @@ final class MessageSendScheduler {
             trace.mark(PerformanceStage.sendAdmission);
             trace.mark(PerformanceStage.matrixSendStart);
             matrixSendStarted = true;
-            final eventId = await _observe(ChatDiagnosticStage.matrixSend,
-                () => activeLease.send(row.content, row.txid));
+            final eventId = await _observe(ChatDiagnosticStage.matrixSend, () {
+              if (!row.hasTextMetadata) {
+                return activeLease.send(row.content, row.txid);
+              }
+              if (activeLease is StructuredOutboxLease) {
+                return activeLease.sendMessage(row);
+              }
+              throw StateError('Structured text transport unavailable');
+            });
             if (matrixSendStarted) {
               trace.mark(PerformanceStage.matrixSendFinish);
             }

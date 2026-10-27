@@ -181,50 +181,46 @@ void main() {
     expect(calls, 1);
   });
 
-  test('production gate rejects unsafe room state despite business approval',
-      () async {
-    final client = _Client();
-    final room = _Room(client, '!room:test', peer: '@peer:test');
-    client.roomsById[room.id] = room;
-    final owner =
-        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
-    owner.authorizeRoomSend = (_, __, ___) async => true;
-    room.setState(User('@me:test', membership: 'join', room: room));
-    room.setState(User('@peer:test', membership: 'join', room: room));
-    room.summary = RoomSummary.fromJson(
-        {'m.joined_member_count': 2, 'm.invited_member_count': 0});
-    final lease = await owner.openRoomLease(room.id);
-    await lease.sendMessageContent({'body': 'allowed'}, txid: 'allowed');
-    expect(room.sends, 1);
-    room.membershipValue = Membership.leave;
-    await expectLater(lease.sendMessageContent({'body': 'left'}, txid: 'left'),
-        throwsStateError);
-    room.membershipValue = Membership.join;
-    room.encryptedValue = false;
-    await expectLater(
-        lease.sendMessageContent({'body': 'plain'}, txid: 'plain'),
-        throwsStateError);
-    room.encryptedValue = true;
-    room.sendAllowed = false;
-    await expectLater(
-        lease.sendMessageContent({'body': 'denied'}, txid: 'denied'),
-        throwsStateError);
-    room.sendAllowed = true;
-    room.summary = RoomSummary.fromJson(
-        {'m.joined_member_count': 3, 'm.invited_member_count': 0});
-    await expectLater(
-        lease.sendMessageContent({'body': 'incomplete'}, txid: 'incomplete'),
-        throwsStateError);
-    room.summary = RoomSummary.fromJson(
-        {'m.joined_member_count': 2, 'm.invited_member_count': 1});
-    room.setState(User('@extra:test', membership: 'invite', room: room));
-    await expectLater(
-        lease.sendMessageContent({'body': 'extra'}, txid: 'extra'),
-        throwsStateError);
-    expect(room.sends, 1);
-    expect(lease.roomInfo.id, room.id);
-    await lease.cancel();
-  });
+  for (final textOnly in [false, true]) {
+    test('production gate rejects unsafe room state (textOnly=$textOnly)',
+        () async {
+      final client = _Client();
+      final room = _Room(client, '!room:test', peer: '@peer:test');
+      client.roomsById[room.id] = room;
+      final owner =
+          MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+      owner.authorizeRoomSend = (_, __, ___) async => true;
+      room.setState(User('@me:test', membership: 'join', room: room));
+      room.setState(User('@peer:test', membership: 'join', room: room));
+      room.summary = RoomSummary.fromJson(
+          {'m.joined_member_count': 2, 'm.invited_member_count': 0});
+      final lease = await owner.openRoomLease(room.id);
+      Future<String> send(String body) => textOnly
+          ? lease.sendTextWithTransaction(body, body)
+          : lease.sendMessageContent({'body': body}, txid: body);
+      await send('allowed');
+      expect(room.sends, 1);
+      room.membershipValue = Membership.leave;
+      await expectLater(send('left'), throwsStateError);
+      room.membershipValue = Membership.join;
+      room.encryptedValue = false;
+      await expectLater(send('plain'), throwsStateError);
+      room.encryptedValue = true;
+      room.sendAllowed = false;
+      await expectLater(send('denied'), throwsStateError);
+      room.sendAllowed = true;
+      room.summary = RoomSummary.fromJson(
+          {'m.joined_member_count': 3, 'm.invited_member_count': 0});
+      await expectLater(send('incomplete'), throwsStateError);
+      room.summary = RoomSummary.fromJson(
+          {'m.joined_member_count': 2, 'm.invited_member_count': 1});
+      room.setState(User('@extra:test', membership: 'invite', room: room));
+      await expectLater(send('extra'), throwsStateError);
+      expect(room.sends, 1);
+      expect(lease.roomInfo.id, room.id);
+      await lease.cancel();
+    });
+  }
 
   test(
       'prepared attachment freezes resolved room and existing job is never rebound',

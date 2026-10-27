@@ -86,6 +86,15 @@ final class PersistentOutboxManager extends ChangeNotifier {
 
   /// 事务 ID **只在这里生成一次**；重试/重启一律复用同一行里的 txid。
   String newTxid() => _newTxid();
+  final _acknowledged = <String>{};
+  bool wasAcknowledged(String localId) => _acknowledged.contains(localId);
+  void _recordAcknowledgement(String localId, OutboxStatus status) {
+    if (status != OutboxStatus.sent) return;
+    _acknowledged.add(localId);
+    while (_acknowledged.length > 512) {
+      _acknowledged.remove(_acknowledged.first);
+    }
+  }
 
   /// 创建并落盘一条待发送文本。
   ///
@@ -99,6 +108,9 @@ final class PersistentOutboxManager extends ChangeNotifier {
     String? txid,
     OutboxStatus status = OutboxStatus.queued,
     DateTime? createdAt,
+    String? replyToEventId,
+    String? replyExcerpt,
+    List<String> mentionedUserIds = const [],
   }) async {
     final now = _clock();
     final message = OutboxMessage(
@@ -107,6 +119,9 @@ final class PersistentOutboxManager extends ChangeNotifier {
       roomId: roomId,
       receiverId: receiverId,
       content: content,
+      replyToEventId: replyToEventId,
+      replyExcerpt: replyExcerpt,
+      mentionedUserIds: List.unmodifiable(mentionedUserIds),
       status: status,
       createdAt: createdAt ?? now,
       updatedAt: now,
@@ -155,7 +170,10 @@ final class PersistentOutboxManager extends ChangeNotifier {
         clearLastError: lastError == null && status == OutboxStatus.sent,
       );
       this.lastError = null;
-      if (changed) _notify();
+      if (changed) {
+        _recordAcknowledgement(localId, status);
+        _notify();
+      }
       return changed;
     } catch (error) {
       this.lastError = error;
@@ -229,7 +247,10 @@ final class PersistentOutboxManager extends ChangeNotifier {
           lastError: reason,
           clearLastError: reason == null);
       lastError = null;
-      if (changed) _notify();
+      if (changed) {
+        _recordAcknowledgement(attempt.localId, status);
+        _notify();
+      }
       return changed;
     } catch (error) {
       lastError = error;
@@ -433,6 +454,7 @@ final class PersistentOutboxManager extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _acknowledged.clear();
     super.dispose();
   }
 }

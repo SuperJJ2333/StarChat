@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// 持久化出站消息（Outbox）状态机。
 ///
 /// 与 `RoomDeliveryState`（内存里的乐观行状态）一一对应，但**只有**这里的
@@ -74,6 +76,9 @@ final class OutboxMessage {
     this.nextServerRetryAt,
     this.lastError,
     this.accountId = '',
+    this.replyToEventId,
+    this.replyExcerpt,
+    this.mentionedUserIds = const [],
   });
 
   /// 本地主键（UUID）；每次"创建一条新消息"都是新值。
@@ -90,6 +95,24 @@ final class OutboxMessage {
 
   /// 消息正文（仅文本消息进入本层）。
   final String content;
+  final String? replyToEventId;
+  final String? replyExcerpt;
+  final List<String> mentionedUserIds;
+  bool get hasTextMetadata =>
+      replyToEventId != null ||
+      replyExcerpt != null ||
+      mentionedUserIds.isNotEmpty;
+  Map<String, Object?> get textEventContent => {
+        'msgtype': 'm.text',
+        'body': content,
+        if (replyToEventId != null)
+          'm.relates_to': {
+            'm.in_reply_to': {'event_id': replyToEventId}
+          },
+        if (replyExcerpt != null) 'io.changliao.selected_quote': replyExcerpt,
+        if (mentionedUserIds.isNotEmpty)
+          'm.mentions': {'user_ids': mentionedUserIds},
+      };
 
   final OutboxStatus status;
 
@@ -139,6 +162,9 @@ final class OutboxMessage {
         roomId: clearRoom ? null : (roomId ?? this.roomId),
         receiverId: receiverId ?? this.receiverId,
         content: content ?? this.content,
+        replyToEventId: replyToEventId,
+        replyExcerpt: replyExcerpt,
+        mentionedUserIds: mentionedUserIds,
         status: status ?? this.status,
         retryCount: retryCount ?? this.retryCount,
         serverRetryCount: serverRetryCount ?? this.serverRetryCount,
@@ -159,6 +185,13 @@ final class OutboxMessage {
         'receiver_id': receiverId,
         'account_id': accountId,
         'content': content,
+        'text_metadata': hasTextMetadata
+            ? jsonEncode({
+                if (replyToEventId != null) 'reply_to': replyToEventId,
+                if (replyExcerpt != null) 'reply_excerpt': replyExcerpt,
+                if (mentionedUserIds.isNotEmpty) 'mentions': mentionedUserIds,
+              })
+            : null,
         'status': status.wireName,
         'retry_count': retryCount,
         'server_retry_count': serverRetryCount,
@@ -168,26 +201,36 @@ final class OutboxMessage {
         'last_error': lastError,
       };
 
-  static OutboxMessage fromRow(Map<String, Object?> row) => OutboxMessage(
-        localId: row['local_id']! as String,
-        txid: row['txid']! as String,
-        roomId: row['room_id'] as String?,
-        receiverId: (row['receiver_id'] ?? '') as String,
-        accountId: (row['account_id'] ?? '') as String,
-        content: (row['content'] ?? '') as String,
-        status: OutboxStatusSemantics.fromWire(row['status'] as String?),
-        retryCount: (row['retry_count'] as int?) ?? 0,
-        serverRetryCount: (row['server_retry_count'] as int?) ?? 0,
-        nextServerRetryAt: row['next_server_retry_at'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(
-                row['next_server_retry_at']! as int),
-        createdAt: DateTime.fromMillisecondsSinceEpoch(
-            (row['created_at'] as int?) ?? 0),
-        updatedAt: DateTime.fromMillisecondsSinceEpoch(
-            (row['updated_at'] as int?) ?? 0),
-        lastError: row['last_error'] as String?,
-      );
+  static OutboxMessage fromRow(Map<String, Object?> row) {
+    final raw = row['text_metadata'] as String?;
+    final metadata = raw == null
+        ? const <String, dynamic>{}
+        : jsonDecode(raw) as Map<String, dynamic>;
+    return OutboxMessage(
+      localId: row['local_id']! as String,
+      txid: row['txid']! as String,
+      roomId: row['room_id'] as String?,
+      receiverId: (row['receiver_id'] ?? '') as String,
+      accountId: (row['account_id'] ?? '') as String,
+      content: (row['content'] ?? '') as String,
+      replyToEventId: metadata['reply_to'] as String?,
+      replyExcerpt: metadata['reply_excerpt'] as String?,
+      mentionedUserIds: List<String>.unmodifiable(
+          (metadata['mentions'] as List?)?.cast<String>() ?? const []),
+      status: OutboxStatusSemantics.fromWire(row['status'] as String?),
+      retryCount: (row['retry_count'] as int?) ?? 0,
+      serverRetryCount: (row['server_retry_count'] as int?) ?? 0,
+      nextServerRetryAt: row['next_server_retry_at'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(
+              row['next_server_retry_at']! as int),
+      createdAt:
+          DateTime.fromMillisecondsSinceEpoch((row['created_at'] as int?) ?? 0),
+      updatedAt:
+          DateTime.fromMillisecondsSinceEpoch((row['updated_at'] as int?) ?? 0),
+      lastError: row['last_error'] as String?,
+    );
+  }
 
   @override
   String toString() => 'OutboxMessage($localId, tx=$txid, room=$roomId, '
