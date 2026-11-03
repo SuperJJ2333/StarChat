@@ -2,7 +2,7 @@
 
 用户已授权先发兼容客户端、升级后删除旧CDN。计划见 ../../superpowers/plans/2026-11-04-aws-cdn-client-compat.md。
 
-基线37b472702311c7f161c09e6a297970135c1d2148，独立分支codex/aws-cdn-app-migration-20261104。当前阶段：Android2237已发布并独立读回验证；iOS2237无签名包已验收交接，等待原生CI最终状态及企业回签/真机门槛；旧CDN与旧桶继续保留。下文早期记录按当时状态保留，当前结论见文末及核验报告。
+基线37b472702311c7f161c09e6a297970135c1d2148，独立分支codex/aws-cdn-app-migration-20261104。当前阶段：Android2237已发布并独立读回验证；iOS2237无签名包已验收交接，原生门禁22PASS/2存储错误、整体失败，等待失败闭环及企业回签/真机门槛；旧CDN与旧桶继续保留。下文早期记录按当时状态保留，当前结论见文末及核验报告。
 
 验收ID：C1精确新旧域名兼容；C2默认走新账号；C3源/传输/缓存边界不放宽；A1正式Android构建及签名；A2发布及平台隔离/回退；I1同源iOS候选及所需回签/设备验收；R1升级后旧CDN退役。
 
@@ -26,4 +26,6 @@ C1/C2/C3源实现和新CDN56文件逐个大小/SHA256核验通过；新旧域名
 
 A1 标准打包和固定签名通过；A2 经审查后的发布包38项门禁通过，按不可变香港文件→新S3条件写入及摘要→新CloudFront精确路径Deployed→公开HEAD/CORS→静态/别名/两项Android设置事务顺序发布。独立读回验证ROUTE_AND_AUDIT_READBACK_PASS，两条审计，Android2237/iOS2236、最低版本3和其他八项设置保留。源码42caae85306e4e82799d7b2cb76c4f714854a7d8已推送候选分支，未合并main。
 
-I1 设备无签名CI成功，IPA与manifest已本地校验，交接路径、SHA、尚缺签名及真机证据见[核验报告](../../verification/2026-11-04-aws-cdn-client-compat.md)。模拟器原生门禁仍在运行，不提前记成功。R1 等待兼容升级完成，不因Android发布就删除仍供旧客户端读取的CDN/桶。
+I1 设备无签名CI成功，IPA与manifest已本地校验，交接路径、SHA、尚缺签名及真机证据见[核验报告](../../verification/2026-11-04-aws-cdn-client-compat.md)。模拟器原生门禁最终失败，22项通过、2个Outbox存储错误，原始证据已保留。R1 等待兼容升级完成，不因Android发布就删除仍供旧客户端读取的CDN/桶。
+
+I1最终CI：设备无签名构建成功；模拟器原生22PASS、Outbox两个MEDIA_STORAGE_UNAVAILABLE错误，整体failure，未重跑或跳过真实失败。iOS发布仍阻断，旧iOS2236保留；用户企业回签交接不代表门禁通过。无签名IPA另已复制并全SHA核验到C:/Users/Administrator/Downloads/ChatFlow-0.4.68-build2237-unsigned.ipa，不能安装或发布。

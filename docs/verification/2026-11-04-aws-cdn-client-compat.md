@@ -21,10 +21,10 @@
 
 ## iOS 候选与剩余门槛
 
-同源 CI [41701039864](https://github.com/SuperJJ2333/StarChat/actions/runs/41701039864) 的设备 release 编译及无签名交接门禁已通过，模拟器原生门禁仍以 CI 最终状态为准。
+同源 CI [41701039864](https://github.com/SuperJJ2333/StarChat/actions/runs/41701039864) 的设备 release 编译及无签名交接门禁已通过，模拟器原生门禁最终失败：五个目标22项通过，media_outbox_persistence两个用例均报MEDIA_STORAGE_UNAVAILABLE，整体CI failure，不是超时或VM连接停顿；未自动重跑真实失败。证据zip13265619561已下载并核验SHA256 6270aabc2b28fbb130b3ce55e8890442f2be729bc9f6809a447346a8c12e744c。该错误与旧版已有记录同类，但本次未证明具体平台首因，不放宽存储保护或移除门禁。iOS发布继续阻断，须定位或取得被接受的真实设备等效证据。
 
 无签名 IPA 已下载，GitHub artifact digest、ZIP CRC、版本/Bundle、完整 IPA 摘要及编译后新旧 CDN 字符串已本地核验。IPA SHA256 `0924fc470c40d724e7fa37a2911892e397745349c35578a2627a59f9ffa0cbd1`，35,152,605 字节；交接目录 `artifacts/2026-11-04/aws-cdn-client-compat/ios2237-signing-handoff/`。该包尚未企业回签或发布，不可直接安装。
 
 沿用既有用户回签流程，不联系第三方。最终包仍需核验生产 APNs Team `HY9Q7Q35S5`、Bundle、签名权益、原内容差异及真机保数据升级/推送；不能用卸载清库代替升级验证。
 
-Android 真机覆盖升级、iOS 最终回签/真机验收以及用户升级完成均未在本次自动核验中取得。旧资源删除仍受这些兼容性门槛约束；未提高最低支持版本或强制淘汰旧用户。
+Android 真机覆盖升级、iOS 原生失败闭环/最终回签/真机验收以及用户升级完成均未在本次自动核验中取得。旧资源删除仍受这些兼容性门槛约束；未提高最低支持版本或强制淘汰旧用户。
