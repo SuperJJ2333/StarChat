@@ -74,7 +74,7 @@ final class EmojiResourceStore {
         baseUri = validateBaseUri(baseUri ??
             Uri.parse(const String.fromEnvironment('CHATFLOW_EMOJI_BASE_URL',
                 defaultValue:
-                    'https://d12fjr06o6tga5.cloudfront.net/resources/emoji/')));
+                    'https://d29qsnrzc2iag0.cloudfront.net/resources/emoji/')));
   final DateTime Function() _clock;
   final HttpClient Function() _clientFactory;
   final _cancelled = Completer<void>();
@@ -114,7 +114,10 @@ final class EmojiResourceStore {
   int _clientEpoch = 0;
   static Uri validateBaseUri(Uri uri) {
     if (uri.scheme != 'https' ||
-        uri.host != 'd12fjr06o6tga5.cloudfront.net' ||
+        !const {
+          'd29qsnrzc2iag0.cloudfront.net',
+          'd12fjr06o6tga5.cloudfront.net',
+        }.contains(uri.host) ||
         uri.hasPort ||
         uri.userInfo.isNotEmpty ||
         uri.hasQuery ||

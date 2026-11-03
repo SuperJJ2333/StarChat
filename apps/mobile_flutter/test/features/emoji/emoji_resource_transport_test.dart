@@ -74,7 +74,7 @@ void main() {
       expect(
           requested.every((uri) =>
               uri.scheme == 'https' &&
-              uri.host == 'd12fjr06o6tga5.cloudfront.net' &&
+              uri.host == 'd29qsnrzc2iag0.cloudfront.net' &&
               uri.path.startsWith('/resources/emoji/${manifest.revision}/') &&
               !uri.hasQuery),
           true);
