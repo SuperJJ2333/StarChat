@@ -1,3 +1,4 @@
+import '../../support/synthetic_fixture_cleanup.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
@@ -81,7 +82,11 @@ void main() {
     FileSelectorPlatform.instance = original;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
-    await dir.delete(recursive: true);
+    if (Platform.isWindows) {
+      await deleteSyntheticFixture(dir);
+    } else {
+      await dir.delete(recursive: true);
+    }
   });
   for (final size in [20971519, 20971520, 20971521]) {
     test('group captured video original $size reaches automatic compression',

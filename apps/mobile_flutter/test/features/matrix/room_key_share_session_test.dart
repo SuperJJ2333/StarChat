@@ -1,3 +1,4 @@
+import '../../support/synthetic_fixture_cleanup.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -474,6 +475,10 @@ Future<void> verifyRoomKeyShareScenario(String scenario) async {
     for (final replacement in replacedPeers) {
       replacement.dispose();
     }
-    await directory.delete(recursive: true);
+    if (Platform.isWindows) {
+      await deleteSyntheticFixture(directory);
+    } else {
+      await directory.delete(recursive: true);
+    }
   }
 }

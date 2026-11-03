@@ -1,3 +1,4 @@
+import '../../support/synthetic_fixture_cleanup.dart';
 import 'dart:async';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
@@ -405,7 +406,11 @@ void main() {
         if (!p.isWithin(artifacts, directory.path)) {
           throw StateError('fixture path');
         }
-        await directory.delete(recursive: true);
+        if (Platform.isWindows) {
+          await deleteSyntheticFixture(directory);
+        } else {
+          await directory.delete(recursive: true);
+        }
       }
     });
   }
