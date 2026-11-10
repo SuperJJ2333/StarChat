@@ -30,6 +30,7 @@ final class DiscoveryPage extends StatelessWidget {
       this.onAddFriend,
       this.onScan,
       this.onAppearance,
+      this.localOnly = false,
       this.unreadController});
 
   final BusinessApiClient api;
@@ -41,6 +42,7 @@ final class DiscoveryPage extends StatelessWidget {
   final MatrixSdkE2eeClient? matrix;
   final ProfileRepository? identityCache;
   final MomentsUnreadController? unreadController;
+  final bool localOnly;
   final VoidCallback? onCreateGroup, onAddFriend, onScan, onAppearance;
 
   @override
@@ -56,7 +58,7 @@ final class DiscoveryPage extends StatelessWidget {
               CupertinoButton(
                 key: const Key('discovery-search'),
                 padding: EdgeInsets.zero,
-                onPressed: () => Navigator.push(
+                onPressed: localOnly ? null : () => Navigator.push(
                   context,
                   MotionPageRoute(
                       builder: (_) => GlobalSearchPage(
@@ -72,7 +74,7 @@ final class DiscoveryPage extends StatelessWidget {
               CupertinoButton(
                 key: const Key('discovery-more'),
                 padding: EdgeInsets.zero,
-                onPressed: () => showTopMoreMenu(context,
+                onPressed: localOnly ? onAppearance : () => showTopMoreMenu(context,
                     onCreateGroup: () => onCreateGroup?.call(),
                     onAddFriend: onAddFriend ??
                         () => Navigator.of(context, rootNavigator: true).push(
@@ -124,7 +126,7 @@ final class DiscoveryPage extends StatelessWidget {
                     const Icon(CupertinoIcons.chevron_right, size: 12),
                   ]),
                 ),
-                onTap: () async {
+                onTap: localOnly ? null : () async {
                   final cache = identityCache;
                   if (cache == null) return;
                   final page = await MomentsPage.prepare(
@@ -156,7 +158,7 @@ final class DiscoveryPage extends StatelessWidget {
                       fontSize: 12, color: WeChatColors.textSecondary),
                 ),
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
-                onTap: () => Navigator.of(context, rootNavigator: true).push(
+                onTap: localOnly ? null : () => Navigator.of(context, rootNavigator: true).push(
                   MotionPageRoute(
                     fullscreenDialog: true,
                     builder: (_) => ScanQrPage(

@@ -309,7 +309,9 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                         : WeChatColors.textSecondary),
                 const SizedBox(width: 5),
                 Text(
-                  '可邀请 ${invite.remainingUses} 位好友',
+                    invite.limitReached
+                        ? '该邀请码已达邀请上限'
+                        : '可邀请 ${invite.remainingUses} 位好友',
                   key: const Key('invite-remaining-uses'),
                   style: TextStyle(
                       fontSize: 12,

@@ -8,6 +8,7 @@ import 'features/matrix/direct_chat_failure.dart';
 import 'features/matrix/matrix_security_page.dart';
 import 'features/contacts/group_address_list_page.dart';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -203,6 +204,9 @@ final class AppHome extends StatefulWidget {
     required this.onLogout,
     required this.themeController,
     this.profileRepositoryFactory,
+    this.initialIdentityCache,
+    this.initialIdentityLoad,
+    this.startupPreferences,
     this.syncWatchdogFactory,
     this.localFrameRecorder,
     this.startupHandoff,
@@ -220,6 +224,9 @@ final class AppHome extends StatefulWidget {
   /// preload, ownership checks and disposal of the returned repository.
   final Future<ProfileRepository> Function(
       BusinessApiClient api, String? accountKey)? profileRepositoryFactory;
+  final ProfileRepository? initialIdentityCache;
+  final Future<ProfileRepository?>? initialIdentityLoad;
+  final SharedPreferences? startupPreferences;
   final MatrixSyncWatchdog Function(SyncWatchdogTarget target)?
       syncWatchdogFactory;
   final PerformanceTraceRecorder? localFrameRecorder;
@@ -592,19 +599,43 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     ]);
   }
 
-  Future<void> _initializeMomentsUnread() =>
-      _runStartup(_initializeMomentsUnreadFor);
+  Future<void>? _momentsUnreadLoad;
 
-  Future<void> _initializeMomentsUnreadFor(int generation) async {
-    final preferences = await SharedPreferences.getInstance();
-    if (!_currentStartup(generation)) return;
-    final unread = MomentsUnreadController(
-      accountKey: widget.matrix.userId ?? '',
-      preferences: preferences,
-      load: widget.api.momentNewPosts,
-    );
-    setState(() => _momentsUnread = unread);
-    await unread.initialize();
+  Future<void> _prepareMomentsUnread() => _momentsUnreadLoad ??= () async {
+        final account = widget.matrix.userId;
+        final api = widget.api;
+        final epoch = api.sessionEpoch;
+        if (account == null || account.isEmpty) return;
+        bool ownsAccount() => mounted &&
+            !_disposed &&
+            widget.matrix.userId == account &&
+            identical(widget.api, api) &&
+            api.sessionEpoch == epoch;
+        final preferences =
+            widget.startupPreferences ?? await SharedPreferences.getInstance();
+        if (!ownsAccount()) return;
+        _momentsUnread = MomentsUnreadController(
+          accountKey: account,
+          preferences: preferences,
+          load: ({since, cursor}) async {
+            if (!ownsAccount() || !_hasVerifiedSession) {
+              throw StateError('Moment refresh requires an active session');
+            }
+            final response = await api.momentNewPosts(since: since, cursor: cursor);
+            if (!ownsAccount() || !_hasVerifiedSession) {
+              throw StateError('Moment refresh was superseded');
+            }
+            return response;
+          },
+        );
+        if (widget.startupPreferences == null) setState(() {});
+      }();
+
+  Future<void> _refreshMomentsUnread() async {
+    await _prepareMomentsUnread();
+    if (mounted && !_disposed && _hasVerifiedSession) {
+      await _momentsUnread?.refresh();
+    }
   }
 
   Future<ProfileRepository>? _chatIdentityCacheLoad;
@@ -664,6 +695,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.messages);
     WidgetsBinding.instance.addObserver(this);
     widget.verifiedSession?.addListener(_syncSessionReadiness);
+    final initialCache = widget.initialIdentityCache;
+    if (initialCache != null &&
+        initialCache.accountKey == 'matrix:${widget.matrix.userId}') {
+      _chatIdentityCache = initialCache;
+      _chatIdentityCacheLoad = Future.value(initialCache);
+    }
+    unawaited(_prepareMomentsUnread().catchError((Object _) {}));
     unawaited(_identityCache().then<void>((_) {}, onError: (Object _) {}));
     if (widget.localOnly) {
       unawaited(_prepareLocalOutbox().catchError((Object _) {}));
@@ -711,6 +749,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _startAuthorizedHome() {
     if (_authorizedHomeStarted || widget.localOnly || _disposed) return;
     _authorizedHomeStarted = true;
+    unawaited(_refreshMomentsUnread().catchError((Object _) {}));
     widget.matrix.authorizeRoomSend = _authorizeRoomSend;
     widget.matrix.prepareRoomSend = (account, room, peer) async {
       if (widget.localOnly || account != widget.matrix.userId) {
@@ -811,7 +850,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _startHomeResources() {
     final generation = _startup.generation;
     unawaited(_startMediaPrefetch());
-    unawaited(_initializeMomentsUnread().catchError((_) {}));
     // 钱包进入态本地快照：启动时装一次，之后页面的 read 都是同步命中。
     // 这是「断网也能看到余额与已绑定钱包、并且进得去充值/提现页」的前提；
     // 失败不阻塞启动，页面退化为「无本地数据」。
@@ -2085,24 +2123,29 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<ProfileRepository> _createIdentityCache() async {
     final accountKey = widget.matrix.userId;
+    final api = widget.api;
+    final epoch = api.sessionEpoch;
     ProfileRepository cache;
     try {
       final factory = widget.profileRepositoryFactory;
-      cache = factory != null
-          ? await factory(widget.api, accountKey)
-          : accountKey == null
-              ? ProfileRepository(widget.api)
-              : await ProfileRepository.create(
-                  api: widget.api,
-                  accountKey: 'matrix:$accountKey',
-                );
+      cache = await widget.initialIdentityLoad ??
+          (factory != null
+              ? await factory(api, accountKey)
+              : accountKey == null
+                  ? ProfileRepository(api)
+                  : await ProfileRepository.create(
+                      api: api, accountKey: 'matrix:$accountKey'));
       await cache.hydrate();
     } catch (_) {
       // 最终兜底：无持久化的内存仓库——页面必须能渲染，
       // 绝不允许消息/通讯录停留在加载态（Mi 6 SQLite 故障教训）。
-      cache = ProfileRepository(widget.api, accountKey: accountKey);
+      cache = ProfileRepository(api, accountKey: accountKey);
     }
-    if (!mounted || _disposed || widget.matrix.userId != accountKey) {
+    if (!mounted ||
+        _disposed ||
+        !identical(widget.api, api) ||
+        api.sessionEpoch != epoch ||
+        widget.matrix.userId != accountKey) {
       cache.dispose();
       throw StateError('Local account changed');
     }
@@ -3145,6 +3188,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     widget.verifiedSession?.removeListener(_syncSessionReadiness);
     _dispatchReady.value = false;
     _disposed = true;
+    _momentsUnread?.dispose();
+    if (widget.profileRepositoryFactory == null) _chatIdentityCache?.dispose();
     unawaited(_closeMediaPrefetch());
     ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.unknown);
     _profileEntryRevision.dispose();
@@ -3196,8 +3241,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     await stop(_closeMediaPrefetch);
     await stop(_startup.close);
 
-    _momentsUnread?.dispose();
-    _momentsUnread = null;
     _friendRequestPollTimer?.cancel();
     _backgroundCallPermissionTimer?.cancel();
     await stop(() async {
@@ -3394,40 +3437,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildLocalTab(int index) {
-    final cache = _chatIdentityCache;
-    final title = switch (index) { 1 => '通讯录', 2 => '发现', _ => '我' };
-    return CupertinoPageScaffold(
-      key: Key(switch (index) {
-        1 => 'local-contacts',
-        2 => 'local-discovery',
-        _ => 'local-profile'
-      }),
-      navigationBar: CupertinoNavigationBar(middle: Text(title)),
-      child: SafeArea(
-          child: ListView(children: [
-        if (index == 1) ...[
-          for (final contact in cache?.contacts ?? <ContactSummary>[])
-            WeChatListTile(title: Text(contact.displayName)),
-          if (cache == null || cache.contacts.isEmpty)
-            const Padding(padding: EdgeInsets.all(24), child: Text('暂无本地通讯录')),
-        ] else if (index == 2)
-          WeChatListTile(
-              title: const Text('外观'),
-              onTap: () =>
-                  showThemePickerSheet(context, widget.themeController))
-        else ...[
-          Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(cache?.profile?.nickname ?? '我')),
-          const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: Text('正在恢复连接，账号功能将在验证完成后可用')),
-        ],
-      ])),
-    );
-  }
-
   @override
   Widget build(BuildContext context) => Stack(
         children: [
@@ -3486,20 +3495,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               ],
             ),
             tabBuilder: (_, index) => CupertinoTabView(
-              builder: (_) => widget.localOnly && index != 0
-                  ? _buildLocalTab(index)
-                  : switch (index) {
+              builder: (_) => switch (index) {
                       0 => widget.startupHandoff == null
                           ? _buildMessagesTab()
                           : ListenableBuilder(
                               listenable: widget.startupHandoff!,
                               builder: (_, __) => _buildMessagesTab()),
-                      1 => _chatIdentityCache == null
-                          ? const _HomeWarmupPane(
-                              key: ValueKey('home-contacts-warmup'),
-                              message: '正在准备通讯录',
-                            )
-                          : ContactsTabPage(
+                      1 => ContactsTabPage(
+                              localOnly: !_hasVerifiedSession || _chatIdentityCache == null,
                               api: widget.api,
                               matrix: widget.matrix,
                               pendingFriendRequests: pendingFriendRequests,
@@ -3522,6 +3525,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                               onOpenRoom: _openSearchRoom,
                             ),
                       2 => DiscoveryPage(
+                          localOnly: !_hasVerifiedSession,
                           onOpenRoom: _openSearchRoom,
                           contactActions: ContactActions(
                             onMessage: _openMessage,
@@ -3541,7 +3545,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                           identityCache: _chatIdentityCache,
                         ),
                       _ => ProfileTabPage(
+                          localOnly: !_hasVerifiedSession,
                           matrix: widget.matrix,
+                          startupPreferences: widget.startupPreferences,
                           contactActions: ContactActions(
                             onMessage: _openMessage,
                             onVoice: (contact) =>
@@ -3636,6 +3642,7 @@ final class ContactsTabPage extends StatefulWidget {
     this.onFriendRequests,
     required this.pendingFriendRequests,
     this.identityCache,
+    this.localOnly = false,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -3654,6 +3661,7 @@ final class ContactsTabPage extends StatefulWidget {
   final VoidCallback? onFriendRequests;
   final ValueNotifier<int> pendingFriendRequests;
   final ProfileRepository? identityCache;
+  final bool localOnly;
 
   /// 房间打开（必填）：本 Tab 搜索与消息 Tab 搜索共用的统一打开回调
   /// （RoomOpeningPolicy → RoomNavigationCoordinator）。
@@ -3666,6 +3674,7 @@ final class ContactsTabPage extends StatefulWidget {
 final class _ContactsTabPageState extends State<ContactsTabPage> {
   @override
   Widget build(BuildContext context) => ContactsPage(
+        localOnly: widget.localOnly,
         api: widget.api,
         matrix: widget.matrix,
         onOpenRoom: widget.onOpenRoom,
@@ -3693,6 +3702,8 @@ final class ProfileTabPage extends StatefulWidget {
     this.contactActions,
     this.refreshSignal,
     this.matrix,
+    this.localOnly = false,
+    this.startupPreferences,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient? matrix;
@@ -3700,6 +3711,8 @@ final class ProfileTabPage extends StatefulWidget {
   final Future<void> Function() onLogout;
   final ProfileRepository? identityCache;
   final ValueListenable<int>? refreshSignal;
+  final bool localOnly;
+  final SharedPreferences? startupPreferences;
   final Future<void> Function()? onClearLocalChatData;
   @override
   State<ProfileTabPage> createState() => _ProfileTabPageState();
@@ -3724,8 +3737,26 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
   int _momentUnreadRequest = 0;
   Timer? _momentUnreadRefreshTimer;
 
+  String? get _momentUnreadKey {
+    final owner = _profileOwner;
+    if (owner == null || owner.isEmpty) return null;
+    final encoded = base64UrlEncode(utf8.encode('${widget.api.baseUri.origin}|$owner'));
+    return 'me.moment_interactions.v1.$encoded';
+  }
+
+  int _cachedMomentUnreadCount() {
+    final key = _momentUnreadKey;
+    if (key == null) return 0;
+    try {
+      final count = widget.startupPreferences?.getInt(key) ?? 0;
+      return count > 0 ? count : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   bool get _mePageVisible {
-    if (!mounted || !TickerMode.valuesOf(context).enabled) return false;
+    if (widget.localOnly || !mounted || !TickerMode.valuesOf(context).enabled) return false;
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
       return false;
@@ -3746,6 +3777,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     controller = _createController();
+    _momentUnreadCount = _cachedMomentUnreadCount();
     widget.refreshSignal?.addListener(_profileEntered);
     _momentUnreadRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (_mePageVisible) unawaited(_refreshMomentUnread());
@@ -3756,6 +3788,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
   void _profileEntered() => unawaited(_refreshMomentUnread());
 
   Future<void> _refreshMomentUnread() async {
+    if (widget.localOnly) return;
     final api = widget.api;
     final cache = widget.identityCache;
     final accountKey = cache?.accountKey;
@@ -3766,22 +3799,30 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
       final userId = await api.currentUserId();
       if (userId == null || userId.isEmpty) return;
       final response = await api.momentUnreadCount();
+      final currentUserId = await api.currentUserId();
       if (!mounted ||
           request != _momentUnreadRequest ||
+          widget.localOnly ||
           !identical(widget.api, api) ||
           api.sessionEpoch != epoch ||
           !identical(widget.identityCache, cache) ||
           cache?.accountKey != accountKey ||
-          await api.currentUserId() != userId) {
+          currentUserId != userId) {
         return;
       }
       final count = response['count'];
       setState(
           () => _momentUnreadCount = count is int && count > 0 ? count : 0);
+      final key = _momentUnreadKey;
+      if (key != null) {
+        await widget.startupPreferences?.setInt(key, _momentUnreadCount);
+      }
     } catch (_) {
       // A transient inbox failure preserves the last account-scoped badge.
     }
   }
+
+  String? get _profileOwner => widget.matrix?.userId ?? widget.identityCache?.accountKey;
 
   ProfileController _createController() {
     final api = widget.api;
@@ -3789,29 +3830,33 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
     final cache = widget.identityCache;
     _controllerApi = api;
     _controllerSessionEpoch = sessionEpoch;
-    _controllerAccountKey = cache?.accountKey;
+    final owner = _profileOwner;
+    _controllerAccountKey = owner;
     bool ownsCurrentSession() =>
         mounted &&
         identical(widget.api, api) &&
         api.sessionEpoch == sessionEpoch &&
-        identical(widget.identityCache, cache) &&
-        cache?.accountKey == _controllerAccountKey;
+        _profileOwner == owner;
     return ProfileController(
       gateway: api,
       avatarSource: GalleryAvatarSource(
         contextProvider: () => mounted ? context : null,
       ),
+      canLoadRemoteProfile: () => ownsCurrentSession() && !widget.localOnly,
       readCachedProfile: () async {
-        if (!ownsCurrentSession() || cache == null) return null;
-        await cache.hydrate();
-        return ownsCurrentSession() ? cache.profile : null;
+        final current = widget.identityCache;
+        if (!ownsCurrentSession() || current == null) return null;
+        await current.hydrate();
+        return ownsCurrentSession() && identical(widget.identityCache, current)
+            ? current.profile
+            : null;
       },
       persistProfile: (profile) async {
-        if (!ownsCurrentSession() || cache == null) return;
-        await cache.applyUpdatedProfile(profile);
+        if (!ownsCurrentSession() || widget.localOnly) return;
+        await widget.identityCache?.applyUpdatedProfile(profile);
       },
       avatarCacheIdentity: (profile) =>
-          cache?.resolveIdentity(username: profile.username).cacheKey ??
+          widget.identityCache?.resolveIdentity(username: profile.username).cacheKey ??
           profile.fallbackSeed,
       onAvatarUpdated: _refreshAvatarDisplays,
       initialProfile: cache?.profile,
@@ -3827,13 +3872,21 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
     }
     if (!identical(_controllerApi, widget.api) ||
         _controllerSessionEpoch != widget.api.sessionEpoch ||
-        !identical(oldWidget.identityCache, widget.identityCache) ||
-        _controllerAccountKey != widget.identityCache?.accountKey) {
+        _controllerAccountKey != _profileOwner) {
       controller.dispose();
       controller = _createController();
       _momentUnreadRequest++;
-      _momentUnreadCount = 0;
+      _momentUnreadCount = _cachedMomentUnreadCount();
       unawaited(_refreshMomentUnread());
+    } else {
+      final repositoryChanged =
+          !identical(oldWidget.identityCache, widget.identityCache);
+      if (repositoryChanged) {
+        unawaited(controller.hydrateCachedProfile());
+      }
+      if (repositoryChanged || oldWidget.localOnly && !widget.localOnly) {
+        unawaited(_refreshMomentUnread());
+      }
     }
   }
 
@@ -3856,6 +3909,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
   Widget build(BuildContext context) => ProfileExperiencePage(
       key: ObjectKey(controller),
       controller: controller,
+      localOnly: widget.localOnly,
       accountApi: widget.api,
       onUsername: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
           builder: (_) => UsernameChangePage(

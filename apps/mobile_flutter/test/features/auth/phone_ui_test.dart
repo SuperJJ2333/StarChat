@@ -541,7 +541,10 @@ void main() {
     expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
     expect(logins, 1);
   });
-  testWidgets('verified new phone can add invitation without another SMS', (
+  for (final terminalQuota in [false, true]) {
+    testWidgets(terminalQuota
+        ? 'terminal quota clears the verified phone continuation'
+        : 'verified new phone can add invitation without another SMS', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -599,6 +602,13 @@ void main() {
                 issue: PhoneInvitationIssue.invalid,
               );
             }
+            if (terminalQuota) {
+              throw const BusinessApiException(
+                statusCode: 400,
+                code: 'INVITATION_EXHAUSTED',
+                message: '该邀请码已达邀请上限',
+              );
+            }
           },
           onAuthenticated: () async => authenticated++,
         ),
@@ -636,9 +646,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(initialLogins, 1);
     expect(invitationContinuations, 2);
-    expect(authenticated, 1);
+    expect(authenticated, terminalQuota ? 0 : 1);
     expect(smsRequests, 0);
+    if (terminalQuota) {
+      expect(find.text('该邀请码已达邀请上限'), findsOneWidget);
+      expect(find.widgetWithText(ModernActionButton, '完成注册'), findsNothing);
+      expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
+    }
   });
+  }
   testWidgets('password Matrix failure never mentions phone code', (
     tester,
   ) async {

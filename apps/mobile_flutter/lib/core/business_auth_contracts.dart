@@ -146,6 +146,12 @@ InvitationValidationResult mapInvitationFailure(Object error) {
     );
   }
   if (error is BusinessApiException) {
+    if (error.code == 'INVITATION_EXHAUSTED') {
+      return const InvitationValidationResult(
+        InvitationValidationState.exhausted,
+        '该邀请码已达邀请上限',
+      );
+    }
     if (error.statusCode >= 500 || error.code == 'RATE_LIMITED') {
       return const InvitationValidationResult(
         InvitationValidationState.serverError,
@@ -183,7 +189,7 @@ InvitationValidationResult mapInvitationCheck({
     case 'EXHAUSTED':
       return const InvitationValidationResult(
         InvitationValidationState.exhausted,
-        '邀请码使用次数已耗尽',
+        '该邀请码已达邀请上限',
       );
     default:
       return const InvitationValidationResult(

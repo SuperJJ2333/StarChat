@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import '../../core/support_identity_repository.dart';
 import '../../ui/components/wechat_official_name.dart';
 
@@ -19,6 +20,7 @@ import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/chat/wechat_unread_badge.dart';
 import '../../ui/foundation/changliao_icons.dart';
+import '../../ui/foundation/avatar_cache.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
 import 'invite_controller.dart';
@@ -42,12 +44,14 @@ final class ProfileExperiencePage extends StatefulWidget {
     this.matrixUserId,
     this.momentInteractionUnreadCount = 0,
     this.performanceTrace,
+    this.localOnly = false,
   });
 
   final SupportIdentityRepository? supportIdentities;
   final String? matrixUserId;
   final int momentInteractionUnreadCount;
   final ProfileController controller;
+  final bool localOnly;
   final PerformanceTrace? performanceTrace;
   final VoidCallback onMoments;
   final VoidCallback onCaibi;
@@ -76,6 +80,8 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
   bool _firstFrameRendered = false;
   bool _contentReady = false;
   bool _initialLoadFailed = false;
+  (String, String)? _localAvatarIdentity;
+  Future<File?>? _localAvatar;
 
   void _finishInitialLoad() {
     if (!_firstFrameRendered || (!_contentReady && !_initialLoadFailed)) return;
@@ -87,6 +93,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
   }
 
   void _observeProfile() {
+    _observeLocalAvatar();
     if (widget.controller.state.profile != null) {
       _contentReady = true;
       _performanceTrace.mark(PerformanceStage.contentReady);
@@ -96,19 +103,62 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
     _finishInitialLoad();
   }
 
+  void _observeLocalAvatar() {
+    final key = widget.controller.avatarCacheKey;
+    final url = widget.controller.state.profile?.avatarUrl;
+    final identity = key != null && key.startsWith('identity:') && url != null
+        ? (key, AvatarCache.avatarVersion(url))
+        : null;
+    if (identity != _localAvatarIdentity) {
+      _localAvatarIdentity = identity;
+      _localAvatar = null;
+    }
+    if (widget.localOnly && identity != null && _localAvatar == null) {
+      _localAvatar = AvatarCache.readCachedFile(
+        userId: identity.$1,
+        avatarUrl: url!,
+      ).onError((_, __) => null);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _performanceTrace.mark(PerformanceStage.routeEnter);
     widget.controller.addListener(_change);
     _observeProfile();
-    unawaited(_performanceTrace.runChildOperations(widget.controller.load));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _firstFrameRendered = true;
       _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _loadForMode();
       _finishInitialLoad();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileExperiencePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_change);
+      widget.controller.addListener(_change);
+    }
+    if (oldWidget.controller != widget.controller ||
+        oldWidget.localOnly != widget.localOnly) {
+      _observeProfile();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadForMode();
+      });
+    }
+  }
+
+  void _loadForMode() {
+    final controller = widget.controller;
+    if (widget.localOnly) {
+      unawaited(controller.hydrateCachedProfile());
+    } else {
+      unawaited(_performanceTrace.runChildOperations(controller.load));
+    }
   }
 
   @override
@@ -154,15 +204,19 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
           children: [
             if (profile == null)
               _ProfileIdentityPlaceholder(
-                failed: state.status == ProfileStatus.failed,
+                failed:
+                    !widget.localOnly && state.status == ProfileStatus.failed,
                 onRetry: widget.controller.load,
               )
             else ...[
               _IdentityCard(
                 profile: profile,
-                supportIdentities: widget.supportIdentities,
+                supportIdentities:
+                    widget.localOnly ? null : widget.supportIdentities,
                 matrixUserId: widget.matrixUserId,
                 avatarCacheKey: widget.controller.avatarCacheKey,
+                localOnly: widget.localOnly,
+                localAvatar: _localAvatar,
                 onTap: _openDetails,
                 onQrCode: widget.onQrCode,
               ),
@@ -172,28 +226,28 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
               key: const Key('profile-details-entry'),
               icon: CupertinoIcons.person_crop_circle,
               label: '个人信息',
-              onTap: profile == null ? null : _openDetails,
+              onTap: profile == null || widget.localOnly ? null : _openDetails,
             ),
             _ProfileMenuTile(
               icon: CupertinoIcons.photo_on_rectangle,
               label: '朋友圈',
-              onTap: widget.onMoments,
+              onTap: widget.localOnly ? null : widget.onMoments,
               badgeCount: widget.momentInteractionUnreadCount,
             ),
             _ProfileMenuTile(
               icon: CupertinoIcons.money_dollar_circle,
               label: '点钻',
-              onTap: widget.onCaibi,
+              onTap: widget.localOnly ? null : widget.onCaibi,
             ),
             _ProfileMenuTile(
               icon: ChangliaoIcons.wallet,
               label: '钱包',
-              onTap: widget.onWallet,
+              onTap: widget.localOnly ? null : widget.onWallet,
             ),
             _ProfileMenuTile(
               icon: ChangliaoIcons.settings,
               label: '设置',
-              onTap: widget.onSettings,
+              onTap: widget.localOnly ? null : widget.onSettings,
             ),
           ],
         ),
@@ -220,7 +274,8 @@ final class _ProfileIdentityPlaceholder extends StatelessWidget {
                 label: '重试资料',
                 onPressed: onRetry,
               )
-            : const CupertinoActivityIndicator(),
+            : const Text('暂无个人资料',
+                style: TextStyle(color: WeChatColors.textSecondary)),
       );
 }
 
@@ -228,6 +283,8 @@ final class _IdentityCard extends StatelessWidget {
   const _IdentityCard({
     required this.profile,
     required this.avatarCacheKey,
+    required this.localOnly,
+    required this.localAvatar,
     this.supportIdentities,
     this.matrixUserId,
     required this.onTap,
@@ -238,6 +295,8 @@ final class _IdentityCard extends StatelessWidget {
   final String? matrixUserId;
   final ProfileData profile;
   final String? avatarCacheKey;
+  final bool localOnly;
+  final Future<File?>? localAvatar;
   final VoidCallback onTap;
 
   /// 右上角「二维码」入口：点击打开“我的二维码”页（微信式）。
@@ -251,7 +310,7 @@ final class _IdentityCard extends StatelessWidget {
     return CupertinoButton(
       key: const Key('profile-identity-card'),
       padding: EdgeInsets.zero,
-      onPressed: onTap,
+      onPressed: localOnly ? null : onTap,
       child: Stack(
         children: [
           Container(
@@ -264,13 +323,25 @@ final class _IdentityCard extends StatelessWidget {
                 SizedBox(
                   width: 72,
                   height: 72,
-                  child: UserAvatar(
-                    key: const Key('profile-identity-avatar'),
-                    nickname: profile.nickname,
-                    fallbackSeed: profile.fallbackSeed,
-                    avatarCacheKey: avatarCacheKey,
-                    avatarUrl: profile.avatarUrl,
-                    size: 72,
+                  child: FutureBuilder<File?>(
+                    future: localAvatar,
+                    builder: (_, snapshot) {
+                      final file =
+                          snapshot.connectionState == ConnectionState.done
+                              ? snapshot.data
+                              : null;
+                      return UserAvatar(
+                        key: const Key('profile-identity-avatar'),
+                        nickname: profile.nickname,
+                        fallbackSeed: profile.fallbackSeed,
+                        avatarCacheKey: avatarCacheKey,
+                        avatarUrl: profile.avatarUrl,
+                        localOnly: localOnly,
+                        localImageProvider:
+                            file == null ? null : FileImage(file),
+                        size: 72,
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -326,7 +397,7 @@ final class _IdentityCard extends StatelessWidget {
                 key: const Key('profile-qr-entry'),
                 minimumSize: const Size(44, 44),
                 padding: const EdgeInsets.all(10),
-                onPressed: onQrCode,
+                onPressed: localOnly ? null : onQrCode,
                 child: Icon(CupertinoIcons.qrcode,
                     size: 22, color: WeChatColors.textSecondary),
               ),

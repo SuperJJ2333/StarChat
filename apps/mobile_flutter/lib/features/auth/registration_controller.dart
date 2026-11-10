@@ -497,9 +497,9 @@ final class RegistrationController extends ChangeNotifier {
   }
 
   static Map<String, String> _fieldErrors(String code) => switch (code) {
-        'INVITATION_INVALID' ||
-        'INVITATION_EXPIRED' ||
         'INVITATION_EXHAUSTED' =>
+          const {'invitation_code': '该邀请码已达邀请上限'},
+        'INVITATION_INVALID' || 'INVITATION_EXPIRED' =>
           const {'invitation_code': '邀请码无效或已失效'},
         'USERNAME_TAKEN' => const {'username': '用户名已被使用'},
         'EMAIL_TAKEN' => const {'email': '邮箱已被使用'},

@@ -21,7 +21,8 @@ final class PersonalInvitation {
   final int useCount;
   final String shareUrl;
 
-  int get remainingUses => maxUses - useCount;
+  bool get limitReached => useCount >= maxUses;
+  int get remainingUses => limitReached ? 0 : maxUses - useCount;
 }
 
 abstract interface class PersonalInvitationGateway {

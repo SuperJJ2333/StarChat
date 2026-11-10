@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
@@ -7,6 +9,52 @@ import 'package:liuhetong_mobile/features/moments/moments_unread_controller.dart
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('cold discovery renders the restored badge before any refresh',
+      (tester) async {
+    final key = 'moments.unread.v1.${base64UrlEncode(utf8.encode('A'))}';
+    SharedPreferences.setMockInitialValues({
+      key: jsonEncode({'pending': ['cached-post'], 'viewed': []}),
+    });
+    var reads = 0;
+    final controller = MomentsUnreadController(
+      accountKey: 'A',
+      preferences: await SharedPreferences.getInstance(),
+      load: ({String? since, String? cursor}) async {
+        reads++;
+        return {'server_time': '2026-11-10T00:00:00Z', 'items': []};
+      },
+    );
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: SecureSessionStore());
+    Widget page(bool localOnly) => CupertinoApp(
+          home: DiscoveryPage(
+            api: api,
+            localOnly: localOnly,
+
+            onOpenRoom: (_, {anchorEventId}) async {},
+            unreadController: controller,
+          ),
+        );
+    await tester.pumpWidget(page(true));
+    expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.byKey(const Key('moments-new-posts-badge')), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    final list = find.byKey(const Key('discovery-home-list'));
+    final element = tester.element(list);
+    await tester.tap(find.byKey(const Key('discovery-search')));
+    await tester.pump();
+    expect(reads, 0);
+    await tester.pumpWidget(page(false));
+    await controller.refresh();
+    await tester.pump();
+    expect(tester.element(list), same(element));
+    expect(find.byKey(const Key('moments-new-posts-badge')), findsNothing);
+    expect(reads, 1);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
   testWidgets('new posts badge is red numeric and updates without reentry',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

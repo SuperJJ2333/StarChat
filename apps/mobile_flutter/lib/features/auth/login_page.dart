@@ -209,7 +209,7 @@ final class _LoginPageState extends State<LoginPage>
         PhoneInvitationIssue.required => '验证码已通过，请输入邀请码后完成注册',
         PhoneInvitationIssue.invalid => '验证码已通过，邀请码无效，请更换后继续',
         PhoneInvitationIssue.expired => '验证码已通过，邀请码已过期，请更换后继续',
-        PhoneInvitationIssue.exhausted => '验证码已通过，邀请码使用次数已满，请更换后继续',
+        PhoneInvitationIssue.exhausted => '该邀请码已达邀请上限',
         PhoneInvitationIssue.terms => '验证码已通过，请同意用户协议和隐私政策后继续',
         PhoneInvitationIssue.uncertain => '验证码已通过，邀请码提交结果待确认；请在本页继续',
         PhoneInvitationIssue.provisioning => '验证码已通过，聊天账号仍在开通；请稍后在本页继续',
@@ -454,15 +454,18 @@ final class _LoginPageState extends State<LoginPage>
       }
     } on BusinessApiException catch (error) {
       if (mounted) {
-        if (continuing &&
-            (error.code == 'LOGIN_TICKET_INVALID' ||
+        final quotaReached = _phoneMode && error.code == 'INVITATION_EXHAUSTED';
+        if (quotaReached ||
+            continuing && (error.code == 'LOGIN_TICKET_INVALID' ||
                 error.code == 'INVITATION_TICKET_INVALID')) {
           _invitationTicket = null;
           _invitationPhone = null;
           _requiresFreshPhoneCode = true;
         }
         _showLoginError(
-          _phoneMode
+          quotaReached
+              ? _invitationMessage(PhoneInvitationIssue.exhausted)
+              : _phoneMode
               ? continuing && _invitationTicket != null
                   ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
                   : '${error.message}；原验证码不可再次提交，请重新获取验证码'

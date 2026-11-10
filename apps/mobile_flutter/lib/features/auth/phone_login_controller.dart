@@ -196,8 +196,9 @@ final class PhoneLoginController extends ChangeNotifier {
       case 'INVITATION_REQUIRED':
       case 'INVITATION_INVALID':
       case 'INVITATION_EXPIRED':
-      case 'INVITATION_EXHAUSTED':
         return '新用户需要填写有效邀请码';
+      case 'INVITATION_EXHAUSTED':
+        return '该邀请码已达邀请上限';
       case 'PHONE_PROVISIONING_PENDING':
         return '账号仍在开通，请稍后重新登录；无需再次注册';
       case 'PHONE_REGISTRATION_INCOMPLETE':

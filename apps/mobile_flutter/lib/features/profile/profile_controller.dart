@@ -127,6 +127,7 @@ final class ProfileController extends ChangeNotifier {
     required this.avatarSource,
     Future<void> Function(String userId)? invalidateAvatarCache,
     this.readCachedProfile,
+    this.canLoadRemoteProfile,
     this.persistProfile,
     this.onAvatarUpdated,
     this.avatarCacheIdentity,
@@ -145,6 +146,7 @@ final class ProfileController extends ChangeNotifier {
       avatarCacheIdentity?.call(profile) ?? profile.fallbackSeed;
   final Future<void> Function(String userId) _invalidateAvatarCache;
   final Future<ProfileData?> Function()? readCachedProfile;
+  final bool Function()? canLoadRemoteProfile;
   final Future<void> Function(ProfileData profile)? persistProfile;
 
   /// 新头像上传成功（本地缓存已失效）后回调，用于立即刷新所有展示该
@@ -169,6 +171,7 @@ final class ProfileController extends ChangeNotifier {
 
   Future<void> load() {
     if (_disposed) return Future.value();
+    if (canLoadRemoteProfile?.call() == false) return hydrateCachedProfile();
     final existing = _loadFlight;
     if (existing != null) return existing;
     final future = _load();
@@ -198,23 +201,23 @@ final class ProfileController extends ChangeNotifier {
     final generation = ++_generation;
     if (state.profile == null) {
       _set(const ProfileState(ProfileStatus.loading));
-    }
-    try {
-      final cached = await readCachedProfile?.call();
-      if (_isCurrent(generation) && cached != null) {
-        _set(ProfileState(ProfileStatus.ready, profile: cached));
+      try {
+        final cached = await readCachedProfile?.call();
+        if (_isCurrent(generation) && state.profile == null && cached != null) {
+          _set(ProfileState(ProfileStatus.ready, profile: cached));
+        }
+      } catch (_) {
+        // A cache miss/read failure is inconclusive; continue with the gateway.
       }
-    } catch (_) {
-      // A cache miss/read failure is inconclusive; continue with the gateway.
     }
-    if (!_isCurrent(generation)) return;
+    if (!_canAcceptLoad(generation)) return;
     try {
       final loaded = await gateway.loadProfile();
-      if (!_isCurrent(generation)) return;
+      if (!_canAcceptLoad(generation)) return;
       _set(ProfileState(ProfileStatus.ready, profile: loaded));
       await _persist(loaded, generation);
     } catch (_) {
-      if (!_isCurrent(generation)) return;
+      if (!_canAcceptLoad(generation)) return;
       final current = state.profile;
       // 本地优先 / 失败不覆盖：已经有资料可展示时，刷新失败不再升级成页面红字
       // （旧行为会让"资料加载失败，请重试"盖在已经渲染出来的资料旁边）。
@@ -224,6 +227,9 @@ final class ProfileController extends ChangeNotifier {
           : ProfileState(ProfileStatus.ready, profile: current));
     }
   }
+
+  bool _canAcceptLoad(int generation) =>
+      _isCurrent(generation) && canLoadRemoteProfile?.call() != false;
 
   Future<void> save(String nickname, String? signature,
       {String? nudgeSuffix}) async {

@@ -8,7 +8,9 @@ final class MomentsUnreadController extends ChangeNotifier {
   MomentsUnreadController(
       {required this.accountKey,
       required this.load,
-      required this.preferences});
+      required this.preferences}) {
+    _restore();
+  }
   final String accountKey;
   final Future<Map<String, dynamic>> Function({String? since, String? cursor})
       load;
@@ -23,22 +25,25 @@ final class MomentsUnreadController extends ChangeNotifier {
   Future<void>? _refreshing;
   int get count => _pending.length;
 
-  Future<void> initialize() async {
+  void _restore() {
     if (accountKey.isEmpty) return;
     try {
       final raw = preferences.getString(_key);
       if (raw != null) {
         final json = jsonDecode(raw) as Map<String, dynamic>;
-        _since = json['since'] as String?;
-        _viewed.addAll(List<String>.from(json['viewed'] ?? const []));
-        _pending = Set<String>.from(json['pending'] ?? const []);
-        if (!_disposed) notifyListeners();
+        final since = json['since'] as String?;
+        final viewed = List<String>.from(json['viewed'] ?? const []);
+        final pending = Set<String>.from(json['pending'] ?? const []);
+        _since = since;
+        _viewed.addAll(viewed);
+        _pending = pending;
       }
     } catch (_) {
       /* A corrupt account snapshot is treated as a fresh baseline. */
     }
-    await refresh();
   }
+
+  Future<void> initialize() => refresh();
 
   Future<void> refresh() =>
       _refreshing ??= _refresh().whenComplete(() => _refreshing = null);

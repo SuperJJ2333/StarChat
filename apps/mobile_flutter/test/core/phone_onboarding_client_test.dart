@@ -254,6 +254,39 @@ void main() {
     expect(calls, 2);
     expect(await store.session(), isNull);
   });
+  test('terminal invitation quota error is not converted to an uncertain retry',
+      () async {
+    final store = SecureSessionStore(MemoryStore());
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: store,
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/auth/phone/login')) {
+          return http.Response(jsonEncode({
+            'status': 'INVITATION_VERIFIED',
+            'invitation_ticket': 'opaque-verified-ticket-with-enough-length',
+          }), 202);
+        }
+        return http.Response(jsonEncode({
+          'error': {'code': 'INVITATION_EXHAUSTED', 'message': '该邀请码已达邀请上限'},
+        }), 400, headers: {'content-type': 'application/json; charset=utf-8'});
+      }),
+    );
+    await expectLater(
+      api.phoneLogin(
+        phone: '13800000001',
+        code: '123456',
+        invitationCode: 'FULL',
+        termsAccepted: true,
+        deviceKey: 'test-device',
+        deviceName: 'test',
+      ),
+      throwsA(isA<BusinessApiException>()
+          .having((e) => e.code, 'code', 'INVITATION_EXHAUSTED')
+          .having((e) => e.message, 'message', '该邀请码已达邀请上限')),
+    );
+    expect(await store.session(), isNull);
+  });
   test('prefilled invitation keeps proof when Matrix provisioning is pending',
       () async {
     var calls = 0;

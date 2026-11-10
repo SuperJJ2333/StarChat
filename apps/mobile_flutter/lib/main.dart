@@ -40,6 +40,7 @@ import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_home_page.dart';
+import 'features/matrix/profile_repository.dart';
 import 'session_gate.dart';
 import 'ui/motion/motion_preferences.dart';
 import 'features/settings/voice_auto_play_preferences.dart';
@@ -113,6 +114,7 @@ Future<void> _startApplicationShell(
   PerformanceMetrics.instance.startFrameObservation();
   late ThemeController themeController;
   late SharedPreferencesChatDiagnosticSpoolStore diagnosticsSpool;
+  late SharedPreferences startupPreferences;
   late SecureSessionStore store;
   late InstallationReconciler installationReconciler;
   var shellPrepared = false;
@@ -131,6 +133,7 @@ Future<void> _startApplicationShell(
           boundary: StartupFailureBoundary.versionLoad));
     }));
     final preferences = await SharedPreferences.getInstance();
+    startupPreferences = preferences;
     final loadedThemeController = ThemeController(
       store: SharedPreferencesThemePreferenceStore(
         preferences,
@@ -382,6 +385,25 @@ Future<void> _startApplicationShell(
         resumeInitialization();
       }
     });
+    ProfileRepository? preparedIdentity;
+    Future<ProfileRepository?>? preparedIdentityLoad;
+    String? preparedIdentityOwner;
+    int? preparedIdentityEpoch;
+
+    ({ProfileRepository? cache, Future<ProfileRepository?>? load})
+        takePreparedIdentity() {
+      final cache = preparedIdentity;
+      final load = preparedIdentityLoad;
+      preparedIdentity = null;
+      preparedIdentityLoad = null;
+      if (preparedIdentityOwner != matrix.userId ||
+          preparedIdentityEpoch != api.sessionEpoch) {
+        if (load != null) unawaited(load.then((repository) => repository?.dispose()));
+        return (cache: null, load: null);
+      }
+      return (cache: cache, load: cache == null ? load : null);
+    }
+
     final gate = SessionGate(
       controller: session,
       unauthenticatedBuilder: (_) => AuthenticationFlow(
@@ -397,8 +419,9 @@ Future<void> _startApplicationShell(
       ),
       onConfirmNewDeviceRecovery: login.confirmNewDeviceAndLogin,
       authenticatedBuilder: (_) => const SizedBox.shrink(),
-      localSessionBuilder: (_, verified) =>
-          Stack(fit: StackFit.expand, children: [
+      localSessionBuilder: (_, verified) {
+        final identity = takePreparedIdentity();
+        return Stack(fit: StackFit.expand, children: [
         AppHome(
           key: ValueKey(
               (matrix, matrix.userId, matrix.deviceId, api.sessionEpoch)),
@@ -406,6 +429,9 @@ Future<void> _startApplicationShell(
           outboxStoreFactory: dependencies?.outboxStoreFactory,
           verifiedSession: verifiedSession,
           startupHandoff: currentStartupHandoff(),
+          initialIdentityCache: identity.cache,
+          initialIdentityLoad: identity.load,
+          startupPreferences: startupPreferences,
           api: api,
           matrix: matrix,
           onLogout: () async {
@@ -432,7 +458,8 @@ Future<void> _startApplicationShell(
             spoolScope: api.diagnosticSpoolScope,
             child: const SizedBox.shrink(),
           ),
-      ]),
+        ]);
+      },
     );
     final bootstrap = session.bootstrap();
     unawaited(() async {
@@ -452,17 +479,57 @@ Future<void> _startApplicationShell(
         // recovery UI can present a retry/import flow without exposing secrets.
       }
     }());
-    if (matrix.hasLocalDisplayProjection) {
+    if (matrix.hasLocalDisplayProjection || matrix.isLoggedIn) {
       final eligible = await Future.any<bool>([
         localEligibility.future,
         bootstrap.then((_) => session.canShowCachedMessages),
       ]);
       admissionAttempt?.checkCurrent();
       if (eligible) {
-        final snapshot = await matrix.conversations.snapshot();
+        final userId = matrix.userId;
+        final epoch = api.sessionEpoch;
+        if (userId != null) {
+          preparedIdentityOwner = userId;
+          preparedIdentityEpoch = epoch;
+          preparedIdentityLoad = () async {
+            ProfileRepository? repository;
+            try {
+              repository = await ProfileRepository.create(
+                  api: api, accountKey: 'matrix:$userId');
+              await repository.hydrate();
+              if (matrix.userId == userId &&
+                  api.sessionEpoch == epoch &&
+                  session.canShowCachedMessages &&
+                  admissionAttempt?.isCurrent != false) {
+                return repository;
+              }
+            } catch (_) {
+              // The Tab shell can still open with an unreadable local store.
+            }
+            repository?.dispose();
+            return null;
+          }();
+          admissionAttempt?.onRetire(() {
+            final abandoned = preparedIdentityLoad;
+            preparedIdentityLoad = null;
+            preparedIdentity = null;
+            if (abandoned != null) {
+              unawaited(abandoned.then((repository) => repository?.dispose()));
+            }
+          });
+        }
+        if (matrix.hasLocalDisplayProjection) {
+          final snapshot = await matrix.conversations.snapshot();
+          admissionAttempt?.checkCurrent();
+          currentStartupHandoff()?.prepare(snapshot);
+        }
+        if (preparedIdentityLoad case final load?) {
+          // Keep the same read in flight for the Home if disk takes longer.
+          preparedIdentity = await load.timeout(
+              const Duration(milliseconds: 250), onTimeout: () => null);
+        }
         admissionAttempt?.checkCurrent();
-        currentStartupHandoff()?.prepare(snapshot);
-      } else {
+      } else if (matrix.hasLocalDisplayProjection) {
         admissionAttempt?.cacheMiss();
       }
     }

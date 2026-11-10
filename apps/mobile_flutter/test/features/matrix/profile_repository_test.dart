@@ -1,13 +1,104 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../../core/business_api_session_test.dart' show MemoryStore;
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('contacts survive a failed profile request and repository recreation',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = SharedPreferencesProfileStore(
+      await SharedPreferences.getInstance(),
+    );
+    const account = 'matrix:@owner:test';
+    final cache = ProfileRepository.forTesting(
+      accountKey: account,
+      store: store,
+      loadProfile: () async => throw StateError('profile offline'),
+      loadContacts: () async => [contact(remark: 'Last successful contacts')],
+    );
+    await expectLater(cache.preload(), throwsStateError);
+    expect(cache.profile, isNull);
+    expect(cache.contacts.single.remark, 'Last successful contacts');
+    cache.dispose();
+
+    final recreated = ProfileRepository.forTesting(
+      accountKey: account,
+      store: store,
+    );
+    await recreated.hydrate();
+    expect(recreated.profile, isNull);
+    expect(recreated.contacts.single.remark, 'Last successful contacts');
+    recreated.dispose();
+  });
+
+  test('a successful empty contact list has a disk snapshot without a profile',
+      () async {
+    final store = MemoryProfileStore();
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'empty-contacts',
+      store: store,
+      loadProfile: () async => throw StateError('profile offline'),
+      loadContacts: () async => const [],
+    );
+    await expectLater(cache.preload(), throwsStateError);
+    final snapshot = await store.read('empty-contacts');
+    expect(snapshot, isNotNull);
+    expect(snapshot!.profile, isNull);
+    expect(snapshot.contacts, isEmpty);
+    cache.dispose();
+  });
+
+  test('old account preload cannot dispatch after the API epoch changes',
+      () async {
+    final sessions = SecureSessionStore(MemoryStore());
+    final disk = DelayedReadProfileStore();
+    var requests = 0;
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: sessions,
+      client: MockClient((request) async {
+        requests++;
+        return http.Response(
+          jsonEncode(request.url.path.endsWith('/profile/me')
+              ? {
+                  'username': 'next',
+                  'nickname': 'Next account',
+                  'masked_email': '',
+                  'avatar_fallback_seed': 'next',
+                }
+              : {'items': <Object>[]}),
+          200,
+        );
+      }),
+    );
+    final cache = ProfileRepository(api,
+        accountKey: 'matrix:@previous:test', store: disk);
+    final pending = cache.preload();
+    await api.clearLocalSession();
+    await sessions.saveSession(accessToken: 'next', refreshToken: 'next-r');
+    disk.pending.complete(null);
+    await pending;
+    expect(requests, 0);
+    expect(disk.saved, isNull);
+    cache.dispose();
+  });
+
   test('independent publications cannot persist older snapshot last', () async {
     final store = DelayedWriteProfileStore();
     final contacts = Completer<List<ContactSummary>>();
@@ -87,7 +178,7 @@ void main() {
     await request;
     expect(observedName, 'Fresh owner');
     expect(published.isCompleted, isTrue);
-    expect((await store.read('independent'))?.profile.nickname, 'Fresh owner');
+    expect((await store.read('independent'))?.profile?.nickname, 'Fresh owner');
     expect(cache.profile?.nickname, 'Fresh owner');
     cache.dispose();
   });
@@ -188,6 +279,7 @@ void main() {
     final cache =
         ProfileRepository.forTesting(accountKey: 'race', store: store);
     await cache.applyUpdatedContact(friend);
+    expect(store.saved, isNull);
     final hydration = cache.hydrate();
     await cache.removeContact(friend.userId);
     store.pending.complete(
@@ -351,7 +443,7 @@ void main() {
 
     expect(cache.profile?.nickname, 'Saved Alice');
     expect(cache.contacts.single.remark, 'cached remark');
-    expect(store.saved?.profile.nickname, 'Saved Alice');
+    expect(store.saved?.profile?.nickname, 'Saved Alice');
     expect(store.saved?.contacts.single.remark, 'cached remark');
   });
 
@@ -395,11 +487,52 @@ void main() {
     );
     final restored = await store.read('matrix:@alice:example.test');
     expect(restored, isNotNull);
-    expect(restored!.profile.nickname, 'Alice');
+    expect(restored!.profile?.nickname, 'Alice');
     expect(restored.contacts.single.remark, '备注');
     expect(restored.contactsRevision, 7);
   });
 
+
+  test('bad SQLite payload allows a successful refresh to repair the cache',
+      () async {
+    final folder = await Directory.systemTemp.createTemp('profile-cache-repair-');
+    final path = '${folder.path}/profile.db';
+    final store = SqliteProfileStore(databasePath: path, factory: databaseFactoryFfi);
+    await store.probe();
+    final db = await databaseFactoryFfi.openDatabase(path);
+    const account = 'matrix:@repair:test';
+    try {
+      await db.insert('profile_snapshots', {
+        'account_key': account,
+        'payload': '{bad json',
+        'revision': 1,
+        'updated_at': 0,
+      });
+      final cache = ProfileRepository.forTesting(
+        accountKey: account,
+        store: store,
+        loadProfile: () async => profile('Repaired'),
+        loadContacts: () async => [contact(remark: 'Saved friend')],
+      );
+      await cache.hydrate();
+      expect(cache.profile, isNull);
+      await cache.refresh();
+      cache.dispose();
+
+      final restored = ProfileRepository.forTesting(
+        accountKey: account,
+        store: SqliteProfileStore(databasePath: path, factory: databaseFactoryFfi),
+      );
+      await restored.hydrate();
+      expect(restored.profile?.nickname, 'Repaired');
+      expect(restored.contacts.single.remark, 'Saved friend');
+      restored.dispose();
+    } finally {
+      await db.close();
+      await databaseFactoryFfi.deleteDatabase(path);
+      await folder.delete();
+    }
+  });
   test('ProfileSnapshot preserves unknown, empty and exact last-seen states',
       () {
     final exact = DateTime.utc(2026, 9, 12, 4, 5);

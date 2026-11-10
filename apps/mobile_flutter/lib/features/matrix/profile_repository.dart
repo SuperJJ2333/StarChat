@@ -60,22 +60,26 @@ final class ProfileSnapshot {
     this.contactsRevision = 0,
   });
 
-  final ProfileData profile;
+  // The contacts request can succeed before the owner profile is available.
+  final ProfileData? profile;
   final List<ContactSummary> contacts;
 
   /// 好友数据修订号：任何好友集合/资料变化时递增（BUG 3）。
   final int contactsRevision;
 
   Map<String, dynamic> toJson() => {
-        'profile': {
-          'username': profile.username,
-          'nickname': profile.nickname,
-          'masked_email': profile.maskedEmail,
-          'masked_phone': profile.maskedPhone,
-          'fallback_seed': profile.fallbackSeed,
-          'signature': profile.signature,
-          'nudge_suffix': profile.nudgeSuffix,
-          'avatar_url': profile.avatarUrl,
+        'profile': switch (profile) {
+          null => null,
+          final ProfileData owner => {
+              'username': owner.username,
+              'nickname': owner.nickname,
+              'masked_email': owner.maskedEmail,
+              'masked_phone': owner.maskedPhone,
+              'fallback_seed': owner.fallbackSeed,
+              'signature': owner.signature,
+              'nudge_suffix': owner.nudgeSuffix,
+              'avatar_url': owner.avatarUrl,
+            },
         },
         'contacts': [
           for (final contact in contacts)
@@ -100,18 +104,34 @@ final class ProfileSnapshot {
     if (encoded is! Map<String, dynamic>) return null;
     final profileJson = encoded['profile'];
     final contactsJson = encoded['contacts'];
-    if (profileJson is! Map<String, dynamic> || contactsJson is! List) {
+    if (!encoded.containsKey('profile') || contactsJson is! List) {
       return null;
     }
-    final username = profileJson['username'];
-    final nickname = profileJson['nickname'];
-    final maskedEmail = profileJson['masked_email'];
-    final fallbackSeed = profileJson['fallback_seed'];
-    if (username is! String ||
-        nickname is! String ||
-        maskedEmail is! String ||
-        fallbackSeed is! String) {
-      return null;
+    ProfileData? profile;
+    if (profileJson != null) {
+      if (profileJson is! Map<String, dynamic>) return null;
+      final username = profileJson['username'];
+      final nickname = profileJson['nickname'];
+      final maskedEmail = profileJson['masked_email'];
+      final maskedPhone = profileJson['masked_phone'];
+      final fallbackSeed = profileJson['fallback_seed'];
+      if (username is! String ||
+          nickname is! String ||
+          maskedEmail is! String ||
+          (maskedPhone != null && maskedPhone is! String) ||
+          fallbackSeed is! String) {
+        return null;
+      }
+      profile = ProfileData(
+        username: username,
+        nickname: nickname,
+        maskedEmail: maskedEmail,
+        maskedPhone: maskedPhone as String?,
+        fallbackSeed: fallbackSeed,
+        signature: profileJson['signature']?.toString(),
+        nudgeSuffix: profileJson['nudge_suffix']?.toString(),
+        avatarUrl: profileJson['avatar_url']?.toString(),
+      );
     }
     final contacts = <ContactSummary>[];
     for (final raw in contactsJson) {
@@ -120,20 +140,13 @@ final class ProfileSnapshot {
         contacts.add(ContactSummary.fromJson(Map<String, dynamic>.from(raw)));
       } on FormatException {
         return null;
+      } on TypeError {
+        return null;
       }
     }
     final revision = encoded['contacts_revision'];
     return ProfileSnapshot(
-      profile: ProfileData(
-        username: username,
-        nickname: nickname,
-        maskedEmail: maskedEmail,
-        maskedPhone: profileJson['masked_phone'] as String?,
-        fallbackSeed: fallbackSeed,
-        signature: profileJson['signature']?.toString(),
-        nudgeSuffix: profileJson['nudge_suffix']?.toString(),
-        avatarUrl: profileJson['avatar_url']?.toString(),
-      ),
+      profile: profile,
       contacts: List.unmodifiable(contacts),
       contactsRevision: revision is int ? revision : 0,
     );
@@ -210,10 +223,14 @@ final class SqliteProfileStore implements ProfileStore {
       limit: 1,
     );
     if (rows.isNotEmpty) {
-      final snapshot = ProfileSnapshot.fromJson(
-        jsonDecode(rows.first['payload'] as String),
-      );
-      if (snapshot != null) return snapshot;
+      final payload = rows.first['payload'];
+      if (payload is! String) return null;
+      try {
+        return ProfileSnapshot.fromJson(jsonDecode(payload));
+      } on FormatException {
+        // Preserve the store so the next successful refresh can repair it.
+        return null;
+      }
     }
     // 迁移：旧版 SharedPreferences 快照一次性搬入 SQLite。
     final legacy = await _readLegacy(accountKey);
@@ -368,6 +385,7 @@ final class ProfileRepository extends ChangeNotifier {
   ProfileRepository(BusinessApiClient api,
       {String? accountKey, ProfileStore? store})
       : api = api,
+        _sessionEpoch = api.sessionEpoch,
         _accountKey = accountKey,
         _store = store,
         _loadProfile = api.loadProfile,
@@ -381,6 +399,7 @@ final class ProfileRepository extends ChangeNotifier {
     Future<List<ContactSummary>> Function()? loadContacts,
     ProfileErrorReporter? onError,
   })  : api = null,
+        _sessionEpoch = null,
         _accountKey = accountKey,
         _store = store,
         _loadProfile = loadProfile,
@@ -391,6 +410,7 @@ final class ProfileRepository extends ChangeNotifier {
     required BusinessApiClient api,
     required String accountKey,
   }) async {
+    final epoch = api.sessionEpoch;
     // 存储策略：SQLite（应用支持目录）→ 探活失败降级 SharedPreferences。
     // 任何存储故障都不得阻断身份加载（否则消息/通讯录页永久加载中）。
     ProfileStore store;
@@ -403,10 +423,14 @@ final class ProfileRepository extends ChangeNotifier {
         await SharedPreferences.getInstance(),
       );
     }
+    if (api.sessionEpoch != epoch) {
+      throw StateError('Profile repository session changed');
+    }
     return ProfileRepository(api, accountKey: accountKey, store: store);
   }
 
   final BusinessApiClient? api;
+  final int? _sessionEpoch;
   final String? _accountKey;
 
   /// Stable namespace of this account-scoped projection; never credentials.
@@ -425,6 +449,9 @@ final class ProfileRepository extends ChangeNotifier {
   int _remoteReadGeneration = 0;
   int _profileReadGeneration = 0;
   bool _disposed = false;
+  bool get _isCurrent => !_disposed && api?.sessionEpoch == _sessionEpoch;
+  // An optimistic edit alone is not a complete contacts snapshot.
+  bool _hasContactsSnapshot = false;
   Future<void> _persistTail = Future.value();
 
   ProfileData? profile;
@@ -524,11 +551,12 @@ final class ProfileRepository extends ChangeNotifier {
   Future<void> _hydrateNow() async {
     final store = _store;
     final key = _accountKey;
-    if (store == null || key == null) return;
+    if (!_isCurrent || store == null || key == null) return;
     final mutation = _contactsMutation;
     final profileGeneration = _profileReadGeneration;
     final snapshot = await store.read(key);
-    if (_disposed || snapshot == null) return;
+    if (!_isCurrent || snapshot == null) return;
+    _hasContactsSnapshot = true;
     final hydrated = _preserveContactMutations(snapshot, mutation);
     // An editor save can win while disk hydration is pending. Keep that newer
     // owner profile, but still recover the cached contacts from the same local
@@ -562,7 +590,7 @@ final class ProfileRepository extends ChangeNotifier {
   /// Contacts and their revision remain intact, while reads started before the
   /// edit lose ownership of the profile projection.
   Future<void> applyUpdatedProfile(ProfileData updated) async {
-    if (_disposed) return;
+    if (!_isCurrent) return;
     _profileReadGeneration++;
     await _applyAndPersist(ProfileSnapshot(
       profile: updated,
@@ -577,15 +605,14 @@ final class ProfileRepository extends ChangeNotifier {
     Duration minInterval = const Duration(seconds: 15),
     DateTime Function()? now,
   }) async {
-    if (_disposed) return;
+    if (!_isCurrent) return;
     final clock = now ?? DateTime.now;
     final last = _lastContactsRefreshAt;
     if (last != null && clock().difference(last) < minInterval) return;
     _lastContactsRefreshAt = clock();
     if (profile == null) {
-      // A contacts-only read cannot initialize the owner snapshot. Join the
-      // existing preload before claiming a generation, otherwise both reads
-      // can discard their result and permanently leave the cache cold.
+      // Let the startup load fetch the missing profile as well as contacts.
+      // Joining it avoids a second contacts request while that load is pending.
       try {
         await preload();
       } catch (_) {
@@ -599,16 +626,15 @@ final class ProfileRepository extends ChangeNotifier {
     final mutation = _contactsMutation;
     try {
       final fresh = _mergeMissingAvatars(await loadContacts());
-      if (_disposed ||
+      if (!_isCurrent ||
           generation != _remoteReadGeneration ||
           mutation != _contactsMutation) {
         return;
       }
+      _hasContactsSnapshot = true;
       if (_contactsEqual(contacts, fresh)) return;
-      final currentProfile = profile;
-      if (currentProfile == null) return;
       await _applyAndPersist(ProfileSnapshot(
-        profile: currentProfile,
+        profile: profile,
         contacts: List.unmodifiable(fresh),
         contactsRevision: contactsRevision + 1,
       ));
@@ -618,11 +644,11 @@ final class ProfileRepository extends ChangeNotifier {
   }
 
   Future<void> _load({required String operation}) async {
-    if (_disposed) return;
+    if (!_isCurrent) return;
     final generation = ++_remoteReadGeneration;
     final profileGeneration = ++_profileReadGeneration;
     await hydrate();
-    if (_disposed || profileGeneration != _profileReadGeneration) return;
+    if (!_isCurrent || profileGeneration != _profileReadGeneration) return;
     final loadProfile = _loadProfile;
     final loadContacts = _loadContacts;
     if (loadProfile == null || loadContacts == null) return;
@@ -632,7 +658,9 @@ final class ProfileRepository extends ChangeNotifier {
       // supersede contacts, but cannot invalidate an in-flight owner profile.
       await Future.wait<void>([
         Future<ProfileData>.sync(loadProfile).then((fresh) async {
-          if (_disposed || profileGeneration != _profileReadGeneration) return;
+          if (!_isCurrent || profileGeneration != _profileReadGeneration) {
+            return;
+          }
           await _applyAndPersist(ProfileSnapshot(
             profile: fresh,
             contacts: contacts,
@@ -640,13 +668,20 @@ final class ProfileRepository extends ChangeNotifier {
           ));
         }),
         Future<List<ContactSummary>>.sync(loadContacts).then((incoming) async {
-          if (_disposed ||
+          if (!_isCurrent ||
               generation != _remoteReadGeneration ||
               mutation != _contactsMutation) {
             return;
           }
           final fresh = _mergeMissingAvatars(incoming);
-          if (_contactsEqual(contacts, fresh)) return;
+          final hadSnapshot = _hasContactsSnapshot;
+          _hasContactsSnapshot = true;
+          if (_contactsEqual(contacts, fresh)) {
+            if (!hadSnapshot && profile == null) {
+              await _persist(operation: 'profile.persist');
+            }
+            return;
+          }
           _applyContacts(fresh, contactsRevision + 1);
           await _persist(operation: 'profile.persist');
         }),
@@ -675,32 +710,9 @@ final class ProfileRepository extends ChangeNotifier {
 
   /// BUG 3：accept 后乐观写入（也用于备注/标签等单点更新）。
   Future<void> applyUpdatedContact(ContactSummary updated) async {
+    if (!_isCurrent) return;
     _contactsMutation += 1;
     updated = _mergeMissingAvatars([updated]).single;
-    final currentProfile = profile;
-    if (currentProfile == null) {
-      // 尚无 profile 快照：仅更新内存并通知（与旧实现一致，不落库）。
-      final previous = contacts;
-      contacts = List.unmodifiable([
-        for (final contact in contacts)
-          if (contact.userId != updated.userId &&
-              contact.matrixUserId != updated.matrixUserId)
-            contact,
-        updated,
-      ]);
-      contactsByUserId = {
-        for (final contact in contacts) contact.userId: contact
-      };
-      contactsByMatrixId = {
-        for (final contact in contacts)
-          contact.matrixUserId: contact.toDetails(),
-      };
-      _invalidateChangedContactAvatars(previous, contacts);
-      contactsRevision += 1;
-      _notifyContactSelections();
-      notifyListeners();
-      return;
-    }
     final next = <ContactSummary>[];
     var replaced = false;
     for (final contact in contacts) {
@@ -714,7 +726,7 @@ final class ProfileRepository extends ChangeNotifier {
     }
     if (!replaced) next.add(updated);
     await _applyAndPersist(ProfileSnapshot(
-      profile: currentProfile,
+      profile: profile,
       contacts: List.unmodifiable(next),
       contactsRevision: contactsRevision + 1,
     ));
@@ -739,29 +751,15 @@ final class ProfileRepository extends ChangeNotifier {
   }
 
   Future<void> removeContact(String userId) async {
+    if (!_isCurrent) return;
     _contactsMutation += 1;
-    final currentProfile = profile;
     final next = [
       for (final contact in contacts)
         if (contact.userId != userId) contact,
     ];
     if (next.length == contacts.length) return;
-    if (currentProfile == null) {
-      contacts = List.unmodifiable(next);
-      contactsByUserId = {
-        for (final contact in contacts) contact.userId: contact
-      };
-      contactsByMatrixId = {
-        for (final contact in contacts)
-          contact.matrixUserId: contact.toDetails(),
-      };
-      contactsRevision += 1;
-      _notifyContactSelections();
-      notifyListeners();
-      return;
-    }
     await _applyAndPersist(ProfileSnapshot(
-      profile: currentProfile,
+      profile: profile,
       contacts: List.unmodifiable(next),
       contactsRevision: contactsRevision + 1,
     ));
@@ -805,19 +803,21 @@ final class ProfileRepository extends ChangeNotifier {
   Future<void> _persist({required String operation}) {
     final store = _store;
     final key = _accountKey;
-    final currentProfile = profile;
-    if (_disposed || store == null || key == null || currentProfile == null) {
+    if (!_isCurrent ||
+        store == null ||
+        key == null ||
+        (profile == null && !_hasContactsSnapshot)) {
       return Future.value();
     }
     final snapshot = ProfileSnapshot(
-      profile: currentProfile,
+      profile: profile,
       contacts: contacts,
       contactsRevision: contactsRevision,
     );
     // Profile, contacts and local mutations can publish concurrently. Preserve
     // publication order on disk even if the storage implementation is async.
     return _persistTail = _persistTail.then((_) async {
-      if (_disposed) return;
+      if (!_isCurrent) return;
       try {
         await store.write(key, snapshot);
       } catch (error, stackTrace) {
@@ -828,7 +828,7 @@ final class ProfileRepository extends ChangeNotifier {
 
   void _apply(ProfileSnapshot snapshot,
       {bool invalidateChangedAvatars = true}) {
-    if (_disposed) return;
+    if (!_isCurrent) return;
     profile = snapshot.profile;
     _applyContacts(snapshot.contacts, snapshot.contactsRevision,
         invalidateChangedAvatars: invalidateChangedAvatars);

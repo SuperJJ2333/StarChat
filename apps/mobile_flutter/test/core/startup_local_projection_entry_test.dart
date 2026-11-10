@@ -32,6 +32,9 @@ import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
+import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
@@ -320,6 +323,7 @@ void registerStartupProjectionEntryTests(
       final host = Uri.parse(AppConfig.matrixHomeserver);
       final user =
           '@startup-${independent ? 'projection' : 'legacy'}-${allHidden ? 'empty' : 'rows'}${terminal ? '-terminal' : ''}:synthetic.test';
+      final checkColdTabs = independent && !allHidden && !avatarHandoff && !terminal;
       final clock = Stopwatch()..start();
       await tester.runAsync(() async {
         await olm.init();
@@ -330,7 +334,20 @@ void registerStartupProjectionEntryTests(
         await evidence.create(recursive: true);
         directory = (await evidence.createTemp('entry-')).absolute;
         PathProviderPlatform.instance = _Paths(directory.path);
-        SharedPreferences.setMockInitialValues({});
+        SharedPreferences.setMockInitialValues({
+          if (checkColdTabs)
+            'moments.unread.v1.${base64UrlEncode(utf8.encode(user))}':
+                jsonEncode({'pending': ['saved-post'], 'viewed': []}),
+        });
+        if (checkColdTabs) {
+          await SharedPreferencesProfileStore(await SharedPreferences.getInstance())
+              .write('matrix:$user', const ProfileSnapshot(
+            profile: ProfileData(username: 'cached_me', nickname: 'Saved owner',
+                maskedEmail: '', fallbackSeed: 'cached_me'),
+            contacts: [ContactSummary(userId: 'saved-friend', username: 'saved_friend',
+                matrixUserId: '@saved-friend:synthetic.test', nickname: 'Saved friend')],
+          ));
+        }
         store = SecureSessionStore(rawSecure);
         cipher = await store.matrixDatabaseKey();
         await store.saveSession(
@@ -1219,6 +1236,23 @@ void registerStartupProjectionEntryTests(
                 .map((w) => w.data)
                 .join(' | '));
         expect(find.text('正在打开本地聊天，请稍候'), findsNothing);
+        if (checkColdTabs) {
+          expect(tester.widget<AppHome>(find.byType(AppHome)).localOnly, isTrue);
+          for (final (tab, content) in [
+            ('通讯录', find.text('Saved friend')),
+            ('发现', find.byKey(const Key('moments-new-posts-badge'))),
+            ('我', find.text('Saved owner')),
+          ]) {
+            await tester.tap(find.descendant(of: find.byType(CupertinoTabBar),
+                matching: find.text(tab)));
+            await tester.pump();
+            expect(content, findsOneWidget, reason: '$tab first frame');
+            expect(find.byType(CupertinoActivityIndicator), findsNothing);
+          }
+          await tester.tap(find.descendant(of: find.byType(CupertinoTabBar),
+              matching: find.text('消息')));
+          await tester.pump();
+        }
         if (independent) {
           expect(rawSecure.diagnosticHold!.isCompleted, isFalse,
               reason:

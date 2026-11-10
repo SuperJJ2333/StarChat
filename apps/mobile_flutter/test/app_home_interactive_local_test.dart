@@ -9,10 +9,12 @@ import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/app_home.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
+import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
@@ -268,8 +270,30 @@ void main() {
             requests.add(request.url.path);
             return http.Response('{}', 503);
           }));
+      final preferences = await SharedPreferences.getInstance();
+      final accountKey = 'matrix:${matrix.userId}';
+      await SharedPreferencesProfileStore(preferences).write(
+          accountKey,
+          const ProfileSnapshot(
+            profile: ProfileData(
+              username: 'me',
+              nickname: 'Cached profile',
+              maskedEmail: '',
+              fallbackSeed: 'me',
+            ),
+            contacts: [
+              ContactSummary(
+                userId: 'cached-contact',
+                username: 'cachedfriend',
+                matrixUserId: '@cachedfriend:test',
+                nickname: 'Cached friend',
+              ),
+            ],
+          ));
       final profile = ProfileRepository.forTesting(
-          accountKey: '@me:test', store: _ProfileStore());
+          accountKey: accountKey,
+          store: SharedPreferencesProfileStore(preferences));
+      await profile.hydrate();
       final theme = ThemeController(store: _ThemeStore());
       final localMode = ValueNotifier(true);
       final store = _ControlledStore();
@@ -282,7 +306,8 @@ void main() {
           matrix: matrix,
           onLogout: () async {},
           themeController: theme,
-          profileRepositoryFactory: (_, __) async => profile,
+          initialIdentityCache: profile,
+          startupPreferences: preferences,
           outboxStoreFactory: () => store,
           syncWatchdogFactory: (_) => MatrixSyncWatchdog(target: _Target()),
         ),
@@ -294,14 +319,22 @@ void main() {
       final home = tester.state(find.byType(AppHome));
       await tester.tap(find.text('通讯录').last);
       await tester.pump();
-      expect(find.byKey(const Key('local-contacts')), findsOneWidget);
+      expect(find.byType(ContactsTabPage), findsOneWidget);
+      expect(find.text('Cached friend'), findsOneWidget);
+      expect(find.byKey(const Key('home-contacts-warmup')), findsNothing);
       await tester.tap(find.text('发现').last);
       await tester.pump();
-      expect(find.byKey(const Key('local-discovery')), findsOneWidget);
+      expect(find.byKey(const Key('discovery-home-list')), findsOneWidget);
+      expect(find.text('朋友圈'), findsOneWidget);
       await tester.tap(find.text('我').last);
       await tester.pump();
-      expect(find.byKey(const Key('local-profile')), findsOneWidget);
-      expect(find.text('钱包'), findsNothing);
+      expect(find.byKey(const Key('profile-home-list')), findsOneWidget);
+      expect(find.text('Cached profile'), findsOneWidget);
+      expect(find.byType(CupertinoActivityIndicator), findsNothing);
+      final profileList = tester.element(find.byKey(const Key('profile-home-list')));
+      await tester.tap(find.text('钱包'));
+      await tester.pump();
+      expect(find.byKey(const Key('profile-home-list')), findsOneWidget);
       expect(requests, isEmpty);
       expect(tester.state(find.byType(AppHome)), same(home));
       await tester.tap(find.text('消息').last);
@@ -499,6 +532,16 @@ void main() {
           same(roomRoute));
       expect(
           tester.state(find.byType(AppHome, skipOffstage: false)), same(home));
+      expect(
+          tester.widget<ContactsTabPage>(find.byType(ContactsTabPage,
+                  skipOffstage: false)).localOnly,
+          isFalse);
+      expect(
+          tester.widget<ProfileTabPage>(find.byType(ProfileTabPage,
+                  skipOffstage: false)).localOnly,
+          isFalse);
+      expect(tester.element(find.byKey(const Key('profile-home-list'),
+          skipOffstage: false)), same(profileList));
       final remaining = await PersistentOutboxManager.shared!.unsent();
       if (editWhileWriting.startsWith('ack')) {
         expect(remaining, isEmpty);

@@ -2442,6 +2442,7 @@ final class BusinessApiClient
         rethrow;
       } on BusinessApiException catch (error) {
         if (error.code == 'INVITATION_TICKET_INVALID' ||
+            error.code == 'INVITATION_EXHAUSTED' ||
             error.code == 'AUTH_SESSION_ENDED') {
           rethrow;
         }

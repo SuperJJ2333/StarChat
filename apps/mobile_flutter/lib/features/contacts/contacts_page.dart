@@ -87,6 +87,7 @@ final class ContactsPage extends StatefulWidget {
     this.identityCache,
     this.supportIdentities,
     this.performanceTrace,
+    this.localOnly = false,
   });
 
   final ContactsGateway api;
@@ -112,6 +113,7 @@ final class ContactsPage extends StatefulWidget {
   final ProfileRepository? identityCache;
   final SupportIdentityRepository? supportIdentities;
   final PerformanceTrace? performanceTrace;
+  final bool localOnly;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
@@ -133,12 +135,11 @@ final class _ContactsPageState extends State<ContactsPage> {
     );
   }
 
-  late Future<List<ContactSummary>> contacts;
+  List<ContactSummary> _visibleContacts = const [];
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
   SupportIdentityRepository? _support;
   bool _ownsSupport = false;
-  List<ContactSummary> _supportContacts = const [];
   int _contactsLoadGeneration = 0;
 
   @override
@@ -152,59 +153,70 @@ final class _ContactsPageState extends State<ContactsPage> {
       _finishInitialPerformanceTrace();
     });
     _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
-    final cached = widget.identityCache?.contacts ?? const <ContactSummary>[];
+    _visibleContacts = widget.identityCache?.contacts ?? const [];
     _performanceTrace.mark(PerformanceStage.cacheLoadDone);
-    if (cached.isNotEmpty) {
-      _performanceTrace.mark(PerformanceStage.contentReady);
-      _initialContentSettled = true;
-    } else {
-      _performanceTrace.mark(PerformanceStage.remoteRefreshStarted);
+    if (_visibleContacts.isNotEmpty || widget.localOnly) {
+      _settleInitialContent();
     }
-    contacts = cached.isEmpty
-        ? _performanceTrace.runChildOperations(widget.api.listContacts)
-        : Future.value(List.unmodifiable(cached));
     widget.identityCache?.addListener(_identityChanged);
     _configureSupport();
-    _observeSupportContacts(contacts);
-    unawaited(_performanceTrace.runChildOperations(() =>
-        widget.identityCache?.refreshContactsQuietly() ??
-        Future<void>.value()));
+    _warmSupport();
+    _refreshContacts();
   }
 
-  Future<void> _warmSupport(Iterable<ContactSummary> values) =>
-      _support?.warm([
-        for (final contact in values) ...[
-          contact.userId,
-          contact.matrixUserId,
-        ],
-      ]) ??
-      Future<void>.value();
-
-  void _setSupportContacts(List<ContactSummary> values) {
-    _supportContacts = List.unmodifiable(values);
-    unawaited(_warmSupport(_supportContacts));
+  void _warmSupport() {
+    if (widget.localOnly) return;
+    unawaited(_support?.warm([
+      for (final contact in _visibleContacts) ...[
+        contact.userId,
+        contact.matrixUserId,
+      ],
+    ]));
   }
 
-  void _observeSupportContacts(Future<List<ContactSummary>> future) {
+  void _settleInitialContent({bool failed = false}) {
+    if (_initialContentSettled) return;
+    if (!failed) _performanceTrace.mark(PerformanceStage.contentReady);
+    _initialContentSettled = true;
+    _initialLoadFailed = failed;
+    _finishInitialPerformanceTrace();
+  }
+
+  void _refreshContacts({bool force = false}) {
+    if (widget.localOnly) return;
+    final repository = widget.identityCache;
     final generation = ++_contactsLoadGeneration;
-    future.then((values) {
-      if (!mounted || generation != _contactsLoadGeneration) return;
-      if (!_initialContentSettled) {
-        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
-        _performanceTrace.mark(PerformanceStage.contentReady);
-        _initialContentSettled = true;
-        _finishInitialPerformanceTrace();
+    final trace = force
+        ? _performanceTrace
+            .startSiblingOperation(PerformanceOperationType.contactsLoad)
+        : _performanceTrace;
+    trace.mark(PerformanceStage.remoteRefreshStarted);
+    final future = trace.runChildOperations(() async {
+      if (repository == null) return widget.api.listContacts();
+      if (force) {
+        await repository.refreshContactsQuietly(minInterval: Duration.zero);
+      } else {
+        // Share the authorized startup load. Its contacts result is published
+        // through the repository independently of the profile request.
+        await repository.preload();
       }
-      _setSupportContacts(values);
-    }, onError: (Object _, StackTrace __) {
-      if (!mounted || generation != _contactsLoadGeneration) return;
-      if (!_initialContentSettled) {
-        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
-        _initialContentSettled = true;
-        _initialLoadFailed = true;
-        _finishInitialPerformanceTrace();
-      }
+      return repository.contacts;
     });
+    unawaited(future.then<void>((values) {
+      trace.mark(PerformanceStage.remoteRefreshDone);
+      if (force) trace.finish();
+      if (!mounted || generation != _contactsLoadGeneration) return;
+      _settleInitialContent();
+      if (!identical(values, _visibleContacts)) {
+        setState(() => _visibleContacts = values);
+        _warmSupport();
+      }
+    }, onError: (Object _, StackTrace __) {
+      trace.mark(PerformanceStage.remoteRefreshDone);
+      if (force) trace.finish(result: PerformanceResult.failed);
+      if (!mounted || generation != _contactsLoadGeneration) return;
+      _settleInitialContent(failed: true);
+    }));
   }
 
   void _configureSupport() {
@@ -223,46 +235,41 @@ final class _ContactsPageState extends State<ContactsPage> {
   @override
   void didUpdateWidget(covariant ContactsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.api, widget.api) ||
-        oldWidget.supportIdentities != widget.supportIdentities) {
+    final apiChanged = !identical(oldWidget.api, widget.api);
+    final repositoryChanged = oldWidget.identityCache != widget.identityCache;
+    final accessChanged = oldWidget.localOnly != widget.localOnly;
+    final supportChanged =
+        oldWidget.supportIdentities != widget.supportIdentities;
+    if (apiChanged || supportChanged) {
       if (_ownsSupport) _support?.dispose();
       _configureSupport();
+    }
+    if (repositoryChanged) {
+      oldWidget.identityCache?.removeListener(_identityChanged);
+      widget.identityCache?.addListener(_identityChanged);
+    }
+    if (apiChanged || repositoryChanged || widget.localOnly && accessChanged) {
+      _visibleContacts = widget.identityCache?.contacts ?? const [];
+    }
+    if (apiChanged || repositoryChanged || accessChanged) {
       _contactsLoadGeneration++;
-      _setSupportContacts(widget.identityCache?.contacts ?? _supportContacts);
+      _refreshContacts();
+    }
+    if (apiChanged || repositoryChanged || accessChanged || supportChanged) {
+      _warmSupport();
     }
   }
 
   void _identityChanged() {
     if (!mounted) return;
-    if (!_initialContentSettled &&
-        widget.identityCache?.contacts.isNotEmpty == true) {
-      _performanceTrace.mark(PerformanceStage.contentReady);
-    }
-    setState(() {
-      contacts = Future.value(
-        List.unmodifiable(widget.identityCache?.contacts ?? const []),
-      );
-    });
-    _setSupportContacts(widget.identityCache?.contacts ?? const []);
+    final contacts = widget.identityCache?.contacts ?? const <ContactSummary>[];
+    if (identical(contacts, _visibleContacts)) return;
+    setState(() => _visibleContacts = contacts);
+    if (contacts.isNotEmpty) _settleInitialContent();
+    _warmSupport();
   }
 
-  void reload() {
-    final trace = _performanceTrace
-        .startSiblingOperation(PerformanceOperationType.contactsLoad)
-      ..mark(PerformanceStage.remoteRefreshStarted);
-    final next = trace.runChildOperations(widget.api.listContacts);
-    unawaited(next.then<void>((_) {
-      trace.mark(PerformanceStage.remoteRefreshDone);
-      trace.finish();
-    }, onError: (Object _, StackTrace __) {
-      trace.mark(PerformanceStage.remoteRefreshDone);
-      trace.finish(result: PerformanceResult.failed);
-    }));
-    _observeSupportContacts(next);
-    setState(() {
-      contacts = next;
-    });
-  }
+  void reload() => _refreshContacts(force: true);
 
   @override
   void dispose() {
@@ -331,6 +338,21 @@ final class _ContactsPageState extends State<ContactsPage> {
     final businessApi = widget.api is BusinessApiClient
         ? widget.api as BusinessApiClient
         : null;
+    final canNavigate = !widget.localOnly;
+    final grouped = _groupContacts(_visibleContacts);
+    // Section offsets include the fixed-height entries above the contacts.
+    var sectionOffset = businessApi == null
+        ? 0.0
+        : _ContactSectionHeader.leadingEntryCount *
+            WeChatDimensions.contactTileHeight;
+    sectionOffsets.clear();
+    for (final label in ContactIndex.labels) {
+      final contacts = grouped[label];
+      if (contacts == null || contacts.isEmpty) continue;
+      sectionOffsets[label] = sectionOffset;
+      sectionOffset += _ContactSectionHeader.height +
+          contacts.length * WeChatDimensions.contactTileHeight;
+    }
     return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(
@@ -345,261 +367,262 @@ final class _ContactsPageState extends State<ContactsPage> {
                 CupertinoButton(
                   key: const Key('contacts-search'),
                   padding: EdgeInsets.zero,
-                  onPressed: () => Navigator.push(
-                    context,
-                    MotionPageRoute(
-                      builder: (_) => GlobalSearchPage(
-                        contactActions: ContactActions(
-                          onMessage: widget.onMessage,
-                          onVoice: widget.onVoice,
-                          onVideo: widget.onVideo,
-                        ),
-                        identityCache: widget.identityCache,
-                        api: businessApi,
-                        matrix: widget.matrix,
-                        // 必填：通讯录 Tab 的搜索与消息 Tab 拥有完全相同的
-                        // 打开能力（同一条 RoomOpeningPolicy 路径）。
-                        onOpenRoom: widget.onOpenRoom,
-                      ),
-                    ),
-                  ),
+                  onPressed: !canNavigate
+                      ? null
+                      : () => Navigator.push(
+                            context,
+                            MotionPageRoute(
+                              builder: (_) => GlobalSearchPage(
+                                contactActions: ContactActions(
+                                  onMessage: widget.onMessage,
+                                  onVoice: widget.onVoice,
+                                  onVideo: widget.onVideo,
+                                ),
+                                identityCache: widget.identityCache,
+                                api: businessApi,
+                                matrix: widget.matrix,
+                                // 必填：通讯录 Tab 的搜索与消息 Tab 拥有完全相同的
+                                // 打开能力（同一条 RoomOpeningPolicy 路径）。
+                                onOpenRoom: widget.onOpenRoom,
+                              ),
+                            ),
+                          ),
                   child: const Icon(CupertinoIcons.search, size: 22),
                 ),
                 CupertinoButton(
                   key: const Key('contacts-more'),
                   padding: EdgeInsets.zero,
-                  onPressed: () => showTopMoreMenu(
-                    context,
-                    onCreateGroup: () => widget.onGroupChat?.call(),
-                    onAddFriend: () {
-                      Navigator.push(
-                          context,
-                          MotionPageRoute(
-                              builder: (_) => AddFriendPage(
-                                  contactActions: ContactActions(
-                                    onMessage: widget.onMessage,
-                                    onVoice: widget.onVoice,
-                                    onVideo: widget.onVideo,
-                                  ),
-                                  api: businessApi,
-                                  identityCache: widget.identityCache)));
-                    },
-                    onScan: widget.onScan ??
-                        () => Navigator.of(context, rootNavigator: true).push(
-                            MotionPageRoute(
-                                builder: (_) => ScanQrPage(
-                                    api: businessApi,
-                                    groupJoinApi: businessApi,
-                                    identityCache: widget.identityCache))),
-                    onAppearance: () => widget.onAppearance?.call(),
-                  ),
+                  onPressed: !canNavigate
+                      ? null
+                      : () => showTopMoreMenu(
+                            context,
+                            onCreateGroup: () => widget.onGroupChat?.call(),
+                            onAddFriend: () {
+                              Navigator.push(
+                                  context,
+                                  MotionPageRoute(
+                                      builder: (_) => AddFriendPage(
+                                          contactActions: ContactActions(
+                                            onMessage: widget.onMessage,
+                                            onVoice: widget.onVoice,
+                                            onVideo: widget.onVideo,
+                                          ),
+                                          api: businessApi,
+                                          identityCache:
+                                              widget.identityCache)));
+                            },
+                            onScan: widget.onScan ??
+                                () => Navigator.of(context, rootNavigator: true)
+                                    .push(MotionPageRoute(
+                                        builder: (_) => ScanQrPage(
+                                            api: businessApi,
+                                            groupJoinApi: businessApi,
+                                            identityCache:
+                                                widget.identityCache))),
+                            onAppearance: () => widget.onAppearance?.call(),
+                          ),
                   child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
                 ),
               ]),
       ),
       child: SafeArea(
-        child: FutureBuilder<List<ContactSummary>>(
-          initialData: widget.identityCache?.contacts,
-          future: contacts,
-          builder: (_, snapshot) {
-            final grouped = _groupContacts(
-              snapshot.data ?? const <ContactSummary>[],
-            );
-            // BUG-03：字母跳转偏移量必须与真实行高一致。三个入口行与联系人
-            // 行都固定为 contactTileHeight，分组标题固定为 25，因此这里的
-            // 算式与实际布局逐项对应（入口行也用 SizedBox 固定高度）。
-            var sectionOffset = businessApi == null
-                ? 0.0
-                : _ContactSectionHeader.leadingEntryCount *
-                    WeChatDimensions.contactTileHeight;
-            sectionOffsets.clear();
-            for (final label in ContactIndex.labels) {
-              final contacts = grouped[label];
-              if (contacts == null || contacts.isEmpty) continue;
-              sectionOffsets[label] = sectionOffset;
-              sectionOffset += _ContactSectionHeader.height +
-                  contacts.length * WeChatDimensions.contactTileHeight;
-            }
-            return Stack(
+        child: Stack(
+          children: [
+            ListView(
+              controller: scrollController,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsets.only(
+                  right: WeChatDimensions.contactIndexWidth),
               children: [
-                ListView(
-                  controller: scrollController,
-                  physics: const BouncingScrollPhysics(
-                    parent: AlwaysScrollableScrollPhysics(),
-                  ),
-                  padding: const EdgeInsets.only(
-                      right: WeChatDimensions.contactIndexWidth),
-                  children: [
-                    if (businessApi != null) ...[
-                      // BUG-03：入口行高度固定为 contactTileHeight，
-                      // 使字母索引的偏移量与实际布局严格一致。
-                      SizedBox(
-                        height: WeChatDimensions.contactTileHeight,
-                        child: WeChatListTile(
-                          leadingSize: WeChatDimensions.contactAvatar,
-                          leadingToTitle: WeChatSpacing.md,
-                          showDivider: true,
-                          leading: const Icon(CupertinoIcons.person_add_solid),
-                          title: const Text('新的朋友'),
-                          trailing: ValueListenableBuilder<int>(
-                            valueListenable: widget.pendingFriendRequests,
-                            builder: (_, count, __) => count > 0
-                                ? Container(
-                                    key: const Key('friend-request-badge'),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 2),
-                                    decoration: const BoxDecoration(
-                                      color: WeChatColors.danger,
-                                      borderRadius:
-                                          BorderRadius.all(Radius.circular(10)),
-                                    ),
-                                    child: Text(
-                                      count > 99 ? '99+' : '$count',
-                                      style: const TextStyle(
-                                          color: CupertinoColors.white,
-                                          fontSize: 11),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                          onTap: () async {
-                            if (widget.onFriendRequests != null) {
-                              widget.onFriendRequests!();
-                              return;
-                            }
-                            await Navigator.push(
-                              context,
-                              MotionPageRoute(
-                                builder: (_) => FriendRequestsPage(
-                                  api: businessApi,
-                                  pendingRequests: widget.pendingFriendRequests,
-                                  directChats: widget.directChats,
-                                  onRequestsChanged: widget.onRequestsChanged,
+                if (businessApi != null) ...[
+                  // BUG-03：入口行高度固定为 contactTileHeight，
+                  // 使字母索引的偏移量与实际布局严格一致。
+                  SizedBox(
+                    height: WeChatDimensions.contactTileHeight,
+                    child: WeChatListTile(
+                      leadingSize: WeChatDimensions.contactAvatar,
+                      leadingToTitle: WeChatSpacing.md,
+                      showDivider: true,
+                      leading: const Icon(CupertinoIcons.person_add_solid),
+                      title: const Text('新的朋友'),
+                      trailing: ValueListenableBuilder<int>(
+                        valueListenable: widget.pendingFriendRequests,
+                        builder: (_, count, __) => count > 0
+                            ? Container(
+                                key: const Key('friend-request-badge'),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                decoration: const BoxDecoration(
+                                  color: WeChatColors.danger,
+                                  borderRadius:
+                                      BorderRadius.all(Radius.circular(10)),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
+                                child: Text(
+                                  count > 99 ? '99+' : '$count',
+                                  style: const TextStyle(
+                                      color: CupertinoColors.white,
+                                      fontSize: 11),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
                       ),
-                      SizedBox(
-                        height: WeChatDimensions.contactTileHeight,
-                        child: WeChatListTile(
-                          key: const Key('contacts-group-address-entry'),
-                          leadingSize: WeChatDimensions.contactAvatar,
-                          leadingToTitle: WeChatSpacing.md,
-                          showDivider: true,
-                          leading: const Icon(CupertinoIcons.person_3_fill),
-                          title: const Text('群聊'),
-                          onTap:
-                              widget.onGroupAddressList ?? widget.onGroupChat,
-                        ),
-                      ),
-                      SizedBox(
-                        height: WeChatDimensions.contactTileHeight,
-                        child: WeChatListTile(
-                          leadingSize: WeChatDimensions.contactAvatar,
-                          leadingToTitle: WeChatSpacing.md,
-                          showDivider: true,
-                          leading: const Icon(CupertinoIcons.tag_fill),
-                          title: const Text('标签'),
-                          onTap: () => Navigator.push(
-                            context,
-                            MotionPageRoute(
-                              builder: (_) => ContactTagsPage(
-                                  api: businessApi,
-                                  identityCache: widget.identityCache,
-                                  // 快照按账号隔离：解析当前账号供快照校验。
-                                  scopeResolver:
-                                      businessApi.currentMatrixUserId),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                    for (final label in ContactIndex.labels)
-                      if (grouped[label]?.isNotEmpty ?? false) ...[
-                        KeyedSubtree(
-                          key: _sectionKey(label),
-                          child: _ContactSectionHeader(
-                            label: label == '★' ? '星标好友' : label,
-                          ),
-                        ),
-                        for (var i = 0; i < (grouped[label]?.length ?? 0); i++)
-                          WeChatContactTile(
-                            nickname: grouped[label]![i].displayName,
-                            fallbackSeed: widget.identityCache
-                                    ?.resolveIdentity(
-                                        userId: grouped[label]![i].userId)
-                                    .cacheKey ??
-                                grouped[label]![i].username,
-                            avatarUrl: grouped[label]![i].avatarUrl,
-                            supportIdentities: _support,
-                            userId: grouped[label]![i].userId,
-                            matrixUserId: grouped[label]![i].matrixUserId,
-                            // 好友之间画共享渐隐分割线；分组最后一位不画，
-                            // 由分组标题承担分隔。
-                            showDivider: i < grouped[label]!.length - 1,
-                            onTap: () async {
-                              final changed = await Navigator.of(context,
-                                      rootNavigator: true)
-                                  .push<bool>(
+                      onTap: !canNavigate
+                          ? null
+                          : () async {
+                              if (widget.onFriendRequests != null) {
+                                widget.onFriendRequests!();
+                                return;
+                              }
+                              await Navigator.push(
+                                context,
                                 MotionPageRoute(
-                                  builder: (_) => ContactProfilePage(
-                                    identityCache: widget.identityCache,
-                                    supportIdentities: _support,
-                                    api: widget.api,
-                                    initialContact:
-                                        grouped[label]![i].toDetails(),
-                                    onMessage: widget.onMessage,
-                                    onVoice: widget.onVoice,
-                                    onVideo: widget.onVideo,
-                                    onContactDeleted:
-                                        widget.identityCache?.removeContact,
-                                    onContactUpdated:
-                                        widget.identityCache == null
-                                            ? null
-                                            : (updated) => widget.identityCache!
-                                                    .applyUpdatedContact(
-                                                  updated.toSummary(),
-                                                ),
+                                  builder: (_) => FriendRequestsPage(
+                                    api: businessApi,
+                                    pendingRequests:
+                                        widget.pendingFriendRequests,
+                                    directChats: widget.directChats,
+                                    onRequestsChanged: widget.onRequestsChanged,
                                   ),
                                 ),
                               );
-                              if (!mounted) return;
-                              if (changed == true) reload();
                             },
-                          ),
-                      ],
-                  ],
-                ),
-                // BUG-03：索引列宽度取设计 token，且整列留白后垂直居中，
-                // 不覆盖顶部导航/底部安全区（SafeArea 已由外层保证）。
-                // 真机回归修订：索引条从「新的朋友/群聊/标签」三个入口行
-                // 之下开始展示（微信语义），不再与功能入口同一高度。
-                Positioned(
-                  top: WeChatDimensions.contactTileHeight * 3,
-                  right: 0,
-                  bottom: 0,
-                  width: WeChatDimensions.contactIndexWidth,
-                  child: AnimatedBuilder(
-                    animation: scrollController,
-                    child: WeChatContactIndex(
-                        labels: ContactIndex.labels, onSelected: _jumpTo),
-                    builder: (_, child) {
-                      final pullDown = scrollController.hasClients
-                          ? (-scrollController.offset)
-                              .clamp(0.0, double.infinity)
-                          : 0.0;
-                      return Transform.translate(
-                        offset: Offset(0, pullDown),
-                        child: child,
-                      );
-                    },
+                    ),
                   ),
-                ),
+                  SizedBox(
+                    height: WeChatDimensions.contactTileHeight,
+                    child: WeChatListTile(
+                      key: const Key('contacts-group-address-entry'),
+                      leadingSize: WeChatDimensions.contactAvatar,
+                      leadingToTitle: WeChatSpacing.md,
+                      showDivider: true,
+                      leading: const Icon(CupertinoIcons.person_3_fill),
+                      title: const Text('群聊'),
+                      onTap: canNavigate
+                          ? widget.onGroupAddressList ?? widget.onGroupChat
+                          : null,
+                    ),
+                  ),
+                  SizedBox(
+                    height: WeChatDimensions.contactTileHeight,
+                    child: WeChatListTile(
+                      leadingSize: WeChatDimensions.contactAvatar,
+                      leadingToTitle: WeChatSpacing.md,
+                      showDivider: true,
+                      leading: const Icon(CupertinoIcons.tag_fill),
+                      title: const Text('标签'),
+                      onTap: !canNavigate
+                          ? null
+                          : () => Navigator.push(
+                                context,
+                                MotionPageRoute(
+                                  builder: (_) => ContactTagsPage(
+                                      api: businessApi,
+                                      identityCache: widget.identityCache,
+                                      // 快照按账号隔离：解析当前账号供快照校验。
+                                      scopeResolver:
+                                          businessApi.currentMatrixUserId),
+                                ),
+                              ),
+                    ),
+                  ),
+                ],
+                if (_visibleContacts.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(WeChatSpacing.lg),
+                    child: Text(
+                      '暂无联系人',
+                      style: TextStyle(
+                        color: WeChatColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                for (final label in ContactIndex.labels)
+                  if (grouped[label]?.isNotEmpty ?? false) ...[
+                    KeyedSubtree(
+                      key: _sectionKey(label),
+                      child: _ContactSectionHeader(
+                        label: label == '★' ? '星标好友' : label,
+                      ),
+                    ),
+                    for (var i = 0; i < (grouped[label]?.length ?? 0); i++)
+                      WeChatContactTile(
+                        key: ValueKey(grouped[label]![i].userId),
+                        nickname: grouped[label]![i].displayName,
+                        fallbackSeed: widget.identityCache
+                                ?.resolveIdentity(
+                                    userId: grouped[label]![i].userId)
+                                .cacheKey ??
+                            grouped[label]![i].username,
+                        avatarUrl:
+                            canNavigate ? grouped[label]![i].avatarUrl : null,
+                        supportIdentities: canNavigate ? _support : null,
+                        userId: grouped[label]![i].userId,
+                        matrixUserId: grouped[label]![i].matrixUserId,
+                        // 好友之间画共享渐隐分割线；分组最后一位不画，
+                        // 由分组标题承担分隔。
+                        showDivider: i < grouped[label]!.length - 1,
+                        onTap: !canNavigate
+                            ? null
+                            : () async {
+                                final changed = await Navigator.of(context,
+                                        rootNavigator: true)
+                                    .push<bool>(
+                                  MotionPageRoute(
+                                    builder: (_) => ContactProfilePage(
+                                      identityCache: widget.identityCache,
+                                      supportIdentities: _support,
+                                      api: widget.api,
+                                      initialContact:
+                                          grouped[label]![i].toDetails(),
+                                      onMessage: widget.onMessage,
+                                      onVoice: widget.onVoice,
+                                      onVideo: widget.onVideo,
+                                      onContactDeleted:
+                                          widget.identityCache?.removeContact,
+                                      onContactUpdated: widget.identityCache ==
+                                              null
+                                          ? null
+                                          : (updated) => widget.identityCache!
+                                                  .applyUpdatedContact(
+                                                updated.toSummary(),
+                                              ),
+                                    ),
+                                  ),
+                                );
+                                if (!mounted) return;
+                                if (changed == true) reload();
+                              },
+                      ),
+                  ],
               ],
-            );
-          },
+            ),
+            // BUG-03：索引列宽度取设计 token，且整列留白后垂直居中，
+            // 不覆盖顶部导航/底部安全区（SafeArea 已由外层保证）。
+            // 真机回归修订：索引条从「新的朋友/群聊/标签」三个入口行
+            // 之下开始展示（微信语义），不再与功能入口同一高度。
+            Positioned(
+              top: WeChatDimensions.contactTileHeight * 3,
+              right: 0,
+              bottom: 0,
+              width: WeChatDimensions.contactIndexWidth,
+              child: AnimatedBuilder(
+                animation: scrollController,
+                child: WeChatContactIndex(
+                    labels: ContactIndex.labels, onSelected: _jumpTo),
+                builder: (_, child) {
+                  final pullDown = scrollController.hasClients
+                      ? (-scrollController.offset).clamp(0.0, double.infinity)
+                      : 0.0;
+                  return Transform.translate(
+                    offset: Offset(0, pullDown),
+                    child: child,
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

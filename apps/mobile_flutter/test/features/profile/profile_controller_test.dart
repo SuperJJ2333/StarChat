@@ -87,9 +87,11 @@ final class FakeAvatarSource implements AvatarSource {
 final class _HeldProfileGateway extends FakeProfileGateway {
   final load = Completer<ProfileData>();
   final loadStarted = Completer<void>();
+  int loadCalls = 0;
 
   @override
   Future<ProfileData> loadProfile() {
+    loadCalls++;
     if (!loadStarted.isCompleted) loadStarted.complete();
     return load.future;
   }
@@ -183,6 +185,8 @@ void main() {
 
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    expect(find.text('暂无个人资料'), findsOneWidget);
     await tester.tap(find.text('设置'));
     await tester.tap(find.text('朋友圈'));
     expect(settingsOpened, isTrue);
@@ -227,6 +231,111 @@ void main() {
     gateway.load.complete(profile.copyWith(nickname: 'Fresh Alice'));
     await loading;
     expect(controller.state.profile?.nickname, 'Fresh Alice');
+  });
+
+  test('an older disk snapshot cannot replace an already displayed profile',
+      () async {
+    final gateway = _HeldProfileGateway();
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+      initialProfile: profile.copyWith(nickname: 'Displayed Alice'),
+      readCachedProfile: () async => profile.copyWith(nickname: 'Older Alice'),
+    );
+    addTearDown(controller.dispose);
+
+    final refreshing = controller.load();
+    await gateway.loadStarted.future;
+    expect(controller.state.profile?.nickname, 'Displayed Alice');
+    gateway.load.complete(profile.copyWith(nickname: 'Fresh Alice'));
+    await refreshing;
+    expect(controller.state.profile?.nickname, 'Fresh Alice');
+  });
+
+  test('profile response loses ownership when remote admission changes',
+      () async {
+    final gateway = _HeldProfileGateway();
+    var admitted = true;
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+      initialProfile: profile,
+      canLoadRemoteProfile: () => admitted,
+    );
+    addTearDown(controller.dispose);
+
+    final refreshing = controller.load();
+    await gateway.loadStarted.future;
+    admitted = false;
+    gateway.load.complete(profile.copyWith(nickname: 'Late response'));
+    await refreshing;
+    expect(controller.state.profile, profile);
+  });
+
+  testWidgets('cold profile and verified refresh share their scroll position',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = _HeldProfileGateway();
+    final localOnly = ValueNotifier(true);
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+      initialProfile: profile.copyWith(nickname: 'Cached Alice'),
+      canLoadRemoteProfile: () => !localOnly.value,
+    );
+    addTearDown(localOnly.dispose);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ValueListenableBuilder<bool>(
+        valueListenable: localOnly,
+        builder: (_, local, __) => ProfileExperiencePage(
+          controller: controller,
+          localOnly: local,
+          onInvite: () {},
+          onMoments: () {},
+          onCaibi: () {},
+          onWallet: () {},
+          onSettings: () {},
+        ),
+      ),
+    ));
+    expect(find.text('Cached Alice'), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    expect(gateway.loadCalls, 0);
+    final identity = find.byKey(const Key('profile-identity-card'));
+    expect(tester.widget<CupertinoButton>(identity).onPressed, isNull);
+    expect(
+        tester
+            .widget<UserAvatar>(
+                find.byKey(const Key('profile-identity-avatar')))
+            .localOnly,
+        isTrue);
+    final list = find.byKey(const Key('profile-home-list'));
+    final scrollable =
+        find.descendant(of: list, matching: find.byType(Scrollable));
+    await tester.drag(list, const Offset(0, -50));
+    await tester.pumpAndSettle();
+    final position = tester.state<ScrollableState>(scrollable).position;
+    final offset = position.pixels;
+    expect(offset, greaterThan(0));
+
+    localOnly.value = false;
+    await tester.pump();
+    expect(find.text('Cached Alice'), findsOneWidget);
+    expect(tester.widget<CupertinoButton>(identity).onPressed, isNotNull);
+    expect(gateway.loadCalls, 1);
+    expect(tester.state<ScrollableState>(scrollable).position, same(position));
+    expect(position.pixels, offset);
+
+    gateway.load.complete(profile.copyWith(nickname: 'Fresh Alice'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fresh Alice'), findsOneWidget);
+    expect(position.pixels, offset);
+    expect(gateway.loadCalls, 1);
   });
 
   /// 微信级加载模型（2026-09-19 审计）：已有资料时的刷新失败不得变成页面红字。

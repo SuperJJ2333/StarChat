@@ -8,6 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 统一邀请码（规格 §6.2）：固定个人注册邀请码，不轮换。
 final class FakePersonalInvitationGateway implements PersonalInvitationGateway {
+  FakePersonalInvitationGateway({this.maxUses = 20, this.useCount = 3});
+
+  final int maxUses;
+  final int useCount;
   int fetchCalls = 0;
   Object? fetchError;
 
@@ -16,10 +20,10 @@ final class FakePersonalInvitationGateway implements PersonalInvitationGateway {
     fetchCalls++;
     final error = fetchError;
     if (error != null) throw error;
-    return const PersonalInvitation(
+    return PersonalInvitation(
       code: 'AB2CD3FG',
-      maxUses: 20,
-      useCount: 3,
+      maxUses: maxUses,
+      useCount: useCount,
       shareUrl: 'https://invite.example.test/register?code=AB2CD3FG',
     );
   }
@@ -119,6 +123,20 @@ void main() {
     // 「复制邀请链接」已按用户要求删除，只保留复制邀请码。
     expect(find.byKey(const Key('invite-copy-link')), findsNothing);
     expect(find.text('复制邀请链接'), findsNothing);
+    controller.dispose();
+  });
+
+  testWidgets('historical oversubscription renders zero available places',
+      (tester) async {
+    final controller = InviteCodeController(
+        gateway: FakePersonalInvitationGateway(maxUses: 50, useCount: 54));
+    await tester.pumpWidget(
+      CupertinoApp(home: InviteCodePage(controller: controller)),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.state.invite!.remainingUses, 0);
+    expect(find.text('该邀请码已达邀请上限'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
     controller.dispose();
   });
 }
